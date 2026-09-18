@@ -501,11 +501,17 @@ def undo_command(
         )
     loaded = load_dataset(cleaned_path)
     restored = undo_changeset(loaded.tables, changeset)
+    inserted_rows: dict[str, list] = {}
+    for execution in changeset.executions:
+        if execution.deleted_rows:
+            inserted_rows.setdefault(execution.table, []).extend(execution.deleted_rows)
+
     restored_path = write_cleaned_dataset(
         cleaned_path,
         loaded.tables,
         restored,
         output,
+        inserted_rows=inserted_rows,
     )
     console.print(f"[green]Restored dataset:[/green] {restored_path}")
 
