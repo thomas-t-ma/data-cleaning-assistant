@@ -467,7 +467,8 @@ def research_benchmark_cases() -> list[BenchmarkCase]:
             id="research_unknown_outcome_category",
             description=(
                 "Unknown is an explicit outcome category here; converting it to null would erase "
-                "a meaningful coded state, so the missing-token candidate should be deferred."
+                "a meaningful coded state, so null-normalization must not be exposed without "
+                "an explicit study schema."
             ),
             csv_text=(
                 "subject_id,outcome_category\n"
@@ -488,7 +489,7 @@ def research_benchmark_cases() -> list[BenchmarkCase]:
             id="research_not_applicable_grade",
             description=(
                 "Not applicable is an explicit adverse-event grade state, not interchangeable "
-                "with an unrecorded value."
+                "with an unrecorded value; null-normalization must not be exposed by default."
             ),
             csv_text=(
                 "subject_id,adverse_event_grade\n"
