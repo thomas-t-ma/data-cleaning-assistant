@@ -97,7 +97,10 @@ def _category_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
 def _missing_action(issue) -> CleaningAction | None:
     if issue.column is None:
         return None
-    tokens = sorted(str(value) for value in issue.evidence.get("tokens", {}))
+    source = issue.evidence.get("structural_tokens")
+    if source is None:
+        source = issue.evidence.get("tokens", {})
+    tokens = sorted(str(value) for value in source)
     if not tokens:
         return None
     parameters = {"values": tokens}
@@ -113,8 +116,8 @@ def _missing_action(issue) -> CleaningAction | None:
         column=issue.column,
         title="Normalize textual missing-value tokens",
         description=(
-            "Replace the listed textual tokens with true null values. "
-            "Approval is required because some study protocols use special missing codes."
+            "Replace structural null sentinels with true null values. Contextual labels such "
+            "as Unknown or Not applicable are not included without an explicit study schema."
         ),
         parameters=parameters,
         confidence=issue.confidence,
