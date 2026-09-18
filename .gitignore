@@ -20,3 +20,4 @@ ai_context*.json
 /cleaned.*
 /replayed.*
 /restored.*
+ai_benchmark*.json

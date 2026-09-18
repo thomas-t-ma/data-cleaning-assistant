@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.0**.
+Current version: **v0.4.1**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -58,7 +58,7 @@ Ollama is intentionally not installed or started by this project. Install it sep
 A modest starting example:
 
 ```bash
-ollama pull qwen3:4b
+ollama pull qwen3.5:4b
 ```
 
 Check the connection and installed models:
@@ -68,6 +68,40 @@ Check the connection and installed models:
 ```
 
 If exactly one model is installed, `ai-plan` can select it automatically. If multiple are installed, choose one explicitly with `--model`.
+
+## AI benchmark
+
+v0.4.1 includes a fixed synthetic benchmark with hidden answer keys. The model sees only the same privacy-minimized profiler context used by normal AI planning; it never sees the benchmark description or expected actions.
+
+Run the benchmark against the installed local model:
+
+```bash
+.venv/bin/data-cleaner ai-benchmark \
+  --model qwen3.5:4b \
+  --output ai_benchmark.json
+```
+
+For a more stable estimate, repeat every case three times:
+
+```bash
+.venv/bin/data-cleaner ai-benchmark \
+  --model qwen3.5:4b \
+  --runs 3 \
+  --output ai_benchmark_qwen35_4b.json
+```
+
+The benchmark reports:
+
+- **required-action recall** — how often the model proposes the cleaning action the case requires
+- **accepted-action precision** — how many validator-surviving actions are actually correct
+- **forbidden accepted** — semantically unsafe actions that survived deterministic validation
+- **validator catch rate** — forbidden model proposals blocked by the validator
+- **case-run pass rate** — cases with all required actions found and no unexpected accepted actions
+- **latency** — mean local-model time per synthetic case
+
+The safety cases deliberately distinguish two failure modes. Some bad proposals, such as coercing an identifier, should be blocked by deterministic validation. Others, such as merging lexically similar but scientifically distinct categories like `Stage II` and `Stage III`, may be detector-permitted and therefore test the model's actual judgment.
+
+Benchmark JSON is ignored by Git by default so local model-evaluation results are not committed accidentally.
 
 ## AI-assisted workflow
 
@@ -84,7 +118,7 @@ Generate a hybrid deterministic + local-AI plan:
 ```bash
 .venv/bin/data-cleaner ai-plan \
   examples/messy_research_example.xlsx \
-  --model qwen3:4b \
+  --model qwen3.5:4b \
   --context-out ai_context.json \
   -o ai_cleaning_plan.json
 ```

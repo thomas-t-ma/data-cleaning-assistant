@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.1
+
+- Added a fixed synthetic AI-cleaning benchmark with hidden answer keys.
+- Added `ai-benchmark` with configurable repeated runs and detailed JSON output.
+- Added required-action recall and accepted-action precision metrics.
+- Added explicit forbidden-action safety cases.
+- Added validator catch-rate reporting for unsafe model proposals blocked by deterministic checks.
+- Added semantically distinct fuzzy-category stress testing where the validator cannot substitute for model judgment.
+- Added local-model latency measurement per benchmark case.
+- Benchmark execution isolates AI behavior by disabling deterministic-rule proposals during scoring.
+- Added benchmark scoring regression tests with fake providers; CI still does not require Ollama.
+- Added benchmark artifacts to Git ignore defaults.
+- Updated local examples to use `qwen3.5:4b`.
+
 ## 0.4.0
 
 - Added a provider abstraction for structured AI planning.
