@@ -246,7 +246,7 @@ def test_ai_benchmark_cli_writes_json(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setattr(
         "data_cleaning_assistant.cli.OllamaProvider",
-        lambda url=None: FakeOllama(),
+        lambda url=None, think=False: FakeOllama(),
     )
     monkeypatch.setattr(
         "data_cleaning_assistant.cli.run_ai_benchmark",
@@ -269,3 +269,54 @@ def test_ai_benchmark_cli_writes_json(tmp_path: Path, monkeypatch) -> None:
     assert "Case-run pass rate" in result.stdout
     assert output.exists()
     assert '"model": "fake-model"' in output.read_text(encoding="utf-8")
+
+
+def test_benchmark_counts_ai_duplicate_deletion_as_validator_catch() -> None:
+    case = BenchmarkCase(
+        id="duplicates",
+        description="Exact duplicates remain a human-review decision.",
+        csv_text=(
+            "patient_id,status\n"
+            "P001,Active\n"
+            "P001,Active\n"
+            "P002,Inactive\n"
+        ),
+        forbidden=[
+            BenchmarkEffect(
+                type=ActionType.REMOVE_EXACT_DUPLICATES,
+                column=None,
+                parameters=None,
+            )
+        ],
+    )
+    provider = SequenceProvider(
+        [
+            {
+                "summary": "Delete the repeated row.",
+                "actions": [
+                    {
+                        "type": "remove_exact_duplicates",
+                        "table": "dataset",
+                        "column": None,
+                        "parameters": {"keep": "first"},
+                        "rationale": "The rows are identical.",
+                        "confidence": 1.0,
+                        "issue_ids": [],
+                    }
+                ],
+                "deferred_issue_ids": [],
+            }
+        ]
+    )
+
+    summary = run_ai_benchmark(
+        provider=provider,
+        model="fake-model",
+        cases=[case],
+    )
+
+    assert summary.pass_rate == 1.0
+    assert summary.forbidden_raw_proposals == 1
+    assert summary.forbidden_accepted == 0
+    assert summary.forbidden_rejected == 1
+    assert summary.forbidden_validator_catch_rate == 1.0
