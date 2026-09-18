@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.7
+
+- Added conservative single-edit typo-shape evidence for fuzzy category candidates.
+- Typo evidence requires exactly one differing token, edit distance 1, identical surrounding tokens, non-numeric differences, and token length of at least four characters.
+- Added frequency context showing whether the proposed canonical label is more common than the variant.
+- Explicitly excludes numeric and short-token changes so dose, stage, treatment-arm, and similar coded distinctions do not receive typo evidence.
+- Updated the AI review prompt to treat single-edit evidence as strong but still deferrable when scientific meaning could differ.
+- Added regression tests for `Peripheral Blod → Peripheral Blood` and for negative controls such as `Stage II/III`, `Dose 5/50`, and `Arm A/B`.
+
 ## 0.4.6
 
 - Split structural null sentinels from contextual missingness labels.
