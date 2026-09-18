@@ -39,12 +39,40 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $VenvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path $VenvPython)) {
-    Write-Host "==> Creating .venv with Python $Version"
+
+function Rebuild-Venv {
+    Write-Host "==> Rebuilding .venv with Python $Version"
+    if (Test-Path ".venv") {
+        Remove-Item -Recurse -Force ".venv"
+    }
+
     & $PythonExe @PythonPrefix -m venv .venv
-    if ($LASTEXITCODE -ne 0) { throw "Failed to create .venv." }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python could not create a virtual environment. Install a full Python 3.11+ distribution and retry."
+    }
+
+    & $VenvPython -m pip --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "==> pip is missing from the new environment; bootstrapping it"
+        & $VenvPython -m ensurepip --upgrade
+        if ($LASTEXITCODE -ne 0) {
+            throw "This Python installation does not provide pip/ensurepip. Install a full Python distribution and retry."
+        }
+    }
+
     & $VenvPython -m pip install --upgrade pip
     if ($LASTEXITCODE -ne 0) { throw "Failed to upgrade pip." }
+}
+
+if (-not (Test-Path $VenvPython)) {
+    Rebuild-Venv
+}
+else {
+    & $VenvPython -m pip --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "==> Existing .venv has Python but no working pip"
+        Rebuild-Venv
+    }
 }
 
 $DepsHash = (Get-FileHash "pyproject.toml" -Algorithm SHA256).Hash.ToLower()
