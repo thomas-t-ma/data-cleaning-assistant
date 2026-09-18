@@ -277,5 +277,9 @@ def build_ai_candidates(
         # Deliberately no AI candidate for exact duplicate deletion. Row deletion
         # remains a deterministic finding and explicit human-review action.
 
-    deduped = {candidate.id: candidate for candidate in candidates}
-    return list(deduped.values())
+    deduped = list({candidate.id: candidate for candidate in candidates}.values())
+    for index, candidate in enumerate(deduped, start=1):
+        session_id = f"C{index:03d}"
+        candidate.id = session_id
+        candidate.context.id = session_id
+    return deduped
