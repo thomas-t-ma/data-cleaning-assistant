@@ -12,6 +12,7 @@ from .actions import ActionDecision, ChangeSet, CleaningPlan
 from .ai_context import build_ai_context
 from .ai_planner import propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
+from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
 from .io import load_dataset
 from .planner import file_sha256, propose_actions
@@ -365,6 +366,93 @@ def ai_plan_command(
         context_out.parent.mkdir(parents=True, exist_ok=True)
         context_out.write_text(result.context.model_dump_json(indent=2), encoding="utf-8")
         console.print(f"[green]AI context written to:[/green] {context_out}")
+
+
+@app.command("ai-benchmark")
+def ai_benchmark_command(
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Installed Ollama model to benchmark"),
+    ] = None,
+    runs: Annotated[
+        int,
+        typer.Option(
+            "--runs",
+            min=1,
+            max=10,
+            help="Repeat each synthetic case this many times",
+        ),
+    ] = 1,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write detailed benchmark JSON here"),
+    ] = Path("ai_benchmark.json"),
+    url: Annotated[
+        str | None,
+        typer.Option("--url", help="Ollama base URL; defaults to OLLAMA_HOST or localhost:11434"),
+    ] = None,
+) -> None:
+    """Benchmark a local model on synthetic cleaning cases with hidden answer keys."""
+    provider = OllamaProvider(url)
+    try:
+        selected_model = resolve_model(provider, model)
+    except (AIProviderError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print(
+        f"[green]Benchmarking:[/green] {provider.name} / {selected_model} "
+        f"({runs} run(s) per case)"
+    )
+    summary = run_ai_benchmark(
+        provider=provider,
+        model=selected_model,
+        runs_per_case=runs,
+    )
+
+    case_table = Table(title="AI cleaning benchmark")
+    case_table.add_column("Case")
+    case_table.add_column("Run", justify="right")
+    case_table.add_column("Pass")
+    case_table.add_column("Required", justify="right")
+    case_table.add_column("Accepted", justify="right")
+    case_table.add_column("Unsafe accepted", justify="right")
+    case_table.add_column("Validator rejects", justify="right")
+    case_table.add_column("Seconds", justify="right")
+    for result in summary.results:
+        case_table.add_row(
+            result.case_id,
+            str(result.run_index),
+            "yes" if result.passed else "NO",
+            f"{result.required_hits}/{result.required_total}",
+            str(result.accepted_actions),
+            str(result.forbidden_accepted),
+            str(result.validator_rejections),
+            f"{result.latency_seconds:.2f}",
+        )
+    console.print(case_table)
+
+    metrics = Table(title="Benchmark summary")
+    metrics.add_column("Metric")
+    metrics.add_column("Value", justify="right")
+    metrics.add_row("Case-run pass rate", f"{summary.pass_rate:.1%}")
+    metrics.add_row("Required-action recall", f"{summary.required_recall:.1%}")
+    metrics.add_row("Accepted-action precision", f"{summary.accepted_precision:.1%}")
+    metrics.add_row("Forbidden proposals", str(summary.forbidden_raw_proposals))
+    metrics.add_row("Forbidden accepted", str(summary.forbidden_accepted))
+    if summary.forbidden_validator_catch_rate is not None:
+        metrics.add_row(
+            "Validator catch rate (forbidden)",
+            f"{summary.forbidden_validator_catch_rate:.1%}",
+        )
+    metrics.add_row("All validator rejections", str(summary.validator_rejections))
+    metrics.add_row("Mean latency / case", f"{summary.mean_latency_seconds:.2f}s")
+    console.print(metrics)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+    console.print(f"[green]Detailed benchmark written to:[/green] {output}")
 
 
 @app.command("plan")
