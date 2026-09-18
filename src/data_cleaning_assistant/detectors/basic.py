@@ -8,8 +8,10 @@ from collections import defaultdict
 import pandas as pd
 
 from ..inference import (
+    CONTEXTUAL_MISSING_TOKENS,
     DATE_NAME_PATTERN,
     MISSING_TOKENS,
+    STRUCTURAL_MISSING_TOKENS,
     infer_semantic_type,
     is_missing_like,
     is_null,
@@ -46,6 +48,26 @@ def _hidden_missing(table: str, column: str, series: pd.Series) -> list[Issue]:
     if not affected:
         return []
 
+    structural = {
+        token: count
+        for token, count in counts.items()
+        if normalize_text(token) in STRUCTURAL_MISSING_TOKENS
+    }
+    contextual = {
+        token: count
+        for token, count in counts.items()
+        if normalize_text(token) in CONTEXTUAL_MISSING_TOKENS
+    }
+
+    description = (
+        "One or more textual tokens look like missing values but are not encoded as null."
+    )
+    if contextual:
+        description += (
+            " Contextual labels such as Unknown or Not applicable may be meaningful study states "
+            "and must not be collapsed to null without explicit schema information."
+        )
+
     return [
         Issue(
             id=_id(),
@@ -54,14 +76,19 @@ def _hidden_missing(table: str, column: str, series: pd.Series) -> list[Issue]:
             table=table,
             column=column,
             title="Text values may represent missing data",
-            description=(
-                "One or more textual tokens look like missing values but are not encoded as null."
-            ),
-            confidence=0.97,
+            description=description,
+            confidence=0.97 if structural else 0.75,
             affected_count=affected,
             row_indices_sample=_sample_rows(mask),
-            evidence={"tokens": dict(counts)},
-            suggested_action="Review and optionally normalize these tokens to null.",
+            evidence={
+                "tokens": dict(counts),
+                "structural_tokens": structural,
+                "contextual_tokens": contextual,
+            },
+            suggested_action=(
+                "Normalize only structural null sentinels by default; preserve contextual "
+                "missingness labels unless a study schema explicitly defines them as null."
+            ),
             auto_fix_safe=False,
         )
     ]
