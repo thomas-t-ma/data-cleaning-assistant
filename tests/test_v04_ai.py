@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from data_cleaning_assistant.actions import ActionOrigin, ActionType
+from data_cleaning_assistant.ai_candidates import build_ai_candidates
 from data_cleaning_assistant.ai_context import build_ai_context
 from data_cleaning_assistant.ai_models import AIPlannerResponse
 from data_cleaning_assistant.ai_planner import propose_ai_plan, resolve_model
@@ -53,6 +54,17 @@ def _write_fuzzy_dataset(path: Path) -> None:
     )
 
 
+def _candidate_for(source: Path, action_type: ActionType, column: str):
+    loaded = load_dataset(source)
+    report = profile_dataset(source)
+    candidates = build_ai_candidates(report, loaded.tables)
+    return next(
+        candidate
+        for candidate in candidates
+        if candidate.action.type == action_type and candidate.action.column == column
+    )
+
+
 def test_ai_context_excludes_path_samples_and_identifier_values(tmp_path: Path) -> None:
     source = tmp_path / "secret_study.csv"
     source.write_text(
@@ -63,7 +75,10 @@ def test_ai_context_excludes_path_samples_and_identifier_values(tmp_path: Path) 
         encoding="utf-8",
     )
 
-    context = build_ai_context(profile_dataset(source))
+    loaded = load_dataset(source)
+    report = profile_dataset(source)
+    candidates = build_ai_candidates(report, loaded.tables)
+    context = build_ai_context(report, candidates)
     payload = context.model_dump_json()
 
     assert "secret_study.csv" not in payload
@@ -78,31 +93,36 @@ def test_ai_context_excludes_path_samples_and_identifier_values(tmp_path: Path) 
     assert patient.numeric_summary is None
 
 
-def test_ai_fuzzy_category_merge_survives_validation_and_is_executable(
+def test_candidate_builder_creates_bounded_fuzzy_merge(tmp_path: Path) -> None:
+    source = tmp_path / "study.csv"
+    _write_fuzzy_dataset(source)
+
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, "group")
+
+    assert candidate.id.startswith("C")
+    assert candidate.action.parameters == {"mapping": {"Basline": "Baseline"}}
+    assert candidate.context.table == "study"
+    assert candidate.context.column == "group"
+
+
+def test_ai_selects_candidate_without_authoring_table_column_or_parameters(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "study.csv"
     _write_fuzzy_dataset(source)
-    original = source.read_bytes()
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, "group")
 
     provider = FakeProvider(
         {
-            "summary": "Basline appears to be a typo of Baseline.",
-            "actions": [
+            "summary": "The one-character typo is safe to normalize.",
+            "selections": [
                 {
-                    "type": "normalize_categories",
-                    "table": "study",
-                    "column": "group",
-                    "parameters": {"mapping": {"Basline": "Baseline"}},
-                    "rationale": (
-                        "The profiler identified this exact pair as highly similar, "
-                        "and both labels occur in the same categorical field."
-                    ),
-                    "confidence": 0.91,
-                    "issue_ids": [],
+                    "candidate_id": candidate.id,
+                    "decision": "accept",
+                    "rationale": "Basline is clearly a typo of the more frequent Baseline label.",
+                    "confidence": 0.95,
                 }
             ],
-            "deferred_issue_ids": [],
         }
     )
 
@@ -110,14 +130,15 @@ def test_ai_fuzzy_category_merge_survives_validation_and_is_executable(
         source,
         provider=provider,
         model="fake-model",
-        include_rules=True,
+        include_rules=False,
     )
 
-    assert source.read_bytes() == original
-    ai_actions = [action for action in result.plan.actions if action.origin == ActionOrigin.AI]
-    assert len(ai_actions) == 1
-    assert ai_actions[0].type == ActionType.NORMALIZE_CATEGORIES
-    assert ai_actions[0].parameters == {"mapping": {"Basline": "Baseline"}}
+    assert len(result.plan.actions) == 1
+    action = result.plan.actions[0]
+    assert action.origin == ActionOrigin.AI
+    assert action.table == "study"
+    assert action.column == "group"
+    assert action.parameters == {"mapping": {"Basline": "Baseline"}}
     assert not result.rejected
 
     loaded = load_dataset(source)
@@ -125,7 +146,7 @@ def test_ai_fuzzy_category_merge_survives_validation_and_is_executable(
         source,
         loaded.tables,
         result.plan,
-        approved_ids={ai_actions[0].id},
+        approved_ids={action.id},
     )
     assert cleaned["study"]["group"].tolist() == [
         "Baseline",
@@ -136,63 +157,76 @@ def test_ai_fuzzy_category_merge_survives_validation_and_is_executable(
     assert changeset.affected_cell_count == 1
 
 
-def test_ai_cannot_merge_observed_categories_without_detector_pair(tmp_path: Path) -> None:
-    source = tmp_path / "study.csv"
-    _write_fuzzy_dataset(source)
-    provider = FakeProvider(
-        {
-            "summary": "Attempt an unsupported merge.",
-            "actions": [
-                {
-                    "type": "normalize_categories",
-                    "table": "study",
-                    "column": "group",
-                    "parameters": {"mapping": {"Followup": "Baseline"}},
-                    "rationale": "These look related.",
-                    "confidence": 0.99,
-                    "issue_ids": [],
-                }
-            ],
-            "deferred_issue_ids": [],
-        }
-    )
-
-    result = propose_ai_plan(
-        source,
-        provider=provider,
-        model="fake-model",
-        include_rules=False,
-    )
-
-    assert result.plan.actions == []
-    assert len(result.rejected) == 1
-    assert "not supported by detector candidate pairs" in result.rejected[0].reason
-
-
-def test_ai_cannot_invent_missing_tokens(tmp_path: Path) -> None:
-    source = tmp_path / "missing.csv"
+def test_fuzzy_semantic_difference_can_be_deferred(tmp_path: Path) -> None:
+    source = tmp_path / "stage.csv"
     source.write_text(
-        "patient_id,status\n"
-        "P001,N/A\n"
-        "P002,Active\n"
-        "P003,Inactive\n",
+        "patient_id,stage\n"
+        "P001,Stage II\n"
+        "P002,Stage III\n"
+        "P003,Stage II\n"
+        "P004,Stage III\n",
         encoding="utf-8",
     )
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, "stage")
+
     provider = FakeProvider(
         {
-            "summary": "Attempt to classify a real category as missing.",
-            "actions": [
+            "summary": "The stages are distinct.",
+            "selections": [
                 {
-                    "type": "normalize_missing",
-                    "table": "missing",
-                    "column": "status",
-                    "parameters": {"values": ["Active"]},
-                    "rationale": "Treat Active as missing.",
-                    "confidence": 1.0,
-                    "issue_ids": [],
+                    "candidate_id": candidate.id,
+                    "decision": "defer",
+                    "rationale": "Stage II and Stage III are scientifically distinct.",
+                    "confidence": 0.99,
                 }
             ],
-            "deferred_issue_ids": [],
+        }
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model="fake-model",
+        include_rules=False,
+    )
+
+    assert result.plan.actions == []
+    assert not result.rejected
+
+
+def test_ai_cannot_create_row_deletion_candidate(tmp_path: Path) -> None:
+    source = tmp_path / "duplicates.csv"
+    source.write_text(
+        "patient_id,status\n"
+        "P001,Active\n"
+        "P001,Active\n"
+        "P002,Inactive\n",
+        encoding="utf-8",
+    )
+    loaded = load_dataset(source)
+    report = profile_dataset(source)
+    candidates = build_ai_candidates(report, loaded.tables)
+
+    assert all(
+        candidate.action.type != ActionType.REMOVE_EXACT_DUPLICATES
+        for candidate in candidates
+    )
+
+
+def test_unknown_candidate_id_is_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "study.csv"
+    _write_fuzzy_dataset(source)
+    provider = FakeProvider(
+        {
+            "summary": "Invent an ID.",
+            "selections": [
+                {
+                    "candidate_id": "C999",
+                    "decision": "accept",
+                    "rationale": "Unknown candidate.",
+                    "confidence": 1.0,
+                }
+            ],
         }
     )
 
@@ -205,49 +239,12 @@ def test_ai_cannot_invent_missing_tokens(tmp_path: Path) -> None:
 
     assert result.plan.actions == []
     assert len(result.rejected) == 1
-    assert "only normalize tokens already detected" in result.rejected[0].reason
-
-
-def test_ai_category_cycles_are_rejected(tmp_path: Path) -> None:
-    source = tmp_path / "study.csv"
-    _write_fuzzy_dataset(source)
-    provider = FakeProvider(
-        {
-            "summary": "Attempt a swap.",
-            "actions": [
-                {
-                    "type": "normalize_categories",
-                    "table": "study",
-                    "column": "group",
-                    "parameters": {
-                        "mapping": {
-                            "Basline": "Baseline",
-                            "Baseline": "Basline",
-                        }
-                    },
-                    "rationale": "Swap the two labels.",
-                    "confidence": 0.9,
-                    "issue_ids": [],
-                }
-            ],
-            "deferred_issue_ids": [],
-        }
-    )
-
-    result = propose_ai_plan(
-        source,
-        provider=provider,
-        model="fake-model",
-        include_rules=False,
-    )
-
-    assert result.plan.actions == []
-    assert "cycles or chains" in result.rejected[0].reason
+    assert "unknown candidate ID" in result.rejected[0].reason
 
 
 def test_model_resolution_requires_choice_when_multiple_are_installed() -> None:
     provider = FakeProvider(
-        {"summary": "", "actions": [], "deferred_issue_ids": []},
+        {"summary": "", "selections": []},
         models=["model-a", "model-b"],
     )
     with pytest.raises(ValueError, match="Multiple local models"):
@@ -268,16 +265,15 @@ class StubOllama(OllamaProvider):
             "message": {
                 "content": json.dumps(
                     {
-                        "summary": "No changes.",
-                        "actions": [],
-                        "deferred_issue_ids": [],
+                        "summary": "No candidates accepted.",
+                        "selections": [],
                     }
                 )
             }
         }
 
 
-def test_ollama_provider_sends_json_schema_and_disables_streaming() -> None:
+def test_ollama_provider_sends_json_schema_and_disables_streaming_and_thinking() -> None:
     provider = StubOllama()
     response = provider.generate_structured(
         model="test-model",
@@ -286,7 +282,7 @@ def test_ollama_provider_sends_json_schema_and_disables_streaming() -> None:
         response_model=AIPlannerResponse,
     )
 
-    assert response.summary == "No changes."
+    assert response.summary == "No candidates accepted."
     assert provider.sent is not None
     assert provider.sent["stream"] is False
     assert provider.sent["think"] is False
@@ -294,27 +290,24 @@ def test_ollama_provider_sends_json_schema_and_disables_streaming() -> None:
     assert provider.sent["options"]["temperature"] == 0.1
 
 
-def test_ai_plan_cli_writes_plan_and_exact_context(tmp_path: Path, monkeypatch) -> None:
+def test_ai_plan_cli_writes_candidate_selected_plan(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "study.csv"
     _write_fuzzy_dataset(source)
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, "group")
     output = tmp_path / "ai_plan.json"
     context_out = tmp_path / "ai_context.json"
 
     provider = FakeProvider(
         {
             "summary": "Merge the typo pair.",
-            "actions": [
+            "selections": [
                 {
-                    "type": "normalize_categories",
-                    "table": "study",
-                    "column": "group",
-                    "parameters": {"mapping": {"Basline": "Baseline"}},
+                    "candidate_id": candidate.id,
+                    "decision": "accept",
                     "rationale": "Evidence-supported typo correction.",
                     "confidence": 0.9,
-                    "issue_ids": [],
                 }
             ],
-            "deferred_issue_ids": [],
         }
     )
     monkeypatch.setattr(
@@ -322,8 +315,7 @@ def test_ai_plan_cli_writes_plan_and_exact_context(tmp_path: Path, monkeypatch) 
         lambda url=None, think=False: provider,
     )
 
-    runner = CliRunner()
-    result = runner.invoke(
+    result = CliRunner().invoke(
         app,
         [
             "ai-plan",
@@ -334,85 +326,12 @@ def test_ai_plan_cli_writes_plan_and_exact_context(tmp_path: Path, monkeypatch) 
             str(output),
             "--context-out",
             str(context_out),
+            "--no-rules",
         ],
     )
 
     assert result.exit_code == 0, result.stdout
     assert output.exists()
     assert context_out.exists()
-    assert "AI-assisted plan written" in result.stdout
     assert '"origin": "ai"' in output.read_text(encoding="utf-8")
-
-
-def test_incorrect_model_issue_id_does_not_block_valid_evidence(tmp_path: Path) -> None:
-    source = tmp_path / "study.csv"
-    _write_fuzzy_dataset(source)
-    provider = FakeProvider(
-        {
-            "summary": "Correct the typo.",
-            "actions": [
-                {
-                    "type": "normalize_categories",
-                    "table": "study",
-                    "column": "group",
-                    "parameters": {"mapping": {"Basline": "Baseline"}},
-                    "rationale": "The supplied detector pair supports the correction.",
-                    "confidence": 0.9,
-                    "issue_ids": ["issue_invented_by_model"],
-                }
-            ],
-            "deferred_issue_ids": [],
-        }
-    )
-
-    result = propose_ai_plan(
-        source,
-        provider=provider,
-        model="fake-model",
-        include_rules=False,
-    )
-
-    assert len(result.plan.actions) == 1
-    assert not result.rejected
-    assert "issue_invented_by_model" not in result.plan.actions[0].issue_ids
-    assert result.plan.actions[0].issue_ids
-
-
-def test_ai_row_deletion_is_always_rejected(tmp_path: Path) -> None:
-    source = tmp_path / "duplicates.csv"
-    source.write_text(
-        "patient_id,status\n"
-        "P001,Active\n"
-        "P001,Active\n"
-        "P002,Inactive\n",
-        encoding="utf-8",
-    )
-    provider = FakeProvider(
-        {
-            "summary": "Remove the duplicate.",
-            "actions": [
-                {
-                    "type": "remove_exact_duplicates",
-                    "table": "duplicates",
-                    "column": None,
-                    "parameters": {"keep": "first"},
-                    "rationale": "The rows are exact duplicates.",
-                    "confidence": 1.0,
-                    "issue_ids": [],
-                }
-            ],
-            "deferred_issue_ids": [],
-        }
-    )
-
-    result = propose_ai_plan(
-        source,
-        provider=provider,
-        model="fake-model",
-        include_rules=False,
-    )
-
-    assert result.plan.actions == []
-    assert len(result.rejected) == 1
-    assert "not allowed to propose row deletion" in result.rejected[0].reason
-    assert result.rejected[0].parameters == {"keep": "first"}
+    assert '"id": "C001"' in context_out.read_text(encoding="utf-8")
