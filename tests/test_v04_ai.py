@@ -335,3 +335,36 @@ def test_ai_plan_cli_writes_candidate_selected_plan(tmp_path: Path, monkeypatch)
     assert context_out.exists()
     assert '"origin": "ai"' in output.read_text(encoding="utf-8")
     assert '"id": "C001"' in context_out.read_text(encoding="utf-8")
+
+
+def test_no_candidate_fast_path_does_not_call_provider(tmp_path: Path) -> None:
+    source = tmp_path / "duplicates.csv"
+    source.write_text(
+        "patient_id,status\n"
+        "P001,Active\n"
+        "P001,Active\n"
+        "P002,Inactive\n",
+        encoding="utf-8",
+    )
+
+    class NeverCalledProvider:
+        name = "fake"
+
+        def list_models(self) -> list[str]:
+            return ["fake-model"]
+
+        def generate_structured(self, **kwargs):
+            raise AssertionError("Provider should not be called when there are no AI candidates.")
+
+    result = propose_ai_plan(
+        source,
+        provider=NeverCalledProvider(),
+        model="fake-model",
+        include_rules=False,
+    )
+
+    assert result.candidates == []
+    assert result.plan.actions == []
+    assert result.response.selections == []
+    assert "No AI-review candidates" in result.response.summary
+    assert result.rejected == []
