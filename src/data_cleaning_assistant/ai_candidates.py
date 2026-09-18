@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
@@ -81,6 +82,29 @@ def _counts(series: pd.Series) -> Counter[str]:
     return Counter(str(value) for value in series.tolist())
 
 
+def _zero_padding_equivalent(left: str, right: str) -> bool:
+    """Return True when labels differ only by zero-padding of equal numeric tokens."""
+    left_parts = re.findall(r"\d+|\D+", left.strip().casefold())
+    right_parts = re.findall(r"\d+|\D+", right.strip().casefold())
+    if len(left_parts) != len(right_parts):
+        return False
+
+    saw_padding_difference = False
+    for left_part, right_part in zip(left_parts, right_parts, strict=True):
+        left_is_num = left_part.isdigit()
+        right_is_num = right_part.isdigit()
+        if left_is_num != right_is_num:
+            return False
+        if left_is_num:
+            if int(left_part) != int(right_part):
+                return False
+            if left_part != right_part:
+                saw_padding_difference = True
+        elif left_part != right_part:
+            return False
+    return saw_padding_difference
+
+
 def _canonical_pair(left: str, right: str, counts: Counter[str]) -> tuple[str, str]:
     left_count = counts[left]
     right_count = counts[right]
@@ -155,6 +179,23 @@ def _category_candidates(
             if not left or not right:
                 continue
             variant, canonical = _canonical_pair(left, right, counts)
+            zero_padding = _zero_padding_equivalent(left, right)
+            basis = (
+                "numeric_zero_padding_equivalence"
+                if zero_padding
+                else "fuzzy_similarity_only"
+            )
+            question = (
+                f"Do {left!r} and {right!r} clearly mean the same category? "
+                f"If yes, map {variant!r} to the more likely canonical label {canonical!r}. "
+                "Defer if they could be scientifically distinct."
+            )
+            if zero_padding:
+                question = (
+                    f"{left!r} and {right!r} have identical surrounding text and equal numeric "
+                    "tokens after removing leading zeros. Is this formatting-only difference safe "
+                    f"to normalize by mapping {variant!r} to {canonical!r}?"
+                )
             output.append(
                 _make_candidate(
                     action_type=ActionType.NORMALIZE_CATEGORIES,
@@ -167,13 +208,10 @@ def _category_candidates(
                         "right": right,
                         "similarity": item.get("similarity"),
                         "counts": {left: counts[left], right: counts[right]},
-                        "basis": "fuzzy_similarity_only",
+                        "basis": basis,
+                        "numeric_zero_padding_equivalent": zero_padding,
                     },
-                    question=(
-                        f"Do {left!r} and {right!r} clearly mean the same category? "
-                        f"If yes, map {variant!r} to the more likely canonical label {canonical!r}. "
-                        "Defer if they could be scientifically distinct."
-                    ),
+                    question=question,
                     title="AI-reviewed fuzzy category merge",
                 )
             )
@@ -200,7 +238,10 @@ def build_ai_candidates(
             continue
 
         if issue.type == "hidden_missing_values":
-            values = sorted(str(value) for value in issue.evidence.get("tokens", {}))
+            source = issue.evidence.get("structural_tokens")
+            if source is None:
+                source = issue.evidence.get("tokens", {})
+            values = sorted(str(value) for value in source)
             if values:
                 candidates.append(
                     _make_candidate(
@@ -210,12 +251,17 @@ def build_ai_candidates(
                         parameters={"values": values},
                         issue=issue,
                         evidence={
-                            "tokens": issue.evidence.get("tokens", {}),
-                            "affected_count": issue.affected_count,
+                            "structural_tokens": source,
+                            "contextual_tokens_not_in_candidate": issue.evidence.get(
+                                "contextual_tokens", {}
+                            ),
+                            "affected_count": sum(int(value) for value in source.values()),
+                            "basis": "structural_null_sentinel",
                         },
                         question=(
-                            "Are these detector-confirmed missing-like tokens safe to normalize "
-                            "to true null values for this field?"
+                            "Are these structural null sentinels safe to normalize to true null "
+                            "values for this field? Contextual labels such as Unknown or Not "
+                            "applicable are intentionally excluded from this candidate."
                         ),
                         title="AI-reviewed missing-token normalization",
                     )
