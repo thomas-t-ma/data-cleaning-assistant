@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -82,7 +82,7 @@ class TableProfile(BaseModel):
 class DatasetReport(BaseModel):
     source_path: str
     source_type: str
-    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     tables: list[TableProfile]
     issues: list[Issue]
     relationships: list[CrossTableRelationship] = Field(default_factory=list)
