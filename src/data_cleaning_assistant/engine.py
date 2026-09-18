@@ -6,7 +6,12 @@ from .detectors import detect_basic_issues, detect_fuzzy_categories
 from .io import load_dataset
 from .models import DatasetReport
 from .profiling import profile_table
-from .structure import (\n    infer_candidate_keys,\n    infer_grain,\n    infer_relationships,\n    repeated_entity_issues,\n)
+from .structure import (
+    infer_candidate_keys,
+    infer_grain,
+    infer_relationships,
+    repeated_entity_issues,
+)
 
 
 def profile_dataset(path: str | Path) -> DatasetReport:
