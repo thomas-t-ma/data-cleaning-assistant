@@ -25,7 +25,7 @@ def file_sha256(path: str | Path) -> str:
 def _stable_action_id(
     action_type: ActionType,
     table: str,
-    column: str,
+    column: str | None,
     parameters: dict[str, Any],
 ) -> str:
     payload = json.dumps(
@@ -57,6 +57,8 @@ def _canonical_category(frame: pd.DataFrame, column: str, variants: list[str]) -
 
 
 def _category_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
+    if issue.column is None:
+        return None
     groups = issue.evidence.get("variant_groups", [])
     mapping: dict[str, str] = {}
     for raw_group in groups:
@@ -93,6 +95,8 @@ def _category_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
 
 
 def _missing_action(issue) -> CleaningAction | None:
+    if issue.column is None:
+        return None
     tokens = sorted(str(value) for value in issue.evidence.get("tokens", {}))
     if not tokens:
         return None
@@ -118,7 +122,9 @@ def _missing_action(issue) -> CleaningAction | None:
     )
 
 
-def _date_action(issue) -> CleaningAction:
+def _date_action(issue) -> CleaningAction | None:
+    if issue.column is None:
+        return None
     parameters = {"format": "%Y-%m-%d", "unparseable": "keep"}
     return CleaningAction(
         id=_stable_action_id(
@@ -141,7 +147,7 @@ def _date_action(issue) -> CleaningAction:
 
 
 def _numeric_action(issue) -> CleaningAction | None:
-    if looks_like_identifier_name(issue.column):
+    if issue.column is None or looks_like_identifier_name(issue.column):
         return None
     parameters = {"unparseable": "keep"}
     return CleaningAction(
@@ -164,6 +170,53 @@ def _numeric_action(issue) -> CleaningAction | None:
     )
 
 
+def _trim_action(issue) -> CleaningAction | None:
+    if issue.column is None:
+        return None
+    parameters: dict[str, Any] = {}
+    return CleaningAction(
+        id=_stable_action_id(
+            ActionType.TRIM_WHITESPACE,
+            issue.table,
+            issue.column,
+            parameters,
+        ),
+        type=ActionType.TRIM_WHITESPACE,
+        table=issue.table,
+        column=issue.column,
+        title="Trim surrounding whitespace",
+        description=(
+            "Remove leading and trailing whitespace while leaving internal spacing unchanged."
+        ),
+        parameters=parameters,
+        confidence=issue.confidence,
+        issue_ids=[issue.id],
+    )
+
+
+def _duplicate_action(issue) -> CleaningAction:
+    parameters = {"keep": "first"}
+    return CleaningAction(
+        id=_stable_action_id(
+            ActionType.REMOVE_EXACT_DUPLICATES,
+            issue.table,
+            None,
+            parameters,
+        ),
+        type=ActionType.REMOVE_EXACT_DUPLICATES,
+        table=issue.table,
+        column=None,
+        title="Remove exact duplicate rows",
+        description=(
+            "Keep the first copy of each fully identical row and remove later copies. "
+            "This is never auto-approved because repeated identical rows can be legitimate observations."
+        ),
+        parameters=parameters,
+        confidence=issue.confidence,
+        issue_ids=[issue.id],
+    )
+
+
 def propose_actions(path: str | Path) -> CleaningPlan:
     resolved = Path(path).expanduser().resolve()
     loaded = load_dataset(resolved)
@@ -171,10 +224,11 @@ def propose_actions(path: str | Path) -> CleaningPlan:
     actions: list[CleaningAction] = []
 
     for issue in report.issues:
-        if not issue.column or issue.table not in loaded.tables:
+        if issue.table not in loaded.tables:
             continue
         frame = loaded.tables[issue.table]
         action: CleaningAction | None = None
+
         if issue.type == "category_inconsistency":
             action = _category_action(issue, frame)
         elif issue.type == "hidden_missing_values":
@@ -183,6 +237,10 @@ def propose_actions(path: str | Path) -> CleaningPlan:
             action = _date_action(issue)
         elif issue.type == "mixed_numeric_values":
             action = _numeric_action(issue)
+        elif issue.type == "surrounding_whitespace":
+            action = _trim_action(issue)
+        elif issue.type == "exact_duplicate_rows":
+            action = _duplicate_action(issue)
 
         if action is not None:
             actions.append(action)
