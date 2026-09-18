@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.3**.
+Current version: **v0.4.4**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -29,7 +29,7 @@ Examples of enforced restrictions:
 - outlier deletion and imputation are never exposed as AI candidates
 - fuzzy category candidates test semantic judgment: the model should accept clear typos but defer scientifically distinct labels
 
-The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new.
+The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
 
 ## AI privacy / transparency
 
