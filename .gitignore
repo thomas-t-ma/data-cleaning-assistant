@@ -9,3 +9,14 @@ dist/
 build/
 report.json
 .DS_Store
+
+# Local cleaning/AI working artifacts
+cleaning_plan*.json
+reviewed_plan*.json
+ai_cleaning_plan*.json
+ai_context*.json
+*.audit.json
+*.recipe.yaml
+/cleaned.*
+/replayed.*
+/restored.*
