@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "data-cleaning-assistant-local"
+version = "0.2.0"
+description = "Local-first data profiling and cleaning assistant engine"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Thomas Ma" }]
+dependencies = [
+  "pandas>=2.2",
+  "pyarrow>=15.0",
+  "pydantic>=2.0",
+  "typer>=0.12",
+  "rich>=13.0",
+  "openpyxl>=3.1",
+  "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+data-cleaner = "data_cleaning_assistant.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_cleaning_assistant"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
