@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.5**.
+Current version: **v0.4.6**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -23,11 +23,12 @@ Ollama structured output must still satisfy the Pydantic JSON schema, but table 
 Examples of enforced restrictions:
 
 - category-merge candidates can only use observed detector-supported label pairs
-- missing-value candidates can only contain detector-confirmed missing-like tokens
+- missing-value candidates contain only structural null sentinels; contextual labels such as `Unknown`, `Not available`, and `Not applicable` remain QA findings but are not executable null-normalization candidates without an explicit study schema
 - identifier-like numeric coercion is never exposed as an AI candidate
 - row deletion is never exposed as an AI candidate
 - outlier deletion and imputation are never exposed as AI candidates
 - fuzzy category candidates test semantic judgment: the model should accept clear typos but defer scientifically distinct labels
+- zero-padding variants such as `Visit 01` vs `Visit 1` receive deterministic numeric-equivalence evidence rather than relying on string similarity alone
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
 
@@ -81,7 +82,9 @@ The original regression suite is now called `core`. Structured planning uses Oll
   --output ai_benchmark_core.json
 ```
 
-v0.4.5 adds a harder `research` suite with visit/cohort formatting, specimen labels, censored lab values, dose and unit distinctions, timepoints, treatment arms, and meaningful values such as `Unknown` or `Not applicable` that should sometimes be deferred rather than normalized.
+v0.4.5 adds a harder `research` suite with visit/cohort formatting, specimen labels, censored lab values, dose and unit distinctions, timepoints, treatment arms, and meaningful values such as `Unknown` or `Not applicable`.
+
+v0.4.6 hardens the semantics exposed by that suite: contextual missingness values remain visible QA findings but are removed from the executable candidate surface by default, while numeric zero-padding variants get explicit machine-derived equivalence evidence.
 
 ```bash
 .venv/bin/data-cleaner ai-benchmark \
@@ -110,12 +113,13 @@ The benchmark reports:
 
 - **required-action recall** — how often the model proposes the cleaning action the case requires
 - **accepted-action precision** — how many validator-surviving actions are actually correct
-- **forbidden accepted** — semantically unsafe actions that survived deterministic validation
+- **forbidden accepted** — semantically unsafe model decisions that survived bounded candidate review
+- **unsafe candidates exposed** — actions that should have been blocked by architecture before the model ever saw them
 - **validator catch rate** — forbidden model proposals blocked by the validator
 - **case-run pass rate** — cases with all required actions found and no unexpected accepted actions
 - **latency** — mean local-model time per synthetic case
 
-The safety cases deliberately distinguish two failure modes. Some bad proposals, such as coercing an identifier, should be blocked by deterministic validation. Others, such as merging lexically similar but scientifically distinct categories like `Stage II` and `Stage III`, may be detector-permitted and therefore test the model's actual judgment.
+The safety cases deliberately distinguish two failure modes. Some capabilities, such as row deletion, identifier coercion, or collapsing contextual missingness labels, should not be exposed to the model at all. Others, such as merging lexically similar but scientifically distinct categories like `Stage II` and `Stage III`, are deliberately exposed because they test the model's semantic judgment.
 
 Benchmark JSON is ignored by Git by default so local model-evaluation results are not committed accidentally.
 
