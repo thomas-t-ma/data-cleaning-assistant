@@ -5,7 +5,6 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from data_cleaning_assistant.actions import ActionType
-from data_cleaning_assistant.ai_models import AIPlannerResponse
 from data_cleaning_assistant.benchmark import (
     BenchmarkCase,
     BenchmarkCaseResult,
