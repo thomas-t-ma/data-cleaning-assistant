@@ -245,9 +245,14 @@ def undo_changeset(
 ) -> dict[str, pd.DataFrame]:
     restored = {name: frame.copy(deep=True) for name, frame in tables.items()}
     for execution in reversed(changeset.executions):
-        if execution.table not in restored:
+        if execution.table in restored:
+            frame = restored[execution.table]
+        elif len(restored) == 1:
+            # CSV/Parquet table names derive from the filename, so writing
+            # source.csv -> cleaned.csv changes the internal table key.
+            frame = next(iter(restored.values()))
+        else:
             raise KeyError(f"Unknown table during undo: {execution.table}")
-        frame = restored[execution.table]
         for change in reversed(execution.changes):
             if change.column not in frame.columns:
                 raise KeyError(
