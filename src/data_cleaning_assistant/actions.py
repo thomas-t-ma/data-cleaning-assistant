@@ -13,6 +13,7 @@ class ActionType(str, Enum):
     STANDARDIZE_DATES = "standardize_dates"
     COERCE_NUMERIC = "coerce_numeric"
     TRIM_WHITESPACE = "trim_whitespace"
+    REMOVE_EXACT_DUPLICATES = "remove_exact_duplicates"
 
 
 class ActionDecision(str, Enum):
@@ -25,7 +26,7 @@ class CleaningAction(BaseModel):
     id: str
     type: ActionType
     table: str
-    column: str
+    column: str | None = None
     title: str
     description: str
     parameters: dict[str, Any] = Field(default_factory=dict)
@@ -55,19 +56,27 @@ class CellChange(BaseModel):
     new_value: ValueSnapshot
 
 
+class RowSnapshot(BaseModel):
+    table: str
+    row_position: int
+    values: dict[str, ValueSnapshot] = Field(default_factory=dict)
+
+
 class ActionPreview(BaseModel):
     action_id: str
     affected_count: int
     sample_changes: list[CellChange] = Field(default_factory=list)
+    sample_rows: list[RowSnapshot] = Field(default_factory=list)
 
 
 class ActionExecution(BaseModel):
     action_id: str
     action_type: ActionType
     table: str
-    column: str
+    column: str | None = None
     affected_count: int
     changes: list[CellChange] = Field(default_factory=list)
+    deleted_rows: list[RowSnapshot] = Field(default_factory=list)
 
 
 class ChangeSet(BaseModel):
@@ -80,4 +89,8 @@ class ChangeSet(BaseModel):
 
     @property
     def affected_cell_count(self) -> int:
-        return sum(execution.affected_count for execution in self.executions)
+        return sum(len(execution.changes) for execution in self.executions)
+
+    @property
+    def affected_row_count(self) -> int:
+        return sum(len(execution.deleted_rows) for execution in self.executions)

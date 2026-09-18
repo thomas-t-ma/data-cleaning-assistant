@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
-from copy import deepcopy
+import shutil
+from copy import copy, deepcopy
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from openpyxl import load_workbook
 import pandas as pd
 import yaml
 
@@ -18,6 +20,7 @@ from .actions import (
     ChangeSet,
     CleaningAction,
     CleaningPlan,
+    RowSnapshot,
     ValueSnapshot,
 )
 from .inference import is_missing_like, is_null, parse_date, parse_number
@@ -71,6 +74,15 @@ def _restore(snapshot: ValueSnapshot) -> Any:
     return str(snapshot.value)
 
 
+def _row_snapshot(table: str, frame: pd.DataFrame, row_position: int) -> RowSnapshot:
+    row = frame.iloc[row_position]
+    return RowSnapshot(
+        table=table,
+        row_position=row_position,
+        values={str(column): _snapshot(row[column]) for column in frame.columns},
+    )
+
+
 def _canonical_number(value: float) -> int | float:
     return int(value) if float(value).is_integer() else float(value)
 
@@ -122,7 +134,12 @@ def _new_value(action: CleaningAction, value: Any) -> tuple[bool, Any]:
             return True, number
         return False, value
 
-    raise ValueError(f"Unsupported action type: {action.type}")
+    raise ValueError(f"Unsupported cell action type: {action.type}")
+
+
+def _duplicate_positions(frame: pd.DataFrame) -> list[int]:
+    duplicated = frame.duplicated(keep="first").tolist()
+    return [position for position, matched in enumerate(duplicated) if bool(matched)]
 
 
 def preview_action(
@@ -133,7 +150,19 @@ def preview_action(
     if action.table not in tables:
         raise KeyError(f"Unknown table: {action.table}")
     frame = tables[action.table]
-    if action.column not in frame.columns:
+
+    if action.type == ActionType.REMOVE_EXACT_DUPLICATES:
+        positions = _duplicate_positions(frame)
+        return ActionPreview(
+            action_id=action.id,
+            affected_count=len(positions),
+            sample_rows=[
+                _row_snapshot(action.table, frame, position)
+                for position in positions[:sample_limit]
+            ],
+        )
+
+    if action.column is None or action.column not in frame.columns:
         raise KeyError(f"Unknown column {action.column!r} in table {action.table!r}")
 
     affected = 0
@@ -167,7 +196,23 @@ def apply_action(
     if action.table not in tables:
         raise KeyError(f"Unknown table: {action.table}")
     frame = tables[action.table]
-    if action.column not in frame.columns:
+
+    if action.type == ActionType.REMOVE_EXACT_DUPLICATES:
+        positions = _duplicate_positions(frame)
+        deleted_rows = [_row_snapshot(action.table, frame, position) for position in positions]
+        if positions:
+            keep_mask = [position not in set(positions) for position in range(len(frame))]
+            tables[action.table] = frame.iloc[keep_mask].copy()
+        return ActionExecution(
+            action_id=action.id,
+            action_type=action.type,
+            table=action.table,
+            column=None,
+            affected_count=len(deleted_rows),
+            deleted_rows=deleted_rows,
+        )
+
+    if action.column is None or action.column not in frame.columns:
         raise KeyError(f"Unknown column {action.column!r} in table {action.table!r}")
 
     changes: list[CellChange] = []
@@ -218,9 +263,7 @@ def apply_plan(
     if unknown:
         raise ValueError(f"Unknown action id(s): {', '.join(sorted(unknown))}")
 
-    cleaned = {name: frame.copy(deep=True) for name, frame in tables.items()}
-    executions: list[ActionExecution] = []
-
+    selected: list[CleaningAction] = []
     for action in plan.actions:
         if action.decision == ActionDecision.REJECTED:
             continue
@@ -230,7 +273,18 @@ def apply_plan(
             or action.id in approved_ids
         )
         if approved:
-            executions.append(apply_action(cleaned, action))
+            selected.append(action)
+
+    # Cell edits run before row deletion. This preserves original row positions in
+    # the audit log and makes persisted save/reload/undo deterministic.
+    selected.sort(key=lambda action: action.type == ActionType.REMOVE_EXACT_DUPLICATES)
+
+    cleaned = {name: frame.copy(deep=True) for name, frame in tables.items()}
+    executions = []
+    for action in selected:
+        execution = apply_action(cleaned, action)
+        if execution.affected_count:
+            executions.append(execution)
 
     return cleaned, ChangeSet(
         source_path=str(resolved),
@@ -239,26 +293,58 @@ def apply_plan(
     )
 
 
+def _resolve_table_key(
+    tables: dict[str, pd.DataFrame],
+    expected_table: str,
+) -> str:
+    if expected_table in tables:
+        return expected_table
+    if len(tables) == 1:
+        return next(iter(tables))
+    raise KeyError(f"Unknown table during undo: {expected_table}")
+
+
+def _restore_deleted_rows(
+    frame: pd.DataFrame,
+    deleted_rows: list[RowSnapshot],
+) -> pd.DataFrame:
+    records = frame.to_dict(orient="records")
+    for snapshot in sorted(deleted_rows, key=lambda row: row.row_position):
+        restored_row = {
+            column: _restore(snapshot.values[column])
+            for column in frame.columns
+        }
+        records.insert(snapshot.row_position, restored_row)
+    restored = pd.DataFrame(records, columns=frame.columns)
+    for column, dtype in frame.dtypes.items():
+        try:
+            restored[column] = restored[column].astype(dtype)
+        except (TypeError, ValueError):
+            pass
+    return restored
+
+
 def undo_changeset(
     tables: dict[str, pd.DataFrame],
     changeset: ChangeSet,
 ) -> dict[str, pd.DataFrame]:
     restored = {name: frame.copy(deep=True) for name, frame in tables.items()}
+
     for execution in reversed(changeset.executions):
-        if execution.table in restored:
-            frame = restored[execution.table]
-        elif len(restored) == 1:
-            # CSV/Parquet table names derive from the filename, so writing
-            # source.csv -> cleaned.csv changes the internal table key.
-            frame = next(iter(restored.values()))
-        else:
-            raise KeyError(f"Unknown table during undo: {execution.table}")
+        table_key = _resolve_table_key(restored, execution.table)
+        frame = restored[table_key]
+
+        if execution.deleted_rows:
+            frame = _restore_deleted_rows(frame, execution.deleted_rows)
+            restored[table_key] = frame
+
         for change in reversed(execution.changes):
             if change.column not in frame.columns:
                 raise KeyError(
                     f"Unknown column during undo: {execution.table}.{change.column}"
                 )
             frame.at[change.row_index, change.column] = _restore(change.old_value)
+
     return restored
 
 
@@ -288,11 +374,157 @@ def write_tables(tables: dict[str, pd.DataFrame], output_path: str | Path) -> Pa
     raise ValueError("Output must end in .csv, .xlsx, .xlsm, or .parquet")
 
 
+def _values_equal(left: Any, right: Any) -> bool:
+    if is_null(left) and is_null(right):
+        return True
+    try:
+        return bool(left == right)
+    except (TypeError, ValueError):
+        return repr(left) == repr(right)
+
+
+def _sheet_has_formulas(worksheet) -> bool:
+    return any(
+        cell.data_type == "f"
+        for row in worksheet.iter_rows()
+        for cell in row
+    )
+
+
+def _copy_row_style(worksheet, source_row: int, target_row: int) -> None:
+    if source_row < 1 or source_row > worksheet.max_row:
+        return
+    for column in range(1, worksheet.max_column + 1):
+        source_cell = worksheet.cell(row=source_row, column=column)
+        target_cell = worksheet.cell(row=target_row, column=column)
+        if source_cell.has_style:
+            target_cell._style = copy(source_cell._style)
+        if source_cell.number_format:
+            target_cell.number_format = source_cell.number_format
+    source_dimension = worksheet.row_dimensions[source_row]
+    target_dimension = worksheet.row_dimensions[target_row]
+    target_dimension.height = source_dimension.height
+    target_dimension.hidden = source_dimension.hidden
+
+
+def _write_excel_preserving_source(
+    source_path: Path,
+    original_tables: dict[str, pd.DataFrame],
+    cleaned_tables: dict[str, pd.DataFrame],
+    output: Path,
+    inserted_rows: dict[str, list[RowSnapshot]] | None = None,
+) -> Path:
+    keep_vba = source_path.suffix.lower() == ".xlsm"
+    shutil.copy2(source_path, output)
+    workbook = load_workbook(output, keep_vba=keep_vba, data_only=False)
+
+    for table_name, original in original_tables.items():
+        if table_name not in cleaned_tables or table_name not in workbook.sheetnames:
+            raise ValueError(f"Cannot preserve Excel sheet {table_name!r}: sheet mapping changed.")
+
+        cleaned = cleaned_tables[table_name]
+        worksheet = workbook[table_name]
+        sheet_insertions = (inserted_rows or {}).get(table_name, [])
+
+        if sheet_insertions:
+            if _sheet_has_formulas(worksheet):
+                raise ValueError(
+                    f"Refusing row insertion in sheet {table_name!r} because it contains formulas."
+                )
+            for snapshot in sorted(sheet_insertions, key=lambda row: row.row_position):
+                excel_row = snapshot.row_position + 2
+                worksheet.insert_rows(excel_row, 1)
+                style_source = excel_row - 1 if excel_row > 2 else excel_row + 1
+                _copy_row_style(worksheet, style_source, excel_row)
+
+            # Row reinsertion is used by audit-based undo. The cleaned dataframe is
+            # already the authoritative restored data, and formula-bearing sheets
+            # were rejected above, so rewrite values while retaining cell styles.
+            for output_row, (_, row) in enumerate(cleaned.iterrows(), start=2):
+                for column_number, column in enumerate(cleaned.columns, start=1):
+                    value = row[column]
+                    worksheet.cell(row=output_row, column=column_number).value = (
+                        None if is_null(value) else value
+                    )
+            continue
+
+        cleaned_index = set(cleaned.index)
+        deleted_positions = [
+            position
+            for position, index in enumerate(original.index)
+            if index not in cleaned_index
+        ]
+
+        if deleted_positions and _sheet_has_formulas(worksheet):
+            raise ValueError(
+                f"Refusing row deletion in sheet {table_name!r} because it contains formulas. "
+                "Removing worksheet rows can change formula references. Review the workbook or "
+                "export to CSV/Parquet for row deletion."
+            )
+
+        for position in sorted(deleted_positions, reverse=True):
+            worksheet.delete_rows(position + 2, 1)
+
+        for output_row, original_index in enumerate(cleaned.index, start=2):
+            if original_index not in original.index:
+                raise ValueError(
+                    "Excel preservation currently supports cell edits and audited row reinsertion, "
+                    "not arbitrary inserted rows."
+                )
+            for column_number, column in enumerate(cleaned.columns, start=1):
+                desired = cleaned.at[original_index, column]
+                before = original.at[original_index, column]
+                if _values_equal(before, desired):
+                    continue
+
+                cell = worksheet.cell(row=output_row, column=column_number)
+                if cell.data_type == "f":
+                    raise ValueError(
+                        f"Refusing to overwrite formula cell {table_name}!{cell.coordinate}."
+                    )
+                cell.value = None if is_null(desired) else desired
+
+    workbook.save(output)
+    return output
+
+
+def write_cleaned_dataset(
+    source_path: str | Path,
+    original_tables: dict[str, pd.DataFrame],
+    cleaned_tables: dict[str, pd.DataFrame],
+    output_path: str | Path,
+    *,
+    inserted_rows: dict[str, list[RowSnapshot]] | None = None,
+) -> Path:
+    source = Path(source_path).expanduser().resolve()
+    output = Path(output_path).expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    if source == output:
+        raise ValueError("Refusing to overwrite the source dataset in place.")
+
+    if (
+        source.suffix.lower() in {".xlsx", ".xlsm"}
+        and output.suffix.lower() in {".xlsx", ".xlsm"}
+    ):
+        return _write_excel_preserving_source(
+            source,
+            original_tables,
+            cleaned_tables,
+            output,
+            inserted_rows=inserted_rows,
+        )
+    return write_tables(cleaned_tables, output)
+
+
 def write_recipe(
     plan: CleaningPlan,
     changeset: ChangeSet,
     output_path: str | Path,
 ) -> Path:
+    from .io import load_dataset
+    from .recipe import build_schema_snapshot
+
     output = Path(output_path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     executed = {execution.action_id for execution in changeset.executions}
@@ -306,8 +538,14 @@ def write_recipe(
         for action in plan.actions
         if action.id in executed
     ]
+    source_tables = load_dataset(plan.source_path).tables
+    payload = {
+        "version": 2,
+        "schema": build_schema_snapshot(source_tables),
+        "actions": actions,
+    }
     output.write_text(
-        yaml.safe_dump({"version": 1, "actions": actions}, sort_keys=False),
+        yaml.safe_dump(payload, sort_keys=False),
         encoding="utf-8",
     )
     return output
