@@ -88,6 +88,46 @@ def _constant_column(table: str, column: str, series: pd.Series) -> list[Issue]:
     ]
 
 
+def _surrounding_whitespace(table: str, column: str, series: pd.Series) -> list[Issue]:
+    mask = [
+        isinstance(value, str)
+        and not is_missing_like(value)
+        and value != value.strip()
+        for value in series.tolist()
+    ]
+    affected = sum(mask)
+    if not affected:
+        return []
+
+    examples = []
+    for value, matched in zip(series.tolist(), mask, strict=False):
+        if matched and value not in examples:
+            examples.append(value)
+        if len(examples) >= 10:
+            break
+
+    return [
+        Issue(
+            id=_id(),
+            type="surrounding_whitespace",
+            severity=Severity.LOW,
+            table=table,
+            column=column,
+            title="Values contain leading or trailing whitespace",
+            description=(
+                "Some text values contain surrounding whitespace. Trimming can improve exact matching "
+                "without changing internal spaces."
+            ),
+            confidence=0.99,
+            affected_count=affected,
+            row_indices_sample=_sample_rows(mask),
+            evidence={"examples": examples},
+            suggested_action="Review and trim surrounding whitespace.",
+            auto_fix_safe=False,
+        )
+    ]
+
+
 def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue]:
     non_null = [value for value in series.tolist() if not is_missing_like(value)]
     if not non_null:
@@ -350,6 +390,7 @@ def detect_basic_issues(table: str, frame: pd.DataFrame) -> list[Issue]:
         issues.extend(_hidden_missing(table, column, series))
         issues.extend(_constant_column(table, column, series))
         issues.extend(_category_variants(table, column, series))
+        issues.extend(_surrounding_whitespace(table, column, series))
         issues.extend(_mixed_numeric(table, column, series))
         issues.extend(_date_consistency(table, column, series))
         issues.extend(_identifier_hint(table, column, series))
