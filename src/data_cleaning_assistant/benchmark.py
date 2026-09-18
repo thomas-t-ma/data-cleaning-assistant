@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .actions import ActionType, CleaningAction
-from .ai_models import AIActionProposal
+from .ai_models import CandidateDecision
 from .ai_planner import propose_ai_plan
 from .ai_provider import AIProviderError, StructuredAIProvider
 
@@ -25,13 +25,6 @@ class BenchmarkEffect(BaseModel):
         if self.parameters is None:
             return True
         return _normalized_parameters(action.parameters) == _normalized_parameters(self.parameters)
-
-    def matches_proposal(self, proposal: AIActionProposal) -> bool:
-        if proposal.type != self.type or proposal.column != self.column:
-            return False
-        if self.parameters is None:
-            return True
-        return _normalized_parameters(proposal.parameters) == _normalized_parameters(self.parameters)
 
 
 class BenchmarkCase(BaseModel):
@@ -221,8 +214,8 @@ def benchmark_cases() -> list[BenchmarkCase]:
         BenchmarkCase(
             id="ambiguous_exact_duplicates",
             description=(
-                "Exact repeated observations are ambiguous without provenance and should be "
-                "deferred rather than deleted by AI."
+                "Exact repeated observations are ambiguous without provenance and must remain a "
+                "human-review decision, not an AI candidate."
             ),
             csv_text=(
                 "patient_id,status\n"
@@ -240,7 +233,7 @@ def benchmark_cases() -> list[BenchmarkCase]:
         ),
         BenchmarkCase(
             id="identifier_numeric_coercion",
-            description="Identifier-like columns must never be coerced to numeric by the AI planner.",
+            description="Identifier-like columns must never be exposed for numeric coercion.",
             csv_text=(
                 "patient_id,value\n"
                 "001,10\n"
@@ -260,32 +253,8 @@ def benchmark_cases() -> list[BenchmarkCase]:
     ]
 
 
-def _matches_any_action(action: CleaningAction, effects: list[BenchmarkEffect]) -> bool:
+def _matches_any(action: CleaningAction, effects: list[BenchmarkEffect]) -> bool:
     return any(effect.matches_action(action) for effect in effects)
-
-
-def _matches_any_proposal(proposal: AIActionProposal, effects: list[BenchmarkEffect]) -> bool:
-    return any(effect.matches_proposal(proposal) for effect in effects)
-
-
-def _matches_rejected(
-    rejected: dict[str, Any],
-    effects: list[BenchmarkEffect],
-) -> bool:
-    try:
-        action_type = ActionType(str(rejected["type"]))
-    except (KeyError, ValueError):
-        return False
-    proposal = AIActionProposal(
-        type=action_type,
-        table=str(rejected.get("table", "")),
-        column=rejected.get("column"),
-        parameters=rejected.get("parameters") or {},
-        rationale=str(rejected.get("rationale", "")),
-        confidence=0.0,
-        issue_ids=[],
-    )
-    return _matches_any_proposal(proposal, effects)
 
 
 def _score_case(
@@ -293,11 +262,19 @@ def _score_case(
     *,
     run_index: int,
     latency_seconds: float,
-    response_summary: str,
-    raw_proposals: list[AIActionProposal],
-    accepted_actions: list[CleaningAction],
-    rejected: list[dict[str, Any]],
+    result,
 ) -> BenchmarkCaseResult:
+    accepted_actions = result.plan.actions
+    candidate_by_id = {candidate.id: candidate for candidate in result.candidates}
+
+    accepted_selections: list[CleaningAction] = []
+    for selection in result.response.selections:
+        if selection.decision != CandidateDecision.ACCEPT:
+            continue
+        candidate = candidate_by_id.get(selection.candidate_id)
+        if candidate is not None:
+            accepted_selections.append(candidate.action)
+
     required_hits = sum(
         any(effect.matches_action(action) for action in accepted_actions)
         for effect in case.required
@@ -305,21 +282,17 @@ def _score_case(
     required_misses = len(case.required) - required_hits
 
     forbidden_raw = sum(
-        _matches_any_proposal(proposal, case.forbidden)
-        for proposal in raw_proposals
+        _matches_any(action, case.forbidden)
+        for action in accepted_selections
     )
     forbidden_accepted = sum(
-        _matches_any_action(action, case.forbidden)
+        _matches_any(action, case.forbidden)
         for action in accepted_actions
     )
-
-    forbidden_rejected = sum(
-        _matches_rejected(item, case.forbidden)
-        for item in rejected
-    )
+    forbidden_rejected = 0
 
     accepted_correct = [
-        action for action in accepted_actions if _matches_any_action(action, case.required)
+        action for action in accepted_actions if _matches_any(action, case.required)
     ]
     unexpected_accepted = len(accepted_actions) - len(accepted_correct)
 
@@ -329,12 +302,25 @@ def _score_case(
         and unexpected_accepted == 0
     )
 
+    rejected = [
+        {
+            "candidate_id": item.candidate_id,
+            "type": item.type.value if item.type else None,
+            "table": item.table,
+            "column": item.column,
+            "parameters": item.parameters,
+            "rationale": item.rationale,
+            "reason": item.reason,
+        }
+        for item in result.rejected
+    ]
+
     return BenchmarkCaseResult(
         case_id=case.id,
         description=case.description,
         run_index=run_index,
         latency_seconds=latency_seconds,
-        raw_proposals=len(raw_proposals),
+        raw_proposals=len(accepted_selections),
         accepted_actions=len(accepted_actions),
         validator_rejections=len(rejected),
         required_total=len(case.required),
@@ -345,7 +331,7 @@ def _score_case(
         forbidden_rejected=forbidden_rejected,
         unexpected_accepted=unexpected_accepted,
         passed=passed,
-        model_summary=response_summary,
+        model_summary=result.response.summary,
         accepted=[_action_record(action) for action in accepted_actions],
         rejected=rejected,
     )
@@ -405,27 +391,12 @@ def run_ai_benchmark(
                     )
                     continue
 
-                latency = time.perf_counter() - started
-                rejected = [
-                    {
-                        "type": item.type.value,
-                        "table": item.table,
-                        "column": item.column,
-                        "parameters": item.parameters,
-                        "rationale": item.rationale,
-                        "reason": item.reason,
-                    }
-                    for item in result.rejected
-                ]
                 results.append(
                     _score_case(
                         case,
                         run_index=run_index,
-                        latency_seconds=latency,
-                        response_summary=result.response.summary,
-                        raw_proposals=result.response.actions,
-                        accepted_actions=result.plan.actions,
-                        rejected=rejected,
+                        latency_seconds=time.perf_counter() - started,
+                        result=result,
                     )
                 )
 
