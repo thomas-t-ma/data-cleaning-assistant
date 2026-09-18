@@ -6,8 +6,19 @@ from collections import Counter
 
 import pandas as pd
 
-from .inference import (\n    is_missing_like,\n    looks_like_identifier_name,\n    normalize_column_name,\n    normalize_text,\n)
-from .models import (\n    CandidateKey,\n    CrossTableRelationship,\n    GrainInference,\n    Issue,\n    Severity,\n)
+from .inference import (
+    is_missing_like,
+    looks_like_identifier_name,
+    normalize_column_name,
+    normalize_text,
+)
+from .models import (
+    CandidateKey,
+    CrossTableRelationship,
+    GrainInference,
+    Issue,
+    Severity,
+)
 
 
 SUBJECT_PATTERNS = ("patient", "subject", "participant", "person", "mrn")

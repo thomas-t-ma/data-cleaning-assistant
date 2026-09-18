@@ -8,7 +8,17 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from .actions import ActionDecision, ChangeSet, CleaningPlan
 from .engine import profile_dataset
+from .io import load_dataset
+from .planner import file_sha256, propose_actions
+from .transforms import (
+    apply_plan,
+    preview_action,
+    undo_changeset,
+    write_recipe,
+    write_tables,
+)
 
 app = typer.Typer(
     name="data-cleaner",
@@ -87,6 +97,35 @@ def _print_summary(report) -> None:
         console.print("[green]No issues detected by the current rule set.[/green]")
 
 
+def _print_plan(plan: CleaningPlan) -> None:
+    table = Table(title="Proposed cleaning actions")
+    table.add_column("Action ID")
+    table.add_column("Type")
+    table.add_column("Table")
+    table.add_column("Column")
+    table.add_column("Confidence", justify="right")
+    table.add_column("Decision")
+    table.add_column("Description")
+    for action in plan.actions:
+        table.add_row(
+            action.id,
+            action.type.value,
+            action.table,
+            action.column,
+            f"{action.confidence:.0%}",
+            action.decision.value,
+            action.title,
+        )
+    console.print(table)
+    console.print(
+        "\n[dim]No action is applied until it is explicitly approved.[/dim]"
+    )
+
+
+def _load_plan(path: Path) -> CleaningPlan:
+    return CleaningPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
 @app.command()
 def profile(
     input_path: Annotated[Path, typer.Argument(help="CSV, XLSX/XLSM, or Parquet file to profile")],
@@ -107,6 +146,152 @@ def profile(
             encoding="utf-8",
         )
         console.print(f"\n[green]Report written to:[/green] {output}")
+
+
+@app.command("plan")
+def plan_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Path for the proposed cleaning plan JSON"),
+    ] = Path("cleaning_plan.json"),
+) -> None:
+    """Generate reviewable cleaning actions without changing the dataset."""
+    plan = propose_actions(input_path)
+    _print_plan(plan)
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+    console.print(f"\n[green]Plan written to:[/green] {output}")
+
+
+@app.command("preview")
+def preview_command(
+    input_path: Annotated[Path, typer.Argument(help="Original dataset")],
+    plan_path: Annotated[Path, typer.Argument(help="Cleaning plan JSON")],
+    sample: Annotated[
+        int,
+        typer.Option("--sample", min=1, max=50, help="Maximum changed cells shown per action"),
+    ] = 8,
+) -> None:
+    """Preview proposed changes without modifying the dataset."""
+    plan = _load_plan(plan_path)
+    if file_sha256(input_path) != plan.source_sha256:
+        raise typer.BadParameter(
+            "The input file changed after the plan was created. Generate a new plan."
+        )
+    tables = load_dataset(input_path).tables
+    _print_plan(plan)
+
+    for action in plan.actions:
+        preview = preview_action(tables, action, sample_limit=sample)
+        table = Table(
+            title=f"{action.id}: {action.title} — {preview.affected_count} cell(s)"
+        )
+        table.add_column("Row", justify="right")
+        table.add_column("Before")
+        table.add_column("After")
+        for change in preview.sample_changes:
+            table.add_row(
+                str(change.row_index),
+                repr(change.old_value.value),
+                repr(change.new_value.value),
+            )
+        console.print(table)
+
+
+@app.command("apply")
+def apply_command(
+    input_path: Annotated[Path, typer.Argument(help="Original dataset")],
+    plan_path: Annotated[Path, typer.Argument(help="Cleaning plan JSON")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="New cleaned dataset path"),
+    ],
+    approve: Annotated[
+        list[str] | None,
+        typer.Option("--approve", help="Approve one action ID; repeat for multiple actions"),
+    ] = None,
+    approve_all: Annotated[
+        bool,
+        typer.Option("--approve-all", help="Explicitly approve every non-rejected action"),
+    ] = False,
+    audit: Annotated[
+        Path | None,
+        typer.Option("--audit", help="Audit-log JSON path"),
+    ] = None,
+    recipe: Annotated[
+        Path | None,
+        typer.Option("--recipe", help="Reproducible recipe YAML path"),
+    ] = None,
+) -> None:
+    """Apply explicitly approved actions to a new output file."""
+    plan = _load_plan(plan_path)
+    preapproved = any(
+        action.decision == ActionDecision.APPROVED for action in plan.actions
+    )
+    if not approve_all and not approve and not preapproved:
+        raise typer.BadParameter(
+            "No actions are approved. Use --approve ACTION_ID, --approve-all, "
+            'or set an action decision to "approved" in the plan.'
+        )
+
+    loaded = load_dataset(input_path)
+    cleaned, changeset = apply_plan(
+        input_path,
+        loaded.tables,
+        plan,
+        approved_ids=set(approve or []),
+        approve_all=approve_all,
+    )
+    if not changeset.executions:
+        raise typer.BadParameter("The selected approvals produced no executable actions.")
+
+    output = write_tables(cleaned, output)
+    changeset.result_path = str(output)
+    changeset.result_sha256 = file_sha256(output)
+
+    audit_path = (
+        audit.expanduser().resolve()
+        if audit
+        else output.with_name(f"{output.name}.audit.json")
+    )
+    recipe_path = (
+        recipe.expanduser().resolve()
+        if recipe
+        else output.with_name(f"{output.name}.recipe.yaml")
+    )
+    audit_path.write_text(changeset.model_dump_json(indent=2), encoding="utf-8")
+    write_recipe(plan, changeset, recipe_path)
+
+    console.print(f"[green]Cleaned dataset:[/green] {output}")
+    console.print(f"[green]Audit log:[/green] {audit_path}")
+    console.print(f"[green]Recipe:[/green] {recipe_path}")
+    console.print(
+        f"[bold]{changeset.affected_cell_count:,}[/bold] cell change(s) "
+        f"across [bold]{len(changeset.executions)}[/bold] action(s)."
+    )
+
+
+@app.command("undo")
+def undo_command(
+    cleaned_path: Annotated[Path, typer.Argument(help="Cleaned dataset")],
+    audit_path: Annotated[Path, typer.Argument(help="Audit-log JSON")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Path for the restored dataset"),
+    ],
+) -> None:
+    """Reverse an applied ChangeSet into a new file."""
+    changeset = ChangeSet.model_validate_json(audit_path.read_text(encoding="utf-8"))
+    if changeset.result_sha256 and file_sha256(cleaned_path) != changeset.result_sha256:
+        raise typer.BadParameter(
+            "The cleaned dataset no longer matches this audit log; refusing to undo."
+        )
+    tables = load_dataset(cleaned_path).tables
+    restored = undo_changeset(tables, changeset)
+    restored_path = write_tables(restored, output)
+    console.print(f"[green]Restored dataset:[/green] {restored_path}")
 
 
 if __name__ == "__main__":
