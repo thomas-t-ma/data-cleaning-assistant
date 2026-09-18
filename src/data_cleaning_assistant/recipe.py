@@ -39,7 +39,7 @@ class RecipeCompatibilityReport(BaseModel):
 def load_recipe(path: str | Path) -> CleaningRecipe:
     payload = yaml.safe_load(Path(path).expanduser().resolve().read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError("Recipe must contain a YAML mapping.")
+        raise TypeError("Recipe must contain a YAML mapping.")
     return CleaningRecipe.model_validate(payload)
 
 
