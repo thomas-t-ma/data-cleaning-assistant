@@ -1,19 +1,21 @@
 # Roadmap
 
-## v0.4.0 — local AI planner (current)
+## v0.4.1 — AI benchmark (current)
 
-- Privacy-minimized structured profiler context.
-- Exact AI-context inspection/export.
-- Ollama provider using structured JSON-schema output.
-- Hybrid deterministic + AI planning.
-- Deterministic validation of all AI mutations.
-- Evidence-gated fuzzy category merging.
-- Action-origin tracking.
-- No unrestricted dataframe access for the model.
+- Fixed synthetic cleaning corpus with hidden answer keys.
+- AI-only scoring so deterministic rules do not inflate model performance.
+- Required-action recall.
+- Accepted-action precision.
+- Forbidden-action acceptance counts.
+- Deterministic validator catch-rate measurement.
+- Semantically distinct fuzzy-category safety stress tests.
+- Repeatable local-model latency measurement.
+- Detailed JSON benchmark artifacts for model comparisons.
 
 ### v0.4.x evaluation and provider hardening
 
-- Benchmark several small local models on a fixed synthetic cleaning corpus.
+- Run the benchmark repeatedly on qwen3.5:4b and at least one larger local model.
+- Add more research-specific ambiguity cases and multi-table benchmark fixtures.
 - Add prompt/provider regression fixtures.
 - Add explicit context-size/token budgeting for very wide workbooks.
 - Add user-configurable redaction policies for category/evidence values.
@@ -28,6 +30,7 @@
 - Side-by-side change previews.
 - Accept/reject/modify controls.
 - Schema-drift views.
+- Benchmark/model settings.
 - Audit and recipe export from the UI.
 
 ## Research-mode expansion
