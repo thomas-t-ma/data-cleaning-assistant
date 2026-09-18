@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.4**.
+Current version: **v0.4.5**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -54,7 +54,7 @@ Detector evidence may still include category labels, missing-value tokens, malfo
 
 Ollama is intentionally not installed or started by this project. Install it separately, then pull whichever local model you want to use.
 
-A modest starting example:
+The current recommended local baseline is `qwen3.5:4b`. On the fixed core suite it completed 24/24 case-runs with 100% required-action recall, 100% accepted-action precision, zero unsafe accepts, and zero validator rejections.
 
 ```bash
 ollama pull qwen3.5:4b
@@ -72,13 +72,25 @@ If exactly one model is installed, `ai-plan` can select it automatically. If mul
 
 v0.4.1 includes a fixed synthetic benchmark with hidden answer keys. The model sees only the same privacy-minimized profiler context used by normal AI planning; it never sees the benchmark description or expected actions.
 
-Run the benchmark against the installed local model. Structured planning uses Ollama with thinking disabled by default for lower latency:
+The original regression suite is now called `core`. Structured planning uses Ollama with thinking disabled by default for lower latency:
 
 ```bash
 .venv/bin/data-cleaner ai-benchmark \
+  --suite core \
   --model qwen3.5:4b \
-  --output ai_benchmark.json
+  --output ai_benchmark_core.json
 ```
+
+v0.4.5 adds a harder `research` suite with visit/cohort formatting, specimen labels, censored lab values, dose and unit distinctions, timepoints, treatment arms, and meaningful values such as `Unknown` or `Not applicable` that should sometimes be deferred rather than normalized.
+
+```bash
+.venv/bin/data-cleaner ai-benchmark \
+  --suite research \
+  --model qwen3.5:4b \
+  --output ai_benchmark_research.json
+```
+
+Use `--suite all` to run both suites together.
 
 Use `--think` if you explicitly want to compare the model's thinking mode.
 
@@ -86,9 +98,10 @@ For a more stable estimate, repeat every case three times:
 
 ```bash
 .venv/bin/data-cleaner ai-benchmark \
+  --suite research \
   --model qwen3.5:4b \
   --runs 3 \
-  --output ai_benchmark_qwen35_4b.json
+  --output ai_benchmark_research_qwen35_4b.json
 ```
 
 Failed cases print the model summary, accepted actions, and any candidate-ID validation problems directly in the terminal. Under v0.4.3, normal failures should mostly reflect semantic accept/defer judgment rather than malformed action fields.
