@@ -151,6 +151,16 @@ def _schema_drift(
     for source_table, source_schema in recipe.schema_.items():
         mapped_table = mapping.get(source_table)
         if mapped_table is None or mapped_table not in target_snapshot:
+            drift.append(
+                SchemaDrift(
+                    severity="warning",
+                    kind="missing_table",
+                    table=source_table,
+                    message=(
+                        f"Baseline table {source_table!r} is absent from the target dataset."
+                    ),
+                )
+            )
             continue
         target_schema = TableSchema.model_validate(target_snapshot[mapped_table])
 
@@ -263,6 +273,17 @@ def _schema_drift(
                         ),
                     )
                 )
+
+    mapped_targets = set(mapping.values())
+    for target_table in sorted(set(target_snapshot) - mapped_targets):
+        drift.append(
+            SchemaDrift(
+                severity="info",
+                kind="new_table",
+                table=target_table,
+                message=f"New table {target_table!r} was not present when the recipe was created.",
+            )
+        )
 
     return drift
 
