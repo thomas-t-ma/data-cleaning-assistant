@@ -35,10 +35,33 @@ if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,
   exit 1
 fi
 
-if [[ ! -x .venv/bin/python ]]; then
-  echo "==> Creating .venv with $PYTHON_BIN ($PY_VERSION)"
-  "$PYTHON_BIN" -m venv .venv
+rebuild_venv() {
+  echo "==> Rebuilding .venv with $PYTHON_BIN ($PY_VERSION)"
+  rm -rf .venv
+
+  if ! "$PYTHON_BIN" -m venv .venv; then
+    echo "ERROR: Python could not create a virtual environment." >&2
+    echo "Install a full Python 3.11+ distribution, then run bash sync.sh again." >&2
+    exit 1
+  fi
+
+  if ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
+    echo "==> pip is missing from the new environment; bootstrapping it"
+    if ! .venv/bin/python -m ensurepip --upgrade; then
+      echo "ERROR: This Python installation does not provide pip/ensurepip." >&2
+      echo "On macOS, install a full Python build (for example: brew install python)." >&2
+      exit 1
+    fi
+  fi
+
   .venv/bin/python -m pip install --upgrade pip
+}
+
+if [[ ! -x .venv/bin/python ]]; then
+  rebuild_venv
+elif ! .venv/bin/python -m pip --version >/dev/null 2>&1; then
+  echo "==> Existing .venv has Python but no working pip"
+  rebuild_venv
 fi
 
 if command -v shasum >/dev/null 2>&1; then
