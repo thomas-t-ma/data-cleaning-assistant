@@ -309,6 +309,13 @@ def ai_plan_command(
         str | None,
         typer.Option("--url", help="Ollama base URL; defaults to OLLAMA_HOST or localhost:11434"),
     ] = None,
+    think: Annotated[
+        bool,
+        typer.Option(
+            "--think/--no-think",
+            help="Enable Ollama thinking mode; disabled by default for structured planning",
+        ),
+    ] = False,
     rules: Annotated[
         bool,
         typer.Option(
@@ -322,7 +329,7 @@ def ai_plan_command(
     ] = None,
 ) -> None:
     """Generate a reviewable local-AI-assisted plan without modifying data."""
-    provider = OllamaProvider(url)
+    provider = OllamaProvider(url, think=think)
     try:
         selected_model = resolve_model(provider, model)
         result = propose_ai_plan(
@@ -391,9 +398,16 @@ def ai_benchmark_command(
         str | None,
         typer.Option("--url", help="Ollama base URL; defaults to OLLAMA_HOST or localhost:11434"),
     ] = None,
+    think: Annotated[
+        bool,
+        typer.Option(
+            "--think/--no-think",
+            help="Enable Ollama thinking mode during the benchmark",
+        ),
+    ] = False,
 ) -> None:
     """Benchmark a local model on synthetic cleaning cases with hidden answer keys."""
-    provider = OllamaProvider(url)
+    provider = OllamaProvider(url, think=think)
     try:
         selected_model = resolve_model(provider, model)
     except (AIProviderError, ValueError) as exc:
@@ -402,7 +416,7 @@ def ai_benchmark_command(
 
     console.print(
         f"[green]Benchmarking:[/green] {provider.name} / {selected_model} "
-        f"({runs} run(s) per case)"
+        f"({runs} run(s) per case; thinking={'on' if think else 'off'})"
     )
     summary = run_ai_benchmark(
         provider=provider,
@@ -431,6 +445,30 @@ def ai_benchmark_command(
             f"{result.latency_seconds:.2f}",
         )
     console.print(case_table)
+
+    failed = [result for result in summary.results if not result.passed]
+    if failed:
+        detail_table = Table(title="Failed-case diagnostics")
+        detail_table.add_column("Case")
+        detail_table.add_column("Model summary")
+        detail_table.add_column("Accepted")
+        detail_table.add_column("Rejected by validator")
+        for result in failed:
+            accepted_text = "; ".join(
+                f"{item.get('type')}:{item.get('column') or 'table'} {item.get('parameters')}"
+                for item in result.accepted
+            ) or "—"
+            rejected_text = "; ".join(
+                f"{item.get('type')}:{item.get('column') or 'table'} — {item.get('reason')}"
+                for item in result.rejected
+            ) or "—"
+            detail_table.add_row(
+                result.case_id,
+                result.model_summary or result.error or "—",
+                accepted_text,
+                rejected_text,
+            )
+        console.print(detail_table)
 
     metrics = Table(title="Benchmark summary")
     metrics.add_column("Metric")

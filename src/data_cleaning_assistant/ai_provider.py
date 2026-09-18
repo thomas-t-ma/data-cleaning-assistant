@@ -41,12 +41,14 @@ class OllamaProvider:
         base_url: str | None = None,
         *,
         timeout_seconds: float = 180.0,
+        think: bool = False,
     ) -> None:
         configured = base_url or os.getenv("OLLAMA_HOST") or "http://localhost:11434"
         if "://" not in configured:
             configured = f"http://{configured}"
         self.base_url = configured.rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.think = think
 
     def _request(
         self,
@@ -120,6 +122,7 @@ class OllamaProvider:
                     {"role": "user", "content": user_prompt},
                 ],
                 "stream": False,
+                "think": self.think,
                 "format": response_model.model_json_schema(),
                 "options": {"temperature": 0.1},
             },

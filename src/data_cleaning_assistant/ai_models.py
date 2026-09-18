@@ -78,4 +78,6 @@ class AIRejectedProposal(BaseModel):
     type: ActionType
     table: str
     column: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    rationale: str = ""
     reason: str

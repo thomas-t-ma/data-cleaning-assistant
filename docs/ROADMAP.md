@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.1 — AI benchmark (current)
+## v0.4.2 — AI hardening (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -11,6 +11,10 @@
 - Semantically distinct fuzzy-category safety stress tests.
 - Repeatable local-model latency measurement.
 - Detailed JSON benchmark artifacts for model comparisons.
+- Soft issue-ID provenance backed by independent local evidence matching.
+- No AI row-deletion authority.
+- Exact rejected-proposal diagnostics and validator catch accounting.
+- Non-thinking Ollama mode by default for structured planning, with opt-in `--think`.
 
 ### v0.4.x evaluation and provider hardening
 

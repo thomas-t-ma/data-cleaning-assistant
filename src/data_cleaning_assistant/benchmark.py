@@ -268,6 +268,26 @@ def _matches_any_proposal(proposal: AIActionProposal, effects: list[BenchmarkEff
     return any(effect.matches_proposal(proposal) for effect in effects)
 
 
+def _matches_rejected(
+    rejected: dict[str, Any],
+    effects: list[BenchmarkEffect],
+) -> bool:
+    try:
+        action_type = ActionType(str(rejected["type"]))
+    except (KeyError, ValueError):
+        return False
+    proposal = AIActionProposal(
+        type=action_type,
+        table=str(rejected.get("table", "")),
+        column=rejected.get("column"),
+        parameters=rejected.get("parameters") or {},
+        rationale=str(rejected.get("rationale", "")),
+        confidence=0.0,
+        issue_ids=[],
+    )
+    return _matches_any_proposal(proposal, effects)
+
+
 def _score_case(
     case: BenchmarkCase,
     *,
@@ -293,9 +313,10 @@ def _score_case(
         for action in accepted_actions
     )
 
-    # Rejected proposal records do not retain parameters, so count a forbidden raw proposal as
-    # validator-caught when no matching forbidden action survived validation.
-    forbidden_rejected = max(forbidden_raw - forbidden_accepted, 0)
+    forbidden_rejected = sum(
+        _matches_rejected(item, case.forbidden)
+        for item in rejected
+    )
 
     accepted_correct = [
         action for action in accepted_actions if _matches_any_action(action, case.required)
@@ -388,7 +409,10 @@ def run_ai_benchmark(
                 rejected = [
                     {
                         "type": item.type.value,
+                        "table": item.table,
                         "column": item.column,
+                        "parameters": item.parameters,
+                        "rationale": item.rationale,
                         "reason": item.reason,
                     }
                     for item in result.rejected

@@ -289,6 +289,7 @@ def test_ollama_provider_sends_json_schema_and_disables_streaming() -> None:
     assert response.summary == "No changes."
     assert provider.sent is not None
     assert provider.sent["stream"] is False
+    assert provider.sent["think"] is False
     assert provider.sent["format"]["type"] == "object"
     assert provider.sent["options"]["temperature"] == 0.1
 
@@ -318,7 +319,7 @@ def test_ai_plan_cli_writes_plan_and_exact_context(tmp_path: Path, monkeypatch) 
     )
     monkeypatch.setattr(
         "data_cleaning_assistant.cli.OllamaProvider",
-        lambda url=None: provider,
+        lambda url=None, think=False: provider,
     )
 
     runner = CliRunner()
@@ -341,3 +342,77 @@ def test_ai_plan_cli_writes_plan_and_exact_context(tmp_path: Path, monkeypatch) 
     assert context_out.exists()
     assert "AI-assisted plan written" in result.stdout
     assert '"origin": "ai"' in output.read_text(encoding="utf-8")
+
+
+def test_incorrect_model_issue_id_does_not_block_valid_evidence(tmp_path: Path) -> None:
+    source = tmp_path / "study.csv"
+    _write_fuzzy_dataset(source)
+    provider = FakeProvider(
+        {
+            "summary": "Correct the typo.",
+            "actions": [
+                {
+                    "type": "normalize_categories",
+                    "table": "study",
+                    "column": "group",
+                    "parameters": {"mapping": {"Basline": "Baseline"}},
+                    "rationale": "The supplied detector pair supports the correction.",
+                    "confidence": 0.9,
+                    "issue_ids": ["issue_invented_by_model"],
+                }
+            ],
+            "deferred_issue_ids": [],
+        }
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model="fake-model",
+        include_rules=False,
+    )
+
+    assert len(result.plan.actions) == 1
+    assert not result.rejected
+    assert "issue_invented_by_model" not in result.plan.actions[0].issue_ids
+    assert result.plan.actions[0].issue_ids
+
+
+def test_ai_row_deletion_is_always_rejected(tmp_path: Path) -> None:
+    source = tmp_path / "duplicates.csv"
+    source.write_text(
+        "patient_id,status\n"
+        "P001,Active\n"
+        "P001,Active\n"
+        "P002,Inactive\n",
+        encoding="utf-8",
+    )
+    provider = FakeProvider(
+        {
+            "summary": "Remove the duplicate.",
+            "actions": [
+                {
+                    "type": "remove_exact_duplicates",
+                    "table": "duplicates",
+                    "column": None,
+                    "parameters": {"keep": "first"},
+                    "rationale": "The rows are exact duplicates.",
+                    "confidence": 1.0,
+                    "issue_ids": [],
+                }
+            ],
+            "deferred_issue_ids": [],
+        }
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model="fake-model",
+        include_rules=False,
+    )
+
+    assert result.plan.actions == []
+    assert len(result.rejected) == 1
+    assert "not allowed to propose row deletion" in result.rejected[0].reason
+    assert result.rejected[0].parameters == {"keep": "first"}
