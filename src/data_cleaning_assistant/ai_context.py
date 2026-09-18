@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .ai_candidates import AICandidate
 from .ai_models import (
     AIColumnContext,
     AIIssueContext,
@@ -45,7 +46,10 @@ def _compact_value(value: Any, *, depth: int = 0) -> Any:
     return str(value)[:300]
 
 
-def build_ai_context(report: DatasetReport) -> AIPlannerContext:
+def build_ai_context(
+    report: DatasetReport,
+    candidates: list[AICandidate] | None = None,
+) -> AIPlannerContext:
     tables: list[AITableContext] = []
     for table in report.tables:
         tables.append(
@@ -103,4 +107,5 @@ def build_ai_context(report: DatasetReport) -> AIPlannerContext:
         tables=tables,
         issues=issues,
         relationships=relationships,
+        candidates=[candidate.context for candidate in (candidates or [])],
     )
