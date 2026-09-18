@@ -51,14 +51,29 @@ $DepsHash = (Get-FileHash "pyproject.toml" -Algorithm SHA256).Hash.ToLower()
 $StampFile = Join-Path $PSScriptRoot ".venv\.data-cleaning-assistant-pyproject.sha256"
 $OldHash = if (Test-Path $StampFile) { (Get-Content $StampFile -Raw).Trim() } else { "" }
 
-if ($DepsHash -ne $OldHash) {
-    Write-Host "==> Installing/updating project dependencies"
+$EnvOk = $true
+& $VenvPython -c 'import data_cleaning_assistant, openpyxl, pandas, pyarrow, pydantic, typer, rich, dateutil, yaml' 2>$null
+if ($LASTEXITCODE -ne 0) { $EnvOk = $false }
+& $VenvPython -m pip check *> $null
+if ($LASTEXITCODE -ne 0) { $EnvOk = $false }
+
+if (($DepsHash -ne $OldHash) -or (-not $EnvOk)) {
+    if ((-not $EnvOk) -and ($DepsHash -eq $OldHash)) {
+        Write-Host "==> Environment is incomplete; repairing dependencies"
+    }
+    else {
+        Write-Host "==> Installing/updating project dependencies"
+    }
     & $VenvPython -m pip install -e ".[dev]"
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed." }
+    & $VenvPython -c 'import data_cleaning_assistant, openpyxl, pandas, pyarrow, pydantic, typer, rich, dateutil, yaml'
+    if ($LASTEXITCODE -ne 0) { throw "Dependency verification failed." }
+    & $VenvPython -m pip check
+    if ($LASTEXITCODE -ne 0) { throw "Installed dependency set is inconsistent." }
     Set-Content -Path $StampFile -Value $DepsHash
 }
 else {
-    Write-Host "==> Dependencies unchanged"
+    Write-Host "==> Dependencies verified"
 }
 
 if ($args -notcontains "--no-test") {
