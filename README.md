@@ -1,127 +1,76 @@
 # Data Cleaning Assistant
 
-A local-first, research-aware data quality and cleaning assistant. The project is being built in two layers:
+A local-first, research-aware data quality and cleaning assistant. It has two layers:
 
 1. **Generic data cleaning** for CSV/Excel/Parquet files.
 2. **Research Mode** for subject/visit/specimen structure, longitudinal data, reproducibility, and conservative scientific QA.
 
-Current version: **v0.3.0**.
+Current version: **v0.3.1**.
 
-The system separates **detection** from **transformation**. Profiling remains read-only; cleaning happens only through explicit, reviewable actions applied to a new output file.
+The core rule is simple: **detection is not transformation**. Profiling is read-only, proposed fixes are reviewable, and cleaning writes a new output file with an audit trail.
 
-## What v0.3 does
+## What it does
 
-### Generic profiling
+The profiler currently detects hidden missing-value tokens, exact duplicate rows, constant columns, capitalization/whitespace category inconsistencies, mostly-numeric columns with non-numeric values, malformed date-like values, likely identifier fields, unnamed columns, conservative statistical outliers, candidate keys, repeated entities, dataset grain, and cross-table relationships.
 
-- Reads CSV, XLSX/XLSM, and Parquet.
-- Treats each Excel sheet as a separate table.
-- Produces per-column profiles and semantic type guesses.
-- Detects hidden missing-value tokens (`N/A`, `unknown`, `.`, etc.).
-- Detects exact duplicate rows.
-- Detects constant columns.
-- Detects capitalization/whitespace category inconsistencies.
-- Detects mostly-numeric columns containing non-numeric values.
-- Detects malformed values in date-like columns.
-- Flags likely identifier fields.
-- Flags extreme numeric values using a conservative 3×IQR review rule.
-- Detects unnamed/blank spreadsheet headers.
-- Suggests highly similar category labels using conservative fuzzy matching.
+The transformation layer currently supports reviewable category normalization, missing-token normalization, date standardization, and numeric coercion for non-identifier columns.
 
-### Research-aware structure
+v0.3.1 adds two major usability features:
 
-- Infers candidate single-column and composite keys.
-- Detects repeated subject/entity identifiers without calling them duplicates.
-- Infers initial table grain such as `subject`, `visit`, `specimen`, `procedure`, `medication`, `event`, or generic `observation`.
-- Discovers identifier relationships across Excel sheets/tables.
-- Estimates one-to-one / one-to-many / many-to-one / many-to-many relationships.
+- **Interactive review** — approve/reject/defer proposed actions without hand-editing JSON.
+- **Recipe replay** — validate and preview a previously approved YAML recipe on another compatible dataset, then explicitly apply it if desired.
 
-### Safe transformations
+Single-table CSV/Parquet recipes can be replayed across differently named files. Multi-sheet workbooks require compatible sheet names and columns.
 
-v0.3 can generate structured proposals for:
-
-- category capitalization/whitespace normalization
-- textual missing-value normalization
-- date standardization
-- numeric coercion for non-identifier columns
-
-Every action starts as **proposed**, not approved.
-
-The transformation layer supports:
-
-- before/after cell previews
-- explicit per-action approval
-- explicit `--approve-all` when desired
-- source-file hashing to reject stale cleaning plans
-- deep-copy execution so the original input is never modified
-- cell-level audit logs
-- reproducible YAML recipes
-- reversible ChangeSets
-- cleaned-file hashing so undo refuses to run against the wrong file
-
-Deletion, outlier removal, fuzzy-category merging, and imputation are **not** automatically proposed in v0.3.
+Deletion, outlier removal, fuzzy-category merging, and imputation are still not automatically proposed.
 
 ## One-command setup / sync
 
 GitHub is the source of truth.
 
-### First time on macOS / Linux
+First time on macOS/Linux:
 
 ```bash
 git clone https://github.com/thomas-t-ma/data-cleaning-assistant.git && cd data-cleaning-assistant && bash sync.sh
 ```
 
-### Normal update
+Normal update:
 
 ```bash
 bash sync.sh
 ```
 
-See [`docs/WORKFLOW.md`](docs/WORKFLOW.md) for Windows and cross-device development details.
+The sync script verifies the virtual environment, repairs missing dependencies, recreates a broken venv if pip is missing, and runs tests.
 
 ## Basic workflow
 
-Create the deliberately messy example:
+Create the example workbook:
 
 ```bash
 .venv/bin/python examples/make_messy_example.py
 ```
 
-Profile it:
-
-```bash
-.venv/bin/data-cleaner profile examples/messy_research_example.xlsx
-```
-
-Generate a cleaning plan:
+Generate a plan:
 
 ```bash
 .venv/bin/data-cleaner plan examples/messy_research_example.xlsx -o cleaning_plan.json
 ```
 
-Preview every proposed action:
+Interactively review it:
 
 ```bash
-.venv/bin/data-cleaner preview examples/messy_research_example.xlsx cleaning_plan.json
+.venv/bin/data-cleaner review \
+  examples/messy_research_example.xlsx \
+  cleaning_plan.json \
+  -o reviewed_plan.json
 ```
 
-Apply selected actions:
+Apply only the actions you approved during review:
 
 ```bash
 .venv/bin/data-cleaner apply \
   examples/messy_research_example.xlsx \
-  cleaning_plan.json \
-  --approve action_ABC123 \
-  --approve action_DEF456 \
-  -o cleaned.xlsx
-```
-
-Or, after reviewing the plan, explicitly approve every non-rejected action:
-
-```bash
-.venv/bin/data-cleaner apply \
-  examples/messy_research_example.xlsx \
-  cleaning_plan.json \
-  --approve-all \
+  reviewed_plan.json \
   -o cleaned.xlsx
 ```
 
@@ -133,7 +82,7 @@ cleaned.xlsx.audit.json
 cleaned.xlsx.recipe.yaml
 ```
 
-Undo the ChangeSet into another file:
+Undo:
 
 ```bash
 .venv/bin/data-cleaner undo \
@@ -142,33 +91,37 @@ Undo the ChangeSet into another file:
   -o restored.xlsx
 ```
 
-## Architecture
+## Replay a saved recipe
 
-```text
-File
-  ↓
-load_dataset()
-  ↓
-profiling + deterministic detectors
-  ↓
-DatasetReport / Issue[]
-  ↓
-deterministic planner
-  ↓
-CleaningPlan / proposed Action[]
-  ↓
-preview
-  ↓
-explicit approval
-  ↓
-deep-copy deterministic execution
-  ↓
-cleaned dataset + ChangeSet + audit + recipe
-  ↓
-optional undo
+Preview only:
+
+```bash
+.venv/bin/data-cleaner replay \
+  another_dataset.xlsx \
+  cleaned.xlsx.recipe.yaml
 ```
 
-The future AI layer will propose the same validated `CleaningAction` objects. It will not get unrestricted dataframe-write access.
+If the compatibility check and previews look correct, apply explicitly:
+
+```bash
+.venv/bin/data-cleaner replay \
+  another_dataset.xlsx \
+  cleaned.xlsx.recipe.yaml \
+  --apply \
+  -o another_dataset_cleaned.xlsx
+```
+
+A recipe with missing tables or columns is rejected instead of partially applied.
+
+## Safety / reproducibility
+
+- Source files are never edited in place.
+- Plans are bound to source SHA-256 hashes.
+- Every changed cell stores its old/new value.
+- Cleaned outputs are hashed for safe undo.
+- Saved recipes contain only actions that were actually executed.
+- Recipe replay previews before writing and requires `--apply`.
+- Ambiguous scientific findings are review items, not automatic corrections.
 
 ## Run tests
 
@@ -177,11 +130,7 @@ The future AI layer will propose the same validated `CleaningAction` objects. It
 .venv/bin/python -m ruff check src tests
 ```
 
-GitHub Actions runs the suite on Python 3.11, 3.12, and 3.13.
-
-## Scientific safety principle
-
-An extreme value, repeated identifier, unexpected date, missing value, or unusual category can be scientifically legitimate. The assistant distinguishes **suspicious** from **wrong**. Ambiguous findings are flagged for review rather than silently changed or deleted.
+GitHub Actions runs on Python 3.11, 3.12, and 3.13.
 
 ## License
 
