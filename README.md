@@ -5,11 +5,11 @@ A local-first, research-aware data quality and cleaning assistant. The project i
 1. **Generic data cleaning** for CSV/Excel/Parquet files.
 2. **Research Mode** for subject/visit/specimen structure, longitudinal data, reproducibility, and conservative scientific QA.
 
-Current version: **v0.2.0**.
+Current version: **v0.3.0**.
 
-The engine is intentionally **read-only** at this stage. It profiles data and proposes issues without modifying the source file.
+The system separates **detection** from **transformation**. Profiling remains read-only; cleaning happens only through explicit, reviewable actions applied to a new output file.
 
-## What v0.2 does
+## What v0.3 does
 
 ### Generic profiling
 
@@ -35,68 +35,112 @@ The engine is intentionally **read-only** at this stage. It profiles data and pr
 - Discovers identifier relationships across Excel sheets/tables.
 - Estimates one-to-one / one-to-many / many-to-one / many-to-many relationships.
 
-### Safety / reproducibility
+### Safe transformations
 
-- Writes a structured JSON report for future UI and AI layers.
-- Never changes the input dataset.
-- Treats suspicious values as review items rather than facts that must be "fixed."
+v0.3 can generate structured proposals for:
 
-## Setup
+- category capitalization/whitespace normalization
+- textual missing-value normalization
+- date standardization
+- numeric coercion for non-identifier columns
 
-Python 3.11+ is recommended.
+Every action starts as **proposed**, not approved.
 
-### macOS / Linux
+The transformation layer supports:
 
-```bash
-cd cleaning-assistant
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-```
+- before/after cell previews
+- explicit per-action approval
+- explicit `--approve-all` when desired
+- source-file hashing to reject stale cleaning plans
+- deep-copy execution so the original input is never modified
+- cell-level audit logs
+- reproducible YAML recipes
+- reversible ChangeSets
+- cleaned-file hashing so undo refuses to run against the wrong file
 
-### Windows PowerShell
+Deletion, outlier removal, fuzzy-category merging, and imputation are **not** automatically proposed in v0.3.
 
-```powershell
-cd cleaning-assistant
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-```
+## One-command setup / sync
 
-## Profile the deliberately messy example
+GitHub is the source of truth.
 
-```bash
-python examples/make_messy_example.py
-data-cleaner profile examples/messy_research_example.xlsx
-```
-
-Write the complete machine-readable report:
+### First time on macOS / Linux
 
 ```bash
-data-cleaner profile examples/messy_research_example.xlsx -o examples/example_report.json
+git clone https://github.com/thomas-t-ma/data-cleaning-assistant.git && cd data-cleaning-assistant && bash sync.sh
 ```
 
-Profile your own file:
+### Normal update
 
 ```bash
-data-cleaner profile /path/to/data.xlsx -o report.json
+bash sync.sh
 ```
 
-## Run tests
+See [`docs/WORKFLOW.md`](docs/WORKFLOW.md) for Windows and cross-device development details.
+
+## Basic workflow
+
+Create the deliberately messy example:
 
 ```bash
-pytest -q
+.venv/bin/python examples/make_messy_example.py
 ```
 
-Optional linting:
+Profile it:
 
 ```bash
-ruff check src tests
+.venv/bin/data-cleaner profile examples/messy_research_example.xlsx
 ```
 
-GitHub Actions runs the suite on Python 3.11, 3.12, and 3.13.
+Generate a cleaning plan:
+
+```bash
+.venv/bin/data-cleaner plan examples/messy_research_example.xlsx -o cleaning_plan.json
+```
+
+Preview every proposed action:
+
+```bash
+.venv/bin/data-cleaner preview examples/messy_research_example.xlsx cleaning_plan.json
+```
+
+Apply selected actions:
+
+```bash
+.venv/bin/data-cleaner apply \
+  examples/messy_research_example.xlsx \
+  cleaning_plan.json \
+  --approve action_ABC123 \
+  --approve action_DEF456 \
+  -o cleaned.xlsx
+```
+
+Or, after reviewing the plan, explicitly approve every non-rejected action:
+
+```bash
+.venv/bin/data-cleaner apply \
+  examples/messy_research_example.xlsx \
+  cleaning_plan.json \
+  --approve-all \
+  -o cleaned.xlsx
+```
+
+This writes:
+
+```text
+cleaned.xlsx
+cleaned.xlsx.audit.json
+cleaned.xlsx.recipe.yaml
+```
+
+Undo the ChangeSet into another file:
+
+```bash
+.venv/bin/data-cleaner undo \
+  cleaned.xlsx \
+  cleaned.xlsx.audit.json \
+  -o restored.xlsx
+```
 
 ## Architecture
 
@@ -105,34 +149,35 @@ File
   ↓
 load_dataset()
   ↓
-Pandas DataFrames (one per table/sheet)
-  ├── profiler ─────────────────────→ column/table profiles
-  ├── deterministic detectors ─────→ Issue[]
-  ├── structural inference ─────────→ candidate keys + table grain
-  └── cross-table inference ────────→ relationships
-                                        ↓
-                                  DatasetReport
-                                        ↓
-                              CLI / JSON / future UI
-                                        ↓
-                           future structured AI planner
+profiling + deterministic detectors
+  ↓
+DatasetReport / Issue[]
+  ↓
+deterministic planner
+  ↓
+CleaningPlan / proposed Action[]
+  ↓
+preview
+  ↓
+explicit approval
+  ↓
+deep-copy deterministic execution
+  ↓
+cleaned dataset + ChangeSet + audit + recipe
+  ↓
+optional undo
 ```
 
-The core design rule is that detections are represented as structured objects rather than immediately editing the dataframe. Later versions add proposed `Action` objects, review/approval, reversible `ChangeSet`s, cleaning recipes, and an audit log.
+The future AI layer will propose the same validated `CleaningAction` objects. It will not get unrestricted dataframe-write access.
 
-## Next milestone: v0.3
+## Run tests
 
-The next release is the first safe editing layer:
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python -m ruff check src tests
+```
 
-- structured `Action` objects
-- before/after previews
-- accept / reject / modify decisions
-- reversible `ChangeSet`s
-- deterministic execution
-- cleaning recipe export
-- audit log export
-
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the longer plan.
+GitHub Actions runs the suite on Python 3.11, 3.12, and 3.13.
 
 ## Scientific safety principle
 
