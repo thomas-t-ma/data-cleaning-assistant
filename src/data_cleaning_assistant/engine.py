@@ -24,4 +24,10 @@ def profile_dataset(path: str | Path) -> DatasetReport:
         issues.extend(detect_fuzzy_categories(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
 
-    return DatasetReport(source_path=str(loaded.path),source_type=loaded.source_type,tables=table_profiles,issues=issues,relationships=infer_relationships(loaded.tables))
+    return DatasetReport(
+        source_path=str(loaded.path),
+        source_type=loaded.source_type,
+        tables=table_profiles,
+        issues=issues,
+        relationships=infer_relationships(loaded.tables),
+    )
