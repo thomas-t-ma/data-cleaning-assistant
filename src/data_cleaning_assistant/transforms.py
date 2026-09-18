@@ -280,7 +280,11 @@ def apply_plan(
     selected.sort(key=lambda action: action.type == ActionType.REMOVE_EXACT_DUPLICATES)
 
     cleaned = {name: frame.copy(deep=True) for name, frame in tables.items()}
-    executions = [apply_action(cleaned, action) for action in selected]
+    executions = []
+    for action in selected:
+        execution = apply_action(cleaned, action)
+        if execution.affected_count:
+            executions.append(execution)
 
     return cleaned, ChangeSet(
         source_path=str(resolved),
@@ -446,6 +450,9 @@ def write_cleaned_dataset(
     source = Path(source_path).expanduser().resolve()
     output = Path(output_path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    if source == output:
+        raise ValueError("Refusing to overwrite the source dataset in place.")
 
     if (
         source.suffix.lower() in {".xlsx", ".xlsm"}
