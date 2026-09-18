@@ -1,28 +1,56 @@
 # Data Cleaning Assistant
 
-A local-first, research-aware data quality and cleaning assistant. It has two layers:
+A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-1. **Generic data cleaning** for CSV/Excel/Parquet files.
-2. **Research Mode** for subject/visit/specimen structure, longitudinal data, reproducibility, and conservative scientific QA.
+Current version: **v0.3.2**.
 
-Current version: **v0.3.1**.
+The core rule is **detection is not transformation**. Profiling is read-only. Every proposed fix is reviewable, approved changes are written to a new file, and the tool records an audit trail plus a reusable recipe.
 
-The core rule is simple: **detection is not transformation**. Profiling is read-only, proposed fixes are reviewable, and cleaning writes a new output file with an audit trail.
+## Current capabilities
 
-## What it does
+The profiler detects hidden missing-value tokens, exact duplicate rows, constant columns, category inconsistencies, surrounding whitespace, mixed numeric values, malformed dates, likely identifiers, unnamed columns, conservative statistical outliers, candidate keys, repeated entities, dataset grain, and cross-table relationships.
 
-The profiler currently detects hidden missing-value tokens, exact duplicate rows, constant columns, capitalization/whitespace category inconsistencies, mostly-numeric columns with non-numeric values, malformed date-like values, likely identifier fields, unnamed columns, conservative statistical outliers, candidate keys, repeated entities, dataset grain, and cross-table relationships.
+Reviewable deterministic transformations currently include:
 
-The transformation layer currently supports reviewable category normalization, missing-token normalization, date standardization, and numeric coercion for non-identifier columns.
+- category normalization
+- textual missing-value normalization
+- date standardization
+- numeric coercion for non-identifier columns
+- leading/trailing whitespace trimming
+- exact duplicate-row removal, keeping the first copy
 
-v0.3.1 adds two major usability features:
+Exact duplicate removal is never auto-approved because repeated identical rows can still be scientifically legitimate.
 
-- **Interactive review** — approve/reject/defer proposed actions without hand-editing JSON.
-- **Recipe replay** — validate and preview a previously approved YAML recipe on another compatible dataset, then explicitly apply it if desired.
+## v0.3.2 hardening
 
-Single-table CSV/Parquet recipes can be replayed across differently named files. Multi-sheet workbooks require compatible sheet names and columns.
+### Excel preservation
 
-Deletion, outlier removal, fuzzy-category merging, and imputation are still not automatically proposed.
+When the source and output are Excel files, the cleaner now copies the original workbook and updates only approved data cells instead of rebuilding a plain workbook from pandas. This preserves untouched workbook structure such as styles, column widths, merged cells, freeze panes, and formulas.
+
+Row deletion or row reinsertion is refused on formula-containing sheets because worksheet row operations can invalidate formula references. Cell-level edits still preserve unrelated formulas.
+
+### Reversible row deletion
+
+Exact duplicate removal stores the complete deleted row plus its original position in the ChangeSet. Undo can restore those rows after the cleaned file has been saved and reloaded.
+
+### Schema-drift reporting
+
+Saved recipes now include a lightweight source-schema snapshot. Recipe replay reports drift such as:
+
+- new or missing tables/columns
+- inferred type changes
+- new categorical values
+- numeric range expansion
+- meaningful missingness shifts
+
+Drift warnings do not automatically block replay. Missing tables or columns required by an actual recipe action still do.
+
+### Safer execution
+
+- Source files cannot be overwritten in place.
+- No-op approved actions are omitted from the audit log and recipe.
+- Cell edits execute before row deletions so row positions remain reversible.
+- Formula cells are not overwritten by preservation writes.
 
 ## One-command setup / sync
 
@@ -42,7 +70,7 @@ bash sync.sh
 
 The sync script verifies the virtual environment, repairs missing dependencies, recreates a broken venv if pip is missing, and runs tests.
 
-## Basic workflow
+## Typical workflow
 
 Create the example workbook:
 
@@ -65,7 +93,7 @@ Interactively review it:
   -o reviewed_plan.json
 ```
 
-Apply only the actions you approved during review:
+Apply approved actions:
 
 ```bash
 .venv/bin/data-cleaner apply \
@@ -91,9 +119,7 @@ Undo:
   -o restored.xlsx
 ```
 
-## Replay a saved recipe
-
-Preview only:
+Replay a saved recipe in preview-only mode:
 
 ```bash
 .venv/bin/data-cleaner replay \
@@ -101,7 +127,7 @@ Preview only:
   cleaned.xlsx.recipe.yaml
 ```
 
-If the compatibility check and previews look correct, apply explicitly:
+After reviewing compatibility, drift, and previews:
 
 ```bash
 .venv/bin/data-cleaner replay \
@@ -111,19 +137,18 @@ If the compatibility check and previews look correct, apply explicitly:
   -o another_dataset_cleaned.xlsx
 ```
 
-A recipe with missing tables or columns is rejected instead of partially applied.
-
-## Safety / reproducibility
+## Safety principles
 
 - Source files are never edited in place.
 - Plans are bound to source SHA-256 hashes.
 - Every changed cell stores its old/new value.
+- Deleted rows store their original content and position.
 - Cleaned outputs are hashed for safe undo.
-- Saved recipes contain only actions that were actually executed.
+- Saved recipes contain only transformations that actually changed data.
 - Recipe replay previews before writing and requires `--apply`.
-- Ambiguous scientific findings are review items, not automatic corrections.
+- Suspicious scientific values are review items, not automatic corrections.
 
-## Run tests
+## Tests
 
 ```bash
 .venv/bin/python -m pytest -q
@@ -131,6 +156,10 @@ A recipe with missing tables or columns is rejected instead of partially applied
 ```
 
 GitHub Actions runs on Python 3.11, 3.12, and 3.13.
+
+## Next
+
+The next major milestone is **v0.4: a local AI planner** that can propose the same typed `CleaningAction` objects from compact profiling evidence. AI will not receive unrestricted dataframe-write access; deterministic code remains the execution layer.
 
 ## License
 
