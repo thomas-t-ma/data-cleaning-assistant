@@ -315,7 +315,13 @@ def _restore_deleted_rows(
             for column in frame.columns
         }
         records.insert(snapshot.row_position, restored_row)
-    return pd.DataFrame(records, columns=frame.columns)
+    restored = pd.DataFrame(records, columns=frame.columns)
+    for column, dtype in frame.dtypes.items():
+        try:
+            restored[column] = restored[column].astype(dtype)
+        except (TypeError, ValueError):
+            pass
+    return restored
 
 
 def undo_changeset(
@@ -428,7 +434,7 @@ def _write_excel_preserving_source(
             for snapshot in sorted(sheet_insertions, key=lambda row: row.row_position):
                 excel_row = snapshot.row_position + 2
                 worksheet.insert_rows(excel_row, 1)
-                style_source = excel_row + 1 if excel_row + 1 <= worksheet.max_row else excel_row - 1
+                style_source = excel_row - 1 if excel_row > 2 else excel_row + 1
                 _copy_row_style(worksheet, style_source, excel_row)
 
             # Row reinsertion is used by audit-based undo. The cleaned dataframe is
