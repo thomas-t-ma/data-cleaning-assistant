@@ -22,6 +22,12 @@ class ActionDecision(str, Enum):
     REJECTED = "rejected"
 
 
+class ActionOrigin(str, Enum):
+    RULE = "rule"
+    AI = "ai"
+    RECIPE = "recipe"
+
+
 class CleaningAction(BaseModel):
     id: str
     type: ActionType
@@ -34,6 +40,7 @@ class CleaningAction(BaseModel):
     issue_ids: list[str] = Field(default_factory=list)
     decision: ActionDecision = ActionDecision.PROPOSED
     reversible: bool = True
+    origin: ActionOrigin = ActionOrigin.RULE
 
 
 class CleaningPlan(BaseModel):
@@ -41,6 +48,8 @@ class CleaningPlan(BaseModel):
     source_sha256: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     actions: list[CleaningAction] = Field(default_factory=list)
+    planner: str = "deterministic"
+    model: str | None = None
 
 
 class ValueSnapshot(BaseModel):

@@ -9,6 +9,9 @@ from rich.console import Console
 from rich.table import Table
 
 from .actions import ActionDecision, ChangeSet, CleaningPlan
+from .ai_context import build_ai_context
+from .ai_planner import propose_ai_plan, resolve_model
+from .ai_provider import AIProviderError, OllamaProvider
 from .engine import profile_dataset
 from .io import load_dataset
 from .planner import file_sha256, propose_actions
@@ -105,6 +108,7 @@ def _print_plan(plan: CleaningPlan) -> None:
     table.add_column("Table")
     table.add_column("Column")
     table.add_column("Confidence", justify="right")
+    table.add_column("Origin")
     table.add_column("Decision")
     table.add_column("Description")
     for action in plan.actions:
@@ -114,6 +118,7 @@ def _print_plan(plan: CleaningPlan) -> None:
             action.table,
             action.column or "—",
             f"{action.confidence:.0%}",
+            action.origin.value,
             action.decision.value,
             action.title,
         )
@@ -234,6 +239,132 @@ def profile(
             encoding="utf-8",
         )
         console.print(f"\n[green]Report written to:[/green] {output}")
+
+
+@app.command("ai-status")
+def ai_status_command(
+    url: Annotated[
+        str | None,
+        typer.Option("--url", help="Ollama base URL; defaults to OLLAMA_HOST or localhost:11434"),
+    ] = None,
+) -> None:
+    """Check the local Ollama connection and list installed models."""
+    provider = OllamaProvider(url)
+    try:
+        models = provider.list_models()
+    except AIProviderError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print(f"[green]Ollama reachable:[/green] {provider.base_url}")
+    if not models:
+        console.print(
+            "[yellow]No local models are installed.[/yellow] "
+            "Install/pull a model in Ollama before using ai-plan."
+        )
+        return
+
+    table = Table(title="Installed Ollama models")
+    table.add_column("Model")
+    for model in models:
+        table.add_row(model)
+    console.print(table)
+
+
+@app.command("ai-context")
+def ai_context_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to profile for AI planning")],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Write the exact AI context JSON to this path"),
+    ] = None,
+) -> None:
+    """Show exactly what compact context would be sent to the AI planner."""
+    report = profile_dataset(input_path)
+    context = build_ai_context(report)
+    payload = context.model_dump_json(indent=2)
+
+    if output:
+        output = output.expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(payload, encoding="utf-8")
+        console.print(f"[green]AI context written to:[/green] {output}")
+    else:
+        console.print(payload)
+
+
+@app.command("ai-plan")
+def ai_plan_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect with local AI")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Path for the AI-assisted cleaning plan JSON"),
+    ] = Path("ai_cleaning_plan.json"),
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Installed Ollama model to use"),
+    ] = None,
+    url: Annotated[
+        str | None,
+        typer.Option("--url", help="Ollama base URL; defaults to OLLAMA_HOST or localhost:11434"),
+    ] = None,
+    rules: Annotated[
+        bool,
+        typer.Option(
+            "--rules/--no-rules",
+            help="Include deterministic rule proposals alongside validated AI suggestions",
+        ),
+    ] = True,
+    context_out: Annotated[
+        Path | None,
+        typer.Option("--context-out", help="Save the exact context sent to the model"),
+    ] = None,
+) -> None:
+    """Generate a reviewable local-AI-assisted plan without modifying data."""
+    provider = OllamaProvider(url)
+    try:
+        selected_model = resolve_model(provider, model)
+        result = propose_ai_plan(
+            input_path,
+            provider=provider,
+            model=selected_model,
+            include_rules=rules,
+        )
+    except (AIProviderError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    console.print(
+        f"[green]AI planner:[/green] {result.provider} / {result.model}"
+    )
+    console.print(f"[bold]Model summary:[/bold] {result.response.summary}")
+
+    if result.rejected:
+        rejected_table = Table(title="AI proposals rejected by deterministic safety validation")
+        rejected_table.add_column("Type")
+        rejected_table.add_column("Target")
+        rejected_table.add_column("Reason")
+        for rejected in result.rejected:
+            target = (
+                f"{rejected.table}.{rejected.column}"
+                if rejected.column is not None
+                else rejected.table
+            )
+            rejected_table.add_row(rejected.type.value, target, rejected.reason)
+        console.print(rejected_table)
+
+    _print_plan(result.plan)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(result.plan.model_dump_json(indent=2), encoding="utf-8")
+    console.print(f"\n[green]AI-assisted plan written to:[/green] {output}")
+
+    if context_out:
+        context_out = context_out.expanduser().resolve()
+        context_out.parent.mkdir(parents=True, exist_ok=True)
+        context_out.write_text(result.context.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[green]AI context written to:[/green] {context_out}")
 
 
 @app.command("plan")

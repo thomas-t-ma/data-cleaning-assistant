@@ -1,29 +1,30 @@
 # Roadmap
 
-## v0.3.2 — deterministic hardening (current)
+## v0.4.0 — local AI planner (current)
 
-- Preserve original Excel workbook structure during cell-level cleaning.
-- Protect formula-bearing sheets from unsafe row operations.
-- Report recipe schema drift rather than only pass/fail compatibility.
-- Reversibly remove exact duplicate rows with full row snapshots.
-- Add surrounding-whitespace trimming.
-- Reject in-place source overwrite.
-- Keep no-op transformations out of audit logs and recipes.
+- Privacy-minimized structured profiler context.
+- Exact AI-context inspection/export.
+- Ollama provider using structured JSON-schema output.
+- Hybrid deterministic + AI planning.
+- Deterministic validation of all AI mutations.
+- Evidence-gated fuzzy category merging.
+- Action-origin tracking.
+- No unrestricted dataframe access for the model.
 
-## v0.4 — local AI planner
+### v0.4.x evaluation and provider hardening
 
-- Compact structured profiler context only.
-- Local provider first, with Ollama as the initial backend.
-- Optional hosted-provider abstraction later.
-- Pydantic-validated `CleaningAction` proposals.
-- Evidence-grounded rationales and confidence.
-- No unrestricted dataframe-write access.
-- Deterministic preview, review, execution, audit, recipe, and undo remain unchanged.
+- Benchmark several small local models on a fixed synthetic cleaning corpus.
+- Add prompt/provider regression fixtures.
+- Add explicit context-size/token budgeting for very wide workbooks.
+- Add user-configurable redaction policies for category/evidence values.
+- Add provider metadata and model/version information to plan/audit provenance.
+- Add optional hosted-provider adapters without changing execution semantics.
 
 ## v0.5 — local visual review UI
 
 - Drag/drop dataset loading.
 - Dataset quality dashboard.
+- AI/rule origin badges.
 - Side-by-side change previews.
 - Accept/reject/modify controls.
 - Schema-drift views.
