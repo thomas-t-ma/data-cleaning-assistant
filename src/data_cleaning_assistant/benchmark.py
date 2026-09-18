@@ -60,6 +60,7 @@ class BenchmarkCaseResult(BaseModel):
 class BenchmarkSummary(BaseModel):
     model: str
     provider: str
+    suite: str = "custom"
     runs_per_case: int
     case_runs: int
     passed_case_runs: int
@@ -92,7 +93,7 @@ def _action_record(action: CleaningAction) -> dict[str, Any]:
     }
 
 
-def benchmark_cases() -> list[BenchmarkCase]:
+def core_benchmark_cases() -> list[BenchmarkCase]:
     return [
         BenchmarkCase(
             id="fuzzy_typo_merge",
@@ -253,6 +254,268 @@ def benchmark_cases() -> list[BenchmarkCase]:
     ]
 
 
+
+def research_benchmark_cases() -> list[BenchmarkCase]:
+    """Harder research-oriented cases that stress semantic accept/defer judgment."""
+    return [
+        BenchmarkCase(
+            id="research_visit_zero_padding",
+            description=(
+                "Visit 1 and Visit 01 are formatting variants of the same visit label and "
+                "should be normalized."
+            ),
+            csv_text=(
+                "subject_id,visit_label\n"
+                "S001,Visit 1\n"
+                "S002,Visit 1\n"
+                "S003,Visit 01\n"
+                "S004,Visit 1\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="visit_label",
+                    parameters={"mapping": {"Visit 01": "Visit 1"}},
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_specimen_typo",
+            description=(
+                "Peripheral Blod is a clear typo of Peripheral Blood and should be normalized."
+            ),
+            csv_text=(
+                "specimen_id,specimen_source\n"
+                "SP001,Peripheral Blood\n"
+                "SP002,Peripheral Blood\n"
+                "SP003,Peripheral Blod\n"
+                "SP004,Peripheral Blood\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="specimen_source",
+                    parameters={"mapping": {"Peripheral Blod": "Peripheral Blood"}},
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_cohort_zero_padding",
+            description=(
+                "Cohort 1 and Cohort 01 are formatting variants of the same cohort label."
+            ),
+            csv_text=(
+                "subject_id,cohort\n"
+                "S001,Cohort 1\n"
+                "S002,Cohort 1\n"
+                "S003,Cohort 01\n"
+                "S004,Cohort 1\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="cohort",
+                    parameters={"mapping": {"Cohort 01": "Cohort 1"}},
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_lab_numeric_with_censoring",
+            description=(
+                "A lab-value column is mostly numeric but contains one censored value '<5'. "
+                "Parseable values may be coerced while the censored value remains unchanged."
+            ),
+            csv_text=(
+                "subject_id,lab_value\n"
+                "S001,12.4\n"
+                "S002,18.1\n"
+                "S003,<5\n"
+                "S004,9.7\n"
+                "S005,15.0\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="lab_value",
+                    parameters={"unparseable": "keep"},
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_specimen_whitespace",
+            description=(
+                "A specimen-source value with only surrounding whitespace should be trimmed."
+            ),
+            csv_text=(
+                "specimen_id,specimen_source\n"
+                "SP001, Bone Marrow \n"
+                "SP002,Peripheral Blood\n"
+                "SP003,Serum\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.TRIM_WHITESPACE,
+                    column="specimen_source",
+                    parameters={},
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_dose_level_distinct",
+            description=(
+                "Dose 5 mg and Dose 50 mg are lexically similar but clinically distinct dose levels."
+            ),
+            csv_text=(
+                "subject_id,dose_level\n"
+                "S001,Dose 5 mg\n"
+                "S002,Dose 50 mg\n"
+                "S003,Dose 5 mg\n"
+                "S004,Dose 50 mg\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="dose_level",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_dose_unit_distinct",
+            description=(
+                "Dose 5 mg and Dose 5 mcg differ by unit and must never be merged."
+            ),
+            csv_text=(
+                "subject_id,dose_text\n"
+                "S001,Dose 5 mg\n"
+                "S002,Dose 5 mcg\n"
+                "S003,Dose 5 mg\n"
+                "S004,Dose 5 mcg\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="dose_text",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_timepoint_distinct",
+            description=(
+                "Post-dose Day 1 and Post-dose Day 10 are distinct study timepoints."
+            ),
+            csv_text=(
+                "subject_id,timepoint\n"
+                "S001,Post-dose Day 1\n"
+                "S002,Post-dose Day 10\n"
+                "S003,Post-dose Day 1\n"
+                "S004,Post-dose Day 10\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="timepoint",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_treatment_arm_distinct",
+            description=(
+                "Treatment Arm A and Treatment Arm B are distinct randomized groups."
+            ),
+            csv_text=(
+                "subject_id,treatment_arm\n"
+                "S001,Treatment Arm A\n"
+                "S002,Treatment Arm B\n"
+                "S003,Treatment Arm A\n"
+                "S004,Treatment Arm B\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="treatment_arm",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_specimen_type_distinct",
+            description=(
+                "Specimen Type A and Specimen Type B are distinct specimen categories."
+            ),
+            csv_text=(
+                "specimen_id,specimen_type\n"
+                "SP001,Specimen Type A\n"
+                "SP002,Specimen Type B\n"
+                "SP003,Specimen Type A\n"
+                "SP004,Specimen Type B\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="specimen_type",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_unknown_outcome_category",
+            description=(
+                "Unknown is an explicit outcome category here; converting it to null would erase "
+                "a meaningful coded state, so the missing-token candidate should be deferred."
+            ),
+            csv_text=(
+                "subject_id,outcome_category\n"
+                "S001,Response\n"
+                "S002,Unknown\n"
+                "S003,Progression\n"
+                "S004,Response\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_MISSING,
+                    column="outcome_category",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="research_not_applicable_grade",
+            description=(
+                "Not applicable is an explicit adverse-event grade state, not interchangeable "
+                "with an unrecorded value."
+            ),
+            csv_text=(
+                "subject_id,adverse_event_grade\n"
+                "S001,Grade 1\n"
+                "S002,Not applicable\n"
+                "S003,Grade 2\n"
+                "S004,Grade 1\n"
+            ),
+            forbidden=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_MISSING,
+                    column="adverse_event_grade",
+                    parameters=None,
+                )
+            ],
+        ),
+    ]
+
+
+def benchmark_cases(suite: str = "core") -> list[BenchmarkCase]:
+    normalized = suite.strip().casefold()
+    if normalized == "core":
+        return core_benchmark_cases()
+    if normalized == "research":
+        return research_benchmark_cases()
+    if normalized == "all":
+        return core_benchmark_cases() + research_benchmark_cases()
+    raise ValueError("Benchmark suite must be one of: core, research, all.")
+
+
 def _matches_any(action: CleaningAction, effects: list[BenchmarkEffect]) -> bool:
     return any(effect.matches_action(action) for effect in effects)
 
@@ -343,11 +606,13 @@ def run_ai_benchmark(
     model: str,
     runs_per_case: int = 1,
     cases: list[BenchmarkCase] | None = None,
+    suite: str = "core",
 ) -> BenchmarkSummary:
     if runs_per_case < 1:
         raise ValueError("runs_per_case must be at least 1.")
 
-    corpus = cases or benchmark_cases()
+    corpus = cases if cases is not None else benchmark_cases(suite)
+    suite_name = "custom" if cases is not None else suite.strip().casefold()
     results: list[BenchmarkCaseResult] = []
 
     with tempfile.TemporaryDirectory(prefix="data-cleaner-benchmark-") as temp_dir:
@@ -422,6 +687,7 @@ def run_ai_benchmark(
     return BenchmarkSummary(
         model=model,
         provider=provider.name,
+        suite=suite_name,
         runs_per_case=runs_per_case,
         case_runs=case_runs,
         passed_case_runs=passed,
