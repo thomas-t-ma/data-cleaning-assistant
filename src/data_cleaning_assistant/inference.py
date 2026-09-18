@@ -129,7 +129,11 @@ def looks_like_identifier_name(name: str) -> bool:
 
 
 def infer_semantic_type(name: str, series: pd.Series) -> tuple[str, float, dict[str, float]]:
-    values = meaningful_values(series, limit=500)
+    values = [
+        value
+        for value in meaningful_values(series, limit=500)
+        if not is_contextual_missing_label(value)
+    ]
     if not values:
         return "empty", 1.0, {"numeric_ratio": 0.0, "date_ratio": 0.0}
 
