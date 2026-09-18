@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.6 — semantic safety hardening (current)
+## v0.4.7 — conservative typo evidence (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -27,6 +27,7 @@
 - Remove contextual null-collapse actions from both deterministic and AI candidate surfaces by default.
 - Add explicit unsafe-candidate-exposure metrics.
 - Add numeric zero-padding equivalence evidence for research category labels.
+- Add conservative single-edit typo-shape evidence while excluding numeric and short-token semantic distinctions.
 
 ### v0.4.x evaluation and provider hardening
 
