@@ -17,8 +17,8 @@ from .transforms import (
     apply_plan,
     preview_action,
     undo_changeset,
+    write_cleaned_dataset,
     write_recipe,
-    write_tables,
 )
 
 app = typer.Typer(
@@ -112,7 +112,7 @@ def _print_plan(plan: CleaningPlan) -> None:
             action.id,
             action.type.value,
             action.table,
-            action.column,
+            action.column or "—",
             f"{action.confidence:.0%}",
             action.decision.value,
             action.title,
@@ -125,6 +125,22 @@ def _print_plan(plan: CleaningPlan) -> None:
 
 def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
     preview = preview_action(tables, action, sample_limit=sample_limit)
+
+    if preview.sample_rows:
+        table = Table(
+            title=f"{action.id}: {action.title} — {preview.affected_count} row(s)"
+        )
+        table.add_column("Original row", justify="right")
+        table.add_column("Row values")
+        for snapshot in preview.sample_rows:
+            values = {
+                column: value.value
+                for column, value in snapshot.values.items()
+            }
+            table.add_row(str(snapshot.row_position), repr(values))
+        console.print(table)
+        return
+
     table = Table(
         title=f"{action.id}: {action.title} — {preview.affected_count} cell(s)"
     )
@@ -136,6 +152,26 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
             str(change.row_index),
             repr(change.old_value.value),
             repr(change.new_value.value),
+        )
+    console.print(table)
+
+
+def _print_drift(compatibility) -> None:
+    if not compatibility.drift:
+        return
+    table = Table(title="Schema drift since recipe creation")
+    table.add_column("Severity")
+    table.add_column("Kind")
+    table.add_column("Table")
+    table.add_column("Column")
+    table.add_column("Details")
+    for drift in compatibility.drift:
+        table.add_row(
+            drift.severity,
+            drift.kind,
+            drift.table,
+            drift.column or "—",
+            drift.message,
         )
     console.print(table)
 
@@ -172,7 +208,8 @@ def _write_cleaning_outputs(
     console.print(f"[green]Audit log:[/green] {audit_path}")
     console.print(f"[green]Recipe:[/green] {recipe_path}")
     console.print(
-        f"[bold]{changeset.affected_cell_count:,}[/bold] cell change(s) "
+        f"[bold]{changeset.affected_cell_count:,}[/bold] cell change(s), "
+        f"[bold]{changeset.affected_row_count:,}[/bold] row deletion(s), "
         f"across [bold]{len(changeset.executions)}[/bold] action(s)."
     )
 
@@ -222,7 +259,7 @@ def preview_command(
     plan_path: Annotated[Path, typer.Argument(help="Cleaning plan JSON")],
     sample: Annotated[
         int,
-        typer.Option("--sample", min=1, max=50, help="Maximum changed cells shown per action"),
+        typer.Option("--sample", min=1, max=50, help="Maximum changes shown per action"),
     ] = 8,
 ) -> None:
     """Preview proposed changes without modifying the dataset."""
@@ -247,7 +284,7 @@ def review_command(
     ] = Path("reviewed_plan.json"),
     sample: Annotated[
         int,
-        typer.Option("--sample", min=1, max=50, help="Maximum changed cells shown per action"),
+        typer.Option("--sample", min=1, max=50, help="Maximum changes shown per action"),
     ] = 5,
 ) -> None:
     """Interactively approve, reject, or defer each proposed cleaning action."""
@@ -260,9 +297,14 @@ def review_command(
     tables = load_dataset(input_path).tables
     for index, action in enumerate(plan.actions, start=1):
         console.rule(f"Action {index}/{len(plan.actions)}")
+        target = (
+            f"{action.table}.{action.column}"
+            if action.column is not None
+            else action.table
+        )
         console.print(
             f"[bold]{action.type.value}[/bold] — "
-            f"{action.table}.{action.column} ({action.confidence:.0%} confidence)"
+            f"{target} ({action.confidence:.0%} confidence)"
         )
         console.print(action.description)
         _print_action_preview(tables, action, sample_limit=sample)
@@ -348,7 +390,12 @@ def apply_command(
     if not changeset.executions:
         raise typer.BadParameter("The selected approvals produced no executable actions.")
 
-    output = write_tables(cleaned, output)
+    output = write_cleaned_dataset(
+        input_path,
+        loaded.tables,
+        cleaned,
+        output,
+    )
     _write_cleaning_outputs(
         output,
         plan,
@@ -375,13 +422,15 @@ def replay_command(
     ] = None,
     sample: Annotated[
         int,
-        typer.Option("--sample", min=1, max=50, help="Maximum changed cells shown per action"),
+        typer.Option("--sample", min=1, max=50, help="Maximum changes shown per action"),
     ] = 5,
 ) -> None:
     """Validate, preview, and optionally replay a saved recipe on another dataset."""
     loaded = load_dataset(input_path)
     recipe = load_recipe(recipe_path)
     plan, compatibility = recipe_to_plan(input_path, recipe, loaded.tables)
+
+    _print_drift(compatibility)
 
     if not compatibility.compatible:
         table = Table(title="Recipe compatibility problems")
@@ -426,7 +475,12 @@ def replay_command(
     if not changeset.executions:
         raise typer.BadParameter("The recipe produced no executable actions.")
 
-    output = write_tables(cleaned, output)
+    output = write_cleaned_dataset(
+        input_path,
+        loaded.tables,
+        cleaned,
+        output,
+    )
     _write_cleaning_outputs(output, plan, changeset)
 
 
@@ -445,9 +499,14 @@ def undo_command(
         raise typer.BadParameter(
             "The cleaned dataset no longer matches this audit log; refusing to undo."
         )
-    tables = load_dataset(cleaned_path).tables
-    restored = undo_changeset(tables, changeset)
-    restored_path = write_tables(restored, output)
+    loaded = load_dataset(cleaned_path)
+    restored = undo_changeset(loaded.tables, changeset)
+    restored_path = write_cleaned_dataset(
+        cleaned_path,
+        loaded.tables,
+        restored,
+        output,
+    )
     console.print(f"[green]Restored dataset:[/green] {restored_path}")
 
 
