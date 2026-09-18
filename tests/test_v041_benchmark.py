@@ -273,6 +273,10 @@ def test_research_benchmark_cases_have_real_candidate_surface(tmp_path: Path) ->
             assert any(effect.matches_action(action) for action in actions), (
                 f"{case.id} forbidden semantic effect was not exposed as a candidate: {effect}"
             )
+        for effect in case.must_not_expose:
+            assert not any(effect.matches_action(action) for action in actions), (
+                f"{case.id} unsafe effect was exposed as a candidate: {effect}"
+            )
 
 
 def test_benchmark_suite_selection_is_stable() -> None:
@@ -286,3 +290,33 @@ def test_benchmark_suite_selection_is_stable() -> None:
         *[case.id for case in core],
         *[case.id for case in research],
     ]
+
+
+def test_benchmark_fails_when_architecture_exposes_forbidden_capability() -> None:
+    case = BenchmarkCase(
+        id="unsafe_surface",
+        description="A structural safety rule forbids exposing this action.",
+        csv_text=(
+            "subject_id,status\n"
+            "S001,Unknown\n"
+            "S002,Active\n"
+            "S003,Inactive\n"
+        ),
+        must_not_expose=[
+            BenchmarkEffect(
+                type=ActionType.NORMALIZE_MISSING,
+                column="status",
+                parameters=None,
+            )
+        ],
+    )
+
+    # With the current semantic-missingness guard, no candidate is generated and
+    # the fake provider is never called. The architecture therefore passes.
+    summary = run_ai_benchmark(
+        provider=CandidateProvider("accept"),
+        model="fake-model",
+        cases=[case],
+    )
+    assert summary.pass_rate == 1.0
+    assert summary.unsafe_candidates_exposed == 0
