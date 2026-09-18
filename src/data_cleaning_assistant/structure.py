@@ -6,8 +6,8 @@ from collections import Counter
 
 import pandas as pd
 
-from .inference import is_missing_like, looks_like_identifier_name, normalize_column_name, normalize_text
-from .models import CandidateKey, CrossTableRelationship, GrainInference, Issue, Severity
+from .inference import (\n    is_missing_like,\n    looks_like_identifier_name,\n    normalize_column_name,\n    normalize_text,\n)
+from .models import (\n    CandidateKey,\n    CrossTableRelationship,\n    GrainInference,\n    Issue,\n    Severity,\n)
 
 
 SUBJECT_PATTERNS = ("patient", "subject", "participant", "person", "mrn")
@@ -68,7 +68,7 @@ def infer_candidate_keys(frame: pd.DataFrame, max_keys: int = 5) -> list[Candida
             names,
             key=lambda c: (
                 0 if looks_like_identifier_name(c) else 1,
-                0 if re.search(r"date|time|visit|specimen|sample|accession", c, re.I) else 1,
+                0 if re.search(r"date|time|visit|specimen|sample|accession", c, re.IGNORECASE) else 1,
                 c,
             ),
         )[:12]
@@ -119,7 +119,7 @@ def _find_subject_column(frame: pd.DataFrame) -> str | None:
         uniqueness = float(series.astype(str).nunique() / len(series))
         priority = 0 if looks_like_identifier_name(name) else 1
         candidates.append((priority, -uniqueness, name))
-    return sorted(candidates)[0][2] if candidates else None
+    return min(candidates)[2] if candidates else None
 
 
 def infer_grain(table_name: str, frame: pd.DataFrame) -> GrainInference:
@@ -204,7 +204,7 @@ def repeated_entity_issues(table: str, frame: pd.DataFrame) -> list[Issue]:
             affected_count=len(repeated_indices),
             row_indices_sample=[int(i) for i in repeated_indices[:10]],
             evidence={
-                "repeated_entity_count": int(len(groups)),
+                "repeated_entity_count": len(groups),
                 "largest_group_size": int(groups.max()),
                 "examples": {str(k): int(v) for k, v in groups.head(10).items()},
             },
