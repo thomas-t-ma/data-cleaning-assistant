@@ -151,3 +151,33 @@ def test_written_output_recipe_and_audit_hash(tmp_path: Path) -> None:
     assert changeset.result_sha256 == file_sha256(output)
     assert len(recipe["actions"]) == 1
     assert recipe["actions"][0]["type"] == ActionType.NORMALIZE_CATEGORIES.value
+
+
+def test_written_csv_can_be_reloaded_and_undone(tmp_path: Path) -> None:
+    source = tmp_path / "messy.csv"
+    _write_messy_csv(source)
+    original = load_dataset(source).tables[source.stem].copy(deep=True)
+    plan = propose_actions(source)
+
+    approved = {
+        action.id
+        for action in plan.actions
+        if action.type in {
+            ActionType.NORMALIZE_CATEGORIES,
+            ActionType.NORMALIZE_MISSING,
+        }
+    }
+    loaded = load_dataset(source)
+    cleaned, changeset = apply_plan(
+        source,
+        loaded.tables,
+        plan,
+        approved_ids=approved,
+    )
+
+    cleaned_path = write_tables(cleaned, tmp_path / "renamed_cleaned.csv")
+    reloaded = load_dataset(cleaned_path)
+    restored = undo_changeset(reloaded.tables, changeset)
+
+    restored_frame = next(iter(restored.values()))
+    pd.testing.assert_frame_equal(restored_frame, original)
