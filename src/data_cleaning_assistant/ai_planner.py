@@ -35,13 +35,15 @@ Scientific/research safety rules:
 - Never impute identifiers or missing values.
 - Never delete outliers.
 - Never infer clinical truth from column names.
+- Never propose row deletion. Exact duplicate rows are handled by deterministic rules and human review.
 - Never remove non-exact duplicates.
 - Never merge fuzzy categories unless the supplied detector evidence strongly suggests the
   two observed labels mean the same thing.
 - Never invent category labels or missing-value tokens.
 - Defer ambiguous cases rather than forcing a change.
 - Use only the supported action types and parameter shapes described by the user message.
-- Reference the issue IDs that support each proposal.
+- issue_ids are optional provenance. If you are not certain of the exact supplied ID, leave the list empty.
+- Never invent issue IDs.
 """
 
 
@@ -122,21 +124,20 @@ def _allowed_category_pairs(issues: list[Issue]) -> set[frozenset[str]]:
     return pairs
 
 
-def _validate_issue_ids(
+def _validated_issue_ids(
     proposal: AIActionProposal,
     matching: list[Issue],
-) -> tuple[list[str] | None, str | None]:
+) -> list[str]:
+    """Attach only independently matched detector provenance.
+
+    Model-supplied issue IDs are advisory metadata, not a mutation-safety gate.
+    If the model copies an ID incorrectly, local table/column/type evidence still
+    determines whether the action is allowed.
+    """
     matching_ids = {issue.id for issue in matching}
-    if proposal.issue_ids:
-        supplied = set(proposal.issue_ids)
-        invalid = supplied - matching_ids
-        if invalid:
-            return None, (
-                "Proposal referenced issue IDs that do not support this action: "
-                + ", ".join(sorted(invalid))
-            )
-        return sorted(supplied), None
-    return sorted(matching_ids), None
+    supplied = set(proposal.issue_ids)
+    valid_supplied = supplied & matching_ids
+    return sorted(valid_supplied or matching_ids)
 
 
 def _column_exists(
@@ -269,25 +270,15 @@ def _validated_action(
         title = "AI: trim surrounding whitespace"
 
     elif proposal.type == ActionType.REMOVE_EXACT_DUPLICATES:
-        if proposal.column is not None:
-            return None, "Exact-duplicate removal is a table-level action."
-        matching = _matching_issues(
-            report,
-            table=proposal.table,
-            column=None,
-            issue_types={"exact_duplicate_rows"},
+        return None, (
+            "AI is not allowed to propose row deletion. Exact duplicates are surfaced "
+            "by deterministic rules for explicit human review."
         )
-        if not matching:
-            return None, "No exact-duplicate detector evidence supports this proposal."
-        parameters = {"keep": "first"}
-        title = "AI: remove later copies of exact duplicate rows"
 
     else:
         return None, f"Unsupported action type {proposal.type.value!r}."
 
-    issue_ids, issue_error = _validate_issue_ids(proposal, matching)
-    if issue_error:
-        return None, issue_error
+    issue_ids = _validated_issue_ids(proposal, matching)
 
     detector_confidence = max(issue.confidence for issue in matching)
     confidence = min(proposal.confidence, detector_confidence)
@@ -307,7 +298,7 @@ def _validated_action(
             description=proposal.rationale.strip(),
             parameters=parameters,
             confidence=confidence,
-            issue_ids=issue_ids or [],
+            issue_ids=issue_ids,
             origin=ActionOrigin.AI,
         ),
         None,
@@ -315,14 +306,12 @@ def _validated_action(
 
 
 def _build_user_prompt(context: AIPlannerContext) -> str:
-    schema = AIPlannerResponse.model_json_schema()
     rules = {
         "normalize_categories": {"mapping": {"observed_label": "observed_label"}},
         "normalize_missing": {"values": ["detected_missing_token"]},
         "standardize_dates": {"format": "%Y-%m-%d", "unparseable": "keep"},
         "coerce_numeric": {"unparseable": "keep"},
         "trim_whitespace": {},
-        "remove_exact_duplicates": {"keep": "first"},
     }
     return (
         "Review the following compact profiler context and propose only defensible cleaning "
@@ -332,8 +321,6 @@ def _build_user_prompt(context: AIPlannerContext) -> str:
         + json.dumps(rules, indent=2, sort_keys=True)
         + "\n\nProfiler context:\n"
         + context.model_dump_json(indent=2)
-        + "\n\nResponse JSON schema:\n"
-        + json.dumps(schema, indent=2, sort_keys=True)
     )
 
 
@@ -392,6 +379,8 @@ def propose_ai_plan(
                     type=proposal.type,
                     table=proposal.table,
                     column=proposal.column,
+                    parameters=proposal.parameters,
+                    rationale=proposal.rationale,
                     reason=error or "Proposal failed validation.",
                 )
             )
