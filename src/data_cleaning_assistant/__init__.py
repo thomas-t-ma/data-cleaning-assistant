@@ -28,4 +28,4 @@ __all__ = [
     "research_benchmark_cases",
     "run_ai_benchmark",
 ]
-__version__ = "0.4.6"
+__version__ = "0.4.7"
