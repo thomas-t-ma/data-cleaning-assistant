@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 from typing import Protocol, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -75,7 +74,7 @@ class OllamaProvider:
             raise AIProviderError(
                 f"Ollama returned HTTP {exc.code}: {detail[:500]}"
             ) from exc
-        except (URLError, TimeoutError, socket.timeout) as exc:
+        except (URLError, TimeoutError) as exc:
             raise AIProviderError(
                 f"Could not reach Ollama at {self.base_url}. "
                 "Start Ollama locally, then retry."
