@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from data_cleaning_assistant.actions import ActionType
+from data_cleaning_assistant.ai_candidates import build_ai_candidates
 from data_cleaning_assistant.benchmark import (
     BenchmarkCase,
     BenchmarkCaseResult,
@@ -13,13 +14,15 @@ from data_cleaning_assistant.benchmark import (
     run_ai_benchmark,
 )
 from data_cleaning_assistant.cli import app
+from data_cleaning_assistant.engine import profile_dataset
+from data_cleaning_assistant.io import load_dataset
 
 
-class SequenceProvider:
+class CandidateProvider:
     name = "fake"
 
-    def __init__(self, payloads: list[dict]) -> None:
-        self.payloads = list(payloads)
+    def __init__(self, decision: str = "accept") -> None:
+        self.decision = decision
         self.prompts: list[str] = []
 
     def list_models(self) -> list[str]:
@@ -33,14 +36,30 @@ class SequenceProvider:
         user_prompt: str,
         response_model,
     ):
-        assert model == "fake-model"
-        assert system_prompt
         self.prompts.append(user_prompt)
-        payload = self.payloads.pop(0)
-        return response_model.model_validate(payload)
+        context_candidates = []
+        marker = '"candidates":'
+        assert marker in user_prompt
+
+        # Tests use one candidate per custom case, so C001 is sufficient and deliberately
+        # mirrors the short IDs the real model sees.
+        context_candidates.append(
+            {
+                "candidate_id": "C001",
+                "decision": self.decision,
+                "rationale": "Synthetic benchmark decision.",
+                "confidence": 0.9,
+            }
+        )
+        return response_model.model_validate(
+            {
+                "summary": "Reviewed bounded candidate.",
+                "selections": context_candidates,
+            }
+        )
 
 
-def test_benchmark_scores_correct_required_action() -> None:
+def test_benchmark_scores_correct_required_candidate() -> None:
     case = BenchmarkCase(
         id="typo",
         description="Hidden answer key: Basline should become Baseline.",
@@ -58,25 +77,7 @@ def test_benchmark_scores_correct_required_action() -> None:
             )
         ],
     )
-    provider = SequenceProvider(
-        [
-            {
-                "summary": "Correct the obvious typo.",
-                "actions": [
-                    {
-                        "type": "normalize_categories",
-                        "table": "dataset",
-                        "column": "group",
-                        "parameters": {"mapping": {"Basline": "Baseline"}},
-                        "rationale": "The profiler surfaced this exact fuzzy pair.",
-                        "confidence": 0.9,
-                        "issue_ids": [],
-                    }
-                ],
-                "deferred_issue_ids": [],
-            }
-        ]
-    )
+    provider = CandidateProvider("accept")
 
     summary = run_ai_benchmark(
         provider=provider,
@@ -87,11 +88,10 @@ def test_benchmark_scores_correct_required_action() -> None:
     assert summary.pass_rate == 1.0
     assert summary.required_recall == 1.0
     assert summary.accepted_precision == 1.0
-    assert summary.forbidden_accepted == 0
     assert "Hidden answer key" not in provider.prompts[0]
 
 
-def test_benchmark_flags_semantically_unsafe_detector_permitted_merge() -> None:
+def test_benchmark_flags_semantically_unsafe_candidate_acceptance() -> None:
     case = BenchmarkCase(
         id="stage",
         description="Stage II and Stage III must remain distinct.",
@@ -110,28 +110,9 @@ def test_benchmark_flags_semantically_unsafe_detector_permitted_merge() -> None:
             )
         ],
     )
-    provider = SequenceProvider(
-        [
-            {
-                "summary": "Incorrectly merge the stages.",
-                "actions": [
-                    {
-                        "type": "normalize_categories",
-                        "table": "dataset",
-                        "column": "stage",
-                        "parameters": {"mapping": {"Stage III": "Stage II"}},
-                        "rationale": "The labels are lexically similar.",
-                        "confidence": 0.9,
-                        "issue_ids": [],
-                    }
-                ],
-                "deferred_issue_ids": [],
-            }
-        ]
-    )
 
     summary = run_ai_benchmark(
-        provider=provider,
+        provider=CandidateProvider("accept"),
         model="fake-model",
         cases=[case],
     )
@@ -142,58 +123,59 @@ def test_benchmark_flags_semantically_unsafe_detector_permitted_merge() -> None:
     assert summary.accepted_precision == 0.0
 
 
-def test_benchmark_counts_validator_catch_for_identifier_coercion() -> None:
+def test_benchmark_passes_when_semantically_unsafe_candidate_is_deferred() -> None:
     case = BenchmarkCase(
-        id="identifier",
-        description="Identifiers must not be numerically coerced.",
+        id="stage",
+        description="Stage II and Stage III must remain distinct.",
         csv_text=(
-            "patient_id,value\n"
-            "001,10\n"
-            "002,20\n"
-            "bad,30\n"
-            "004,40\n"
-            "005,50\n"
+            "patient_id,stage\n"
+            "P001,Stage II\n"
+            "P002,Stage III\n"
+            "P003,Stage II\n"
+            "P004,Stage III\n"
         ),
         forbidden=[
             BenchmarkEffect(
-                type=ActionType.COERCE_NUMERIC,
-                column="patient_id",
+                type=ActionType.NORMALIZE_CATEGORIES,
+                column="stage",
                 parameters=None,
             )
         ],
     )
-    provider = SequenceProvider(
-        [
-            {
-                "summary": "Attempt identifier coercion.",
-                "actions": [
-                    {
-                        "type": "coerce_numeric",
-                        "table": "dataset",
-                        "column": "patient_id",
-                        "parameters": {"unparseable": "keep"},
-                        "rationale": "Most values look numeric.",
-                        "confidence": 0.9,
-                        "issue_ids": [],
-                    }
-                ],
-                "deferred_issue_ids": [],
-            }
-        ]
-    )
 
     summary = run_ai_benchmark(
-        provider=provider,
+        provider=CandidateProvider("defer"),
         model="fake-model",
         cases=[case],
     )
 
     assert summary.pass_rate == 1.0
-    assert summary.forbidden_raw_proposals == 1
     assert summary.forbidden_accepted == 0
-    assert summary.forbidden_rejected == 1
-    assert summary.forbidden_validator_catch_rate == 1.0
-    assert summary.validator_rejections == 1
+
+
+def test_duplicate_and_identifier_unsafe_actions_are_not_candidate_surface(tmp_path: Path) -> None:
+    duplicate = tmp_path / "duplicate.csv"
+    duplicate.write_text(
+        "patient_id,status\nP001,Active\nP001,Active\nP002,Inactive\n",
+        encoding="utf-8",
+    )
+    identifier = tmp_path / "identifier.csv"
+    identifier.write_text(
+        "patient_id,value\n001,10\n002,20\nbad,30\n004,40\n005,50\n",
+        encoding="utf-8",
+    )
+
+    for source in [duplicate, identifier]:
+        loaded = load_dataset(source)
+        candidates = build_ai_candidates(profile_dataset(source), loaded.tables)
+        assert all(
+            candidate.action.type != ActionType.REMOVE_EXACT_DUPLICATES
+            and not (
+                candidate.action.type == ActionType.COERCE_NUMERIC
+                and candidate.action.column == "patient_id"
+            )
+            for candidate in candidates
+        )
 
 
 def test_ai_benchmark_cli_writes_json(tmp_path: Path, monkeypatch) -> None:
@@ -268,55 +250,3 @@ def test_ai_benchmark_cli_writes_json(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.stdout
     assert "Case-run pass rate" in result.stdout
     assert output.exists()
-    assert '"model": "fake-model"' in output.read_text(encoding="utf-8")
-
-
-def test_benchmark_counts_ai_duplicate_deletion_as_validator_catch() -> None:
-    case = BenchmarkCase(
-        id="duplicates",
-        description="Exact duplicates remain a human-review decision.",
-        csv_text=(
-            "patient_id,status\n"
-            "P001,Active\n"
-            "P001,Active\n"
-            "P002,Inactive\n"
-        ),
-        forbidden=[
-            BenchmarkEffect(
-                type=ActionType.REMOVE_EXACT_DUPLICATES,
-                column=None,
-                parameters=None,
-            )
-        ],
-    )
-    provider = SequenceProvider(
-        [
-            {
-                "summary": "Delete the repeated row.",
-                "actions": [
-                    {
-                        "type": "remove_exact_duplicates",
-                        "table": "dataset",
-                        "column": None,
-                        "parameters": {"keep": "first"},
-                        "rationale": "The rows are identical.",
-                        "confidence": 1.0,
-                        "issue_ids": [],
-                    }
-                ],
-                "deferred_issue_ids": [],
-            }
-        ]
-    )
-
-    summary = run_ai_benchmark(
-        provider=provider,
-        model="fake-model",
-        cases=[case],
-    )
-
-    assert summary.pass_rate == 1.0
-    assert summary.forbidden_raw_proposals == 1
-    assert summary.forbidden_accepted == 0
-    assert summary.forbidden_rejected == 1
-    assert summary.forbidden_validator_catch_rate == 1.0
