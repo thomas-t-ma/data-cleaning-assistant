@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import shutil
-from copy import deepcopy
+from copy import copy, deepcopy
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -385,11 +385,28 @@ def _sheet_has_formulas(worksheet) -> bool:
     )
 
 
+def _copy_row_style(worksheet, source_row: int, target_row: int) -> None:
+    if source_row < 1 or source_row > worksheet.max_row:
+        return
+    for column in range(1, worksheet.max_column + 1):
+        source_cell = worksheet.cell(row=source_row, column=column)
+        target_cell = worksheet.cell(row=target_row, column=column)
+        if source_cell.has_style:
+            target_cell._style = copy(source_cell._style)
+        if source_cell.number_format:
+            target_cell.number_format = source_cell.number_format
+    source_dimension = worksheet.row_dimensions[source_row]
+    target_dimension = worksheet.row_dimensions[target_row]
+    target_dimension.height = source_dimension.height
+    target_dimension.hidden = source_dimension.hidden
+
+
 def _write_excel_preserving_source(
     source_path: Path,
     original_tables: dict[str, pd.DataFrame],
     cleaned_tables: dict[str, pd.DataFrame],
     output: Path,
+    inserted_rows: dict[str, list[RowSnapshot]] | None = None,
 ) -> Path:
     keep_vba = source_path.suffix.lower() == ".xlsm"
     shutil.copy2(source_path, output)
@@ -401,6 +418,30 @@ def _write_excel_preserving_source(
 
         cleaned = cleaned_tables[table_name]
         worksheet = workbook[table_name]
+        sheet_insertions = (inserted_rows or {}).get(table_name, [])
+
+        if sheet_insertions:
+            if _sheet_has_formulas(worksheet):
+                raise ValueError(
+                    f"Refusing row insertion in sheet {table_name!r} because it contains formulas."
+                )
+            for snapshot in sorted(sheet_insertions, key=lambda row: row.row_position):
+                excel_row = snapshot.row_position + 2
+                worksheet.insert_rows(excel_row, 1)
+                style_source = excel_row + 1 if excel_row + 1 <= worksheet.max_row else excel_row - 1
+                _copy_row_style(worksheet, style_source, excel_row)
+
+            # Row reinsertion is used by audit-based undo. The cleaned dataframe is
+            # already the authoritative restored data, and formula-bearing sheets
+            # were rejected above, so rewrite values while retaining cell styles.
+            for output_row, (_, row) in enumerate(cleaned.iterrows(), start=2):
+                for column_number, column in enumerate(cleaned.columns, start=1):
+                    value = row[column]
+                    worksheet.cell(row=output_row, column=column_number).value = (
+                        None if is_null(value) else value
+                    )
+            continue
+
         cleaned_index = set(cleaned.index)
         deleted_positions = [
             position
@@ -421,8 +462,8 @@ def _write_excel_preserving_source(
         for output_row, original_index in enumerate(cleaned.index, start=2):
             if original_index not in original.index:
                 raise ValueError(
-                    "Excel preservation currently supports cell edits and row deletion, "
-                    "not inserted rows."
+                    "Excel preservation currently supports cell edits and audited row reinsertion, "
+                    "not arbitrary inserted rows."
                 )
             for column_number, column in enumerate(cleaned.columns, start=1):
                 desired = cleaned.at[original_index, column]
@@ -446,6 +487,8 @@ def write_cleaned_dataset(
     original_tables: dict[str, pd.DataFrame],
     cleaned_tables: dict[str, pd.DataFrame],
     output_path: str | Path,
+    *,
+    inserted_rows: dict[str, list[RowSnapshot]] | None = None,
 ) -> Path:
     source = Path(source_path).expanduser().resolve()
     output = Path(output_path).expanduser().resolve()
@@ -463,6 +506,7 @@ def write_cleaned_dataset(
             original_tables,
             cleaned_tables,
             output,
+            inserted_rows=inserted_rows,
         )
     return write_tables(cleaned_tables, output)
 
