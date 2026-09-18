@@ -26,8 +26,13 @@ For every supplied candidate:
 - never alter table names, column names, mappings, tokens, formats, or parameters;
 - treat suspicious as different from wrong;
 - for fuzzy category merges, accept only when the labels clearly mean the same thing;
+- when evidence says numeric_zero_padding_equivalence, the surrounding text and numeric value are
+  deterministically equal and only leading-zero formatting differs; treat that as strong evidence
+  of a formatting-only variant unless the supplied context indicates a distinct coded category;
 - semantically different stages, grades, visits, timepoints, doses, outcomes, or specimen types
   must remain distinct even when their labels look similar;
+- contextual missingness labels such as Unknown, Not available, or Not applicable are meaningful
+  states unless an explicit study schema says otherwise; they should not be collapsed to null;
 - safe formatting operations such as trimming surrounding whitespace may be accepted when the
   proposed change is exactly bounded;
 - numeric/date proposals preserve unparseable values, so judge whether the field itself is
