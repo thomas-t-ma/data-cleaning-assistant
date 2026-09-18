@@ -64,7 +64,9 @@ def build_ai_context(report: DatasetReport) -> AIPlannerContext:
                         null_percent=column.null_percent,
                         unique_count=column.unique_count,
                         unique_percent=column.unique_percent,
-                        numeric_summary=column.numeric_summary,
+                        numeric_summary=(
+                            None if column.inferred_type == "identifier" else column.numeric_summary
+                        ),
                     )
                     for column in table.columns
                 ],
