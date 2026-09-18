@@ -11,6 +11,8 @@ from data_cleaning_assistant.benchmark import (
     BenchmarkCaseResult,
     BenchmarkEffect,
     BenchmarkSummary,
+    benchmark_cases,
+    research_benchmark_cases,
     run_ai_benchmark,
 )
 from data_cleaning_assistant.cli import app
@@ -250,3 +252,37 @@ def test_ai_benchmark_cli_writes_json(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0, result.stdout
     assert "Case-run pass rate" in result.stdout
     assert output.exists()
+
+
+def test_research_benchmark_cases_have_real_candidate_surface(tmp_path: Path) -> None:
+    cases = research_benchmark_cases()
+    assert len(cases) >= 10
+
+    for case in cases:
+        source = tmp_path / f"{case.id}.csv"
+        source.write_text(case.csv_text, encoding="utf-8")
+        loaded = load_dataset(source)
+        candidates = build_ai_candidates(profile_dataset(source), loaded.tables)
+        actions = [candidate.action for candidate in candidates]
+
+        for effect in case.required:
+            assert any(effect.matches_action(action) for action in actions), (
+                f"{case.id} required effect was not generated as a candidate: {effect}"
+            )
+        for effect in case.forbidden:
+            assert any(effect.matches_action(action) for action in actions), (
+                f"{case.id} forbidden semantic effect was not exposed as a candidate: {effect}"
+            )
+
+
+def test_benchmark_suite_selection_is_stable() -> None:
+    core = benchmark_cases("core")
+    research = benchmark_cases("research")
+    combined = benchmark_cases("all")
+
+    assert len(core) == 8
+    assert len(research) >= 10
+    assert [case.id for case in combined] == [
+        *[case.id for case in core],
+        *[case.id for case in research],
+    ]
