@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.2
+
+- Made model-supplied issue IDs advisory provenance rather than a mutation-safety gate.
+- Valid actions now attach independently matched local detector issue IDs even when a small model copies an ID incorrectly.
+- Removed AI authority to propose row deletion; exact duplicates remain deterministic human-review actions.
+- Added rejected-proposal parameters and rationale for audit/debugging.
+- Made forbidden-action validator catch-rate accounting exact rather than inferred from counts.
+- Added failed-case benchmark diagnostics directly to the CLI.
+- Removed redundant response-schema text from the user prompt because Ollama already receives the JSON schema through structured output.
+- Added configurable Ollama thinking mode with `--think/--no-think`; structured planning defaults to non-thinking mode.
+- Added regression tests for incorrect issue IDs, AI row-deletion rejection, exact benchmark catch accounting, and Ollama thinking configuration.
+
 ## 0.4.1
 
 - Added a fixed synthetic AI-cleaning benchmark with hidden answer keys.
