@@ -5,8 +5,8 @@ import re
 from datetime import date, datetime
 from typing import Any
 
-from dateutil import parser as date_parser
 import pandas as pd
+from dateutil import parser as date_parser
 
 
 MISSING_TOKENS = {
