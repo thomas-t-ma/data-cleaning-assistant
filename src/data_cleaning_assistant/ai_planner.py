@@ -191,6 +191,11 @@ def _validated_action(
             mapping[key] = value
         if not mapping:
             return None, "Category mapping had no effective supported replacements."
+        if set(mapping).intersection(mapping.values()):
+            return None, (
+                "Category mappings may not contain cycles or chains; map variants directly "
+                "to a canonical observed label."
+            )
         parameters = {"mapping": mapping}
         title = "AI: merge evidence-supported category variants"
 
