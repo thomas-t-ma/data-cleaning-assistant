@@ -19,13 +19,13 @@ __all__ = [
     "Issue",
     "OllamaProvider",
     "benchmark_cases",
-    "research_benchmark_cases",
     "build_ai_context",
     "load_recipe",
     "profile_dataset",
     "propose_actions",
     "propose_ai_plan",
     "recipe_to_plan",
+    "research_benchmark_cases",
     "run_ai_benchmark",
 ]
 __version__ = "0.4.5"
