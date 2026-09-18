@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.2**.
+Current version: **v0.4.3**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -16,19 +16,18 @@ Reviewable transformations include category normalization, missing-token normali
 
 v0.4 adds an optional local Ollama planning layer.
 
-The AI **does not receive the dataframe and does not write data**. It receives compact profiler context and returns structured proposals. Those proposals must pass two gates:
+The AI **does not receive the dataframe and does not write data**. Starting in v0.4.3, it also does not author cleaning actions. Deterministic code converts profiler findings into a bounded list of candidate actions; the model only returns a short candidate ID plus `accept` or `defer`, rationale, and confidence.
 
-1. Ollama structured output must satisfy the Pydantic JSON schema.
-2. A deterministic local validator must confirm that every proposed mutation is supported by profiler evidence and observed local values.
+Ollama structured output must still satisfy the Pydantic JSON schema, but table names, column names, transformation parameters, mappings, tokens, and formats all come from local deterministic code rather than model-generated fields.
 
 Examples of enforced restrictions:
 
-- category merges can only use observed labels already surfaced as a detector pair
-- missing-value normalization can only use tokens already detected as missing-like
-- identifier-like columns cannot be proposed for numeric coercion
-- AI cannot propose row deletion; exact duplicates remain a deterministic human-review action
-- outlier deletion and imputation are not supported AI actions
-- cyclic or chained category mappings are rejected
+- category-merge candidates can only use observed detector-supported label pairs
+- missing-value candidates can only contain detector-confirmed missing-like tokens
+- identifier-like numeric coercion is never exposed as an AI candidate
+- row deletion is never exposed as an AI candidate
+- outlier deletion and imputation are never exposed as AI candidates
+- fuzzy category candidates test semantic judgment: the model should accept clear typos but defer scientifically distinct labels
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new.
 
@@ -92,7 +91,7 @@ For a more stable estimate, repeat every case three times:
   --output ai_benchmark_qwen35_4b.json
 ```
 
-Failed cases now print the model summary, accepted actions, and exact validator rejection reasons directly in the terminal.
+Failed cases print the model summary, accepted actions, and any candidate-ID validation problems directly in the terminal. Under v0.4.3, normal failures should mostly reflect semantic accept/defer judgment rather than malformed action fields.
 
 The benchmark reports:
 

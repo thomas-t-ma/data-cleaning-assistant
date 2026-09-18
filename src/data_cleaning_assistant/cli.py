@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .actions import ActionDecision, ChangeSet, CleaningPlan
+from .ai_candidates import build_ai_candidates
 from .ai_context import build_ai_context
 from .ai_planner import propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
@@ -281,8 +282,10 @@ def ai_context_command(
     ] = None,
 ) -> None:
     """Show exactly what compact context would be sent to the AI planner."""
+    loaded = load_dataset(input_path)
     report = profile_dataset(input_path)
-    context = build_ai_context(report)
+    candidates = build_ai_candidates(report, loaded.tables)
+    context = build_ai_context(report, candidates)
     payload = context.model_dump_json(indent=2)
 
     if output:

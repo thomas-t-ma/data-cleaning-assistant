@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -46,37 +47,52 @@ class AIRelationshipContext(BaseModel):
     confidence: float
 
 
+class AICandidateContext(BaseModel):
+    id: str
+    type: ActionType
+    table: str
+    column: str | None = None
+    proposed_change: dict[str, Any] = Field(default_factory=dict)
+    detector_confidence: float
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    question: str
+
+
 class AIPlannerContext(BaseModel):
-    context_version: int = 1
+    context_version: int = 2
     privacy_note: str = (
         "No source path, raw row samples, or identifier values are included. "
+        "The model receives deterministic candidate actions and only decides accept versus defer. "
         "Detector evidence may include category labels, missing tokens, or numeric/date examples "
-        "needed to evaluate supported cleaning actions."
+        "needed to judge those candidates."
     )
     tables: list[AITableContext] = Field(default_factory=list)
     issues: list[AIIssueContext] = Field(default_factory=list)
     relationships: list[AIRelationshipContext] = Field(default_factory=list)
+    candidates: list[AICandidateContext] = Field(default_factory=list)
 
 
-class AIActionProposal(BaseModel):
-    type: ActionType
-    table: str
-    column: str | None = None
-    parameters: dict[str, Any] = Field(default_factory=dict)
+class CandidateDecision(str, Enum):
+    ACCEPT = "accept"
+    DEFER = "defer"
+
+
+class AICandidateSelection(BaseModel):
+    candidate_id: str
+    decision: CandidateDecision
     rationale: str
     confidence: float = Field(ge=0.0, le=1.0)
-    issue_ids: list[str] = Field(default_factory=list)
 
 
 class AIPlannerResponse(BaseModel):
     summary: str
-    actions: list[AIActionProposal] = Field(default_factory=list)
-    deferred_issue_ids: list[str] = Field(default_factory=list)
+    selections: list[AICandidateSelection] = Field(default_factory=list)
 
 
 class AIRejectedProposal(BaseModel):
-    type: ActionType
-    table: str
+    candidate_id: str
+    type: ActionType | None = None
+    table: str | None = None
     column: str | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
