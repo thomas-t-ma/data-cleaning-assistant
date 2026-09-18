@@ -13,6 +13,7 @@ from ..inference import (
     MISSING_TOKENS,
     STRUCTURAL_MISSING_TOKENS,
     infer_semantic_type,
+    is_contextual_missing_label,
     is_missing_like,
     is_null,
     looks_like_identifier_name,
@@ -195,7 +196,11 @@ def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue
 
 
 def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
-    values = [value for value in series.tolist() if not is_missing_like(value)]
+    values = [
+        value
+        for value in series.tolist()
+        if not is_missing_like(value) and not is_contextual_missing_label(value)
+    ]
     if len(values) < 3:
         return []
 
@@ -207,7 +212,9 @@ def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
     bad_values = [str(value) for value in values if parse_number(value) is None]
     unique_bad = sorted(set(bad_values))[:20]
     full_mask = [
-        not is_missing_like(value) and parse_number(value) is None
+        not is_missing_like(value)
+        and not is_contextual_missing_label(value)
+        and parse_number(value) is None
         for value in series.tolist()
     ]
     return [
@@ -230,7 +237,11 @@ def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
 
 
 def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]:
-    values = [value for value in series.tolist() if not is_missing_like(value)]
+    values = [
+        value
+        for value in series.tolist()
+        if not is_missing_like(value) and not is_contextual_missing_label(value)
+    ]
     if len(values) < 3:
         return []
     parsed = [parse_date(value) for value in values]
@@ -248,7 +259,9 @@ def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]
         }
     )
     full_mask = [
-        not is_missing_like(value) and parse_date(value) is None
+        not is_missing_like(value)
+        and not is_contextual_missing_label(value)
+        and parse_date(value) is None
         for value in series.tolist()
     ]
     return [
