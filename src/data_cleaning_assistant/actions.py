@@ -42,12 +42,17 @@ class CleaningPlan(BaseModel):
     actions: list[CleaningAction] = Field(default_factory=list)
 
 
+class ValueSnapshot(BaseModel):
+    kind: str
+    value: Any = None
+
+
 class CellChange(BaseModel):
     table: str
     row_index: int
     column: str
-    old_value: Any = None
-    new_value: Any = None
+    old_value: ValueSnapshot
+    new_value: ValueSnapshot
 
 
 class ActionPreview(BaseModel):
@@ -70,6 +75,8 @@ class ChangeSet(BaseModel):
     source_sha256: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     executions: list[ActionExecution] = Field(default_factory=list)
+    result_path: str | None = None
+    result_sha256: str | None = None
 
     @property
     def affected_cell_count(self) -> int:
