@@ -12,13 +12,7 @@ from .inference import (
     normalize_column_name,
     normalize_text,
 )
-from .models import (
-    CandidateKey,
-    CrossTableRelationship,
-    GrainInference,
-    Issue,
-    Severity,
-)
+from .models import CandidateKey, CrossTableRelationship, GrainInference, Issue, Severity
 
 
 SUBJECT_PATTERNS = ("patient", "subject", "participant", "person", "mrn")
