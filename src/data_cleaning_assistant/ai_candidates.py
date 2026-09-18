@@ -105,6 +105,75 @@ def _zero_padding_equivalent(left: str, right: str) -> bool:
     return saw_padding_difference
 
 
+def _levenshtein_distance(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if len(left) < len(right):
+        left, right = right, left
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        for right_index, right_char in enumerate(right, start=1):
+            insert_cost = current[right_index - 1] + 1
+            delete_cost = previous[right_index] + 1
+            replace_cost = previous[right_index - 1] + (left_char != right_char)
+            current.append(min(insert_cost, delete_cost, replace_cost))
+        previous = current
+    return previous[-1]
+
+
+def _single_edit_typo_evidence(
+    left: str,
+    right: str,
+    counts: Counter[str],
+) -> dict[str, Any] | None:
+    """Identify a conservative single-token, single-edit typo pattern.
+
+    This intentionally excludes numeric-token changes and very short tokens so
+    distinctions like Dose 5 vs Dose 50, Stage II vs Stage III, and Arm A vs Arm B
+    do not receive typo evidence.
+    """
+    left_tokens = re.findall(r"\w+|[^\w\s]", left.casefold())
+    right_tokens = re.findall(r"\w+|[^\w\s]", right.casefold())
+    if len(left_tokens) != len(right_tokens):
+        return None
+
+    differences = [
+        (index, left_token, right_token)
+        for index, (left_token, right_token) in enumerate(
+            zip(left_tokens, right_tokens, strict=True)
+        )
+        if left_token != right_token
+    ]
+    if len(differences) != 1:
+        return None
+
+    index, left_token, right_token = differences[0]
+    if left_token.isdigit() or right_token.isdigit():
+        return None
+    if min(len(left_token), len(right_token)) < 4:
+        return None
+
+    distance = _levenshtein_distance(left_token, right_token)
+    if distance != 1:
+        return None
+
+    variant, canonical = _canonical_pair(left, right, counts)
+    canonical_count = counts[canonical]
+    variant_count = counts[variant]
+    return {
+        "single_edit_typo_pattern": True,
+        "differing_token_index": index,
+        "left_token": left_token,
+        "right_token": right_token,
+        "edit_distance": distance,
+        "unchanged_token_count": len(left_tokens) - 1,
+        "variant_count": variant_count,
+        "canonical_count": canonical_count,
+        "canonical_more_frequent": canonical_count > variant_count,
+    }
+
+
 def _canonical_pair(left: str, right: str, counts: Counter[str]) -> tuple[str, str]:
     left_count = counts[left]
     right_count = counts[right]
@@ -180,11 +249,14 @@ def _category_candidates(
                 continue
             variant, canonical = _canonical_pair(left, right, counts)
             zero_padding = _zero_padding_equivalent(left, right)
-            basis = (
-                "numeric_zero_padding_equivalence"
-                if zero_padding
-                else "fuzzy_similarity_only"
-            )
+            typo_evidence = _single_edit_typo_evidence(left, right, counts)
+            if zero_padding:
+                basis = "numeric_zero_padding_equivalence"
+            elif typo_evidence is not None:
+                basis = "single_edit_typo_pattern"
+            else:
+                basis = "fuzzy_similarity_only"
+
             question = (
                 f"Do {left!r} and {right!r} clearly mean the same category? "
                 f"If yes, map {variant!r} to the more likely canonical label {canonical!r}. "
@@ -195,6 +267,14 @@ def _category_candidates(
                     f"{left!r} and {right!r} have identical surrounding text and equal numeric "
                     "tokens after removing leading zeros. Is this formatting-only difference safe "
                     f"to normalize by mapping {variant!r} to {canonical!r}?"
+                )
+            elif typo_evidence is not None:
+                question = (
+                    f"{left!r} and {right!r} differ in exactly one token by one character edit, "
+                    "all other tokens are identical, and the proposed canonical label is "
+                    f"{canonical!r}. Is this strong typo-shaped evidence sufficient to normalize "
+                    f"{variant!r} to {canonical!r}? Defer if the token difference could encode a "
+                    "real scientific distinction."
                 )
             output.append(
                 _make_candidate(
@@ -210,6 +290,7 @@ def _category_candidates(
                         "counts": {left: counts[left], right: counts[right]},
                         "basis": basis,
                         "numeric_zero_padding_equivalent": zero_padding,
+                        "single_edit_typo_evidence": typo_evidence,
                     },
                     question=question,
                     title="AI-reviewed fuzzy category merge",

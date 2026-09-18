@@ -425,3 +425,57 @@ def test_contextual_missingness_is_flagged_but_not_actionable_by_default(
         and action.column == "outcome_category"
         for action in rule_plan.actions
     )
+
+
+def test_single_edit_typo_evidence_for_long_text_token(tmp_path: Path) -> None:
+    source = tmp_path / "specimens.csv"
+    source.write_text(
+        "specimen_id,specimen_source\n"
+        "SP001,Peripheral Blood\n"
+        "SP002,Peripheral Blood\n"
+        "SP003,Peripheral Blod\n"
+        "SP004,Peripheral Blood\n",
+        encoding="utf-8",
+    )
+
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, "specimen_source")
+    evidence = candidate.context.evidence
+
+    assert candidate.action.parameters == {
+        "mapping": {"Peripheral Blod": "Peripheral Blood"}
+    }
+    assert evidence["basis"] == "single_edit_typo_pattern"
+    assert evidence["single_edit_typo_evidence"]["single_edit_typo_pattern"] is True
+    assert evidence["single_edit_typo_evidence"]["edit_distance"] == 1
+    assert evidence["single_edit_typo_evidence"]["unchanged_token_count"] == 1
+    assert evidence["single_edit_typo_evidence"]["canonical_more_frequent"] is True
+
+
+@pytest.mark.parametrize(
+    ("column", "left", "right"),
+    [
+        ("stage", "Stage II", "Stage III"),
+        ("dose", "Dose 5 mg", "Dose 50 mg"),
+        ("arm", "Treatment Arm A", "Treatment Arm B"),
+    ],
+)
+def test_scientific_short_or_numeric_differences_do_not_get_typo_evidence(
+    tmp_path: Path,
+    column: str,
+    left: str,
+    right: str,
+) -> None:
+    source = tmp_path / f"{column}.csv"
+    source.write_text(
+        f"subject_id,{column}\n"
+        f"S001,{left}\n"
+        f"S002,{right}\n"
+        f"S003,{left}\n"
+        f"S004,{right}\n",
+        encoding="utf-8",
+    )
+
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, column)
+
+    assert candidate.context.evidence["basis"] != "single_edit_typo_pattern"
+    assert candidate.context.evidence["single_edit_typo_evidence"] is None

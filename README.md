@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.6**.
+Current version: **v0.4.7**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -29,6 +29,7 @@ Examples of enforced restrictions:
 - outlier deletion and imputation are never exposed as AI candidates
 - fuzzy category candidates test semantic judgment: the model should accept clear typos but defer scientifically distinct labels
 - zero-padding variants such as `Visit 01` vs `Visit 1` receive deterministic numeric-equivalence evidence rather than relying on string similarity alone
+- likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
 
@@ -85,6 +86,8 @@ The original regression suite is now called `core`. Structured planning uses Oll
 v0.4.5 adds a harder `research` suite with visit/cohort formatting, specimen labels, censored lab values, dose and unit distinctions, timepoints, treatment arms, and meaningful values such as `Unknown` or `Not applicable`.
 
 v0.4.6 hardens the semantics exposed by that suite: contextual missingness values remain visible QA findings but are removed from the executable candidate surface by default, while numeric zero-padding variants get explicit machine-derived equivalence evidence.
+
+v0.4.7 adds generic single-edit typo-shape evidence for long non-numeric tokens while deliberately excluding short or numeric differences such as `Stage II/III`, `Dose 5/50`, or `Arm A/B`.
 
 ```bash
 .venv/bin/data-cleaner ai-benchmark \

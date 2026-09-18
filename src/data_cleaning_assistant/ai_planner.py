@@ -29,6 +29,10 @@ For every supplied candidate:
 - when evidence says numeric_zero_padding_equivalence, the surrounding text and numeric value are
   deterministically equal and only leading-zero formatting differs; treat that as strong evidence
   of a formatting-only variant unless the supplied context indicates a distinct coded category;
+- when evidence says single_edit_typo_pattern, exactly one non-numeric token differs by one
+  insertion/deletion/substitution, all surrounding tokens are identical, and short/numeric token
+  changes have already been excluded; treat that as strong typo-shaped evidence, but still defer
+  if the differing token could encode a real scientific distinction;
 - semantically different stages, grades, visits, timepoints, doses, outcomes, or specimen types
   must remain distinct even when their labels look similar;
 - contextual missingness labels such as Unknown, Not available, or Not applicable are meaningful
