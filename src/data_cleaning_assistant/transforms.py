@@ -18,26 +18,57 @@ from .actions import (
     ChangeSet,
     CleaningAction,
     CleaningPlan,
+    ValueSnapshot,
 )
 from .inference import is_missing_like, is_null, parse_date, parse_number
 from .planner import file_sha256
 
 
-def _jsonable(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (str, int, bool)):
-        return value
-    if isinstance(value, float):
-        return value if math.isfinite(value) else str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if hasattr(value, "item"):
+def _snapshot(value: Any) -> ValueSnapshot:
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
         try:
-            return _jsonable(value.item())
+            value = value.item()
         except (TypeError, ValueError):
             pass
-    return str(value)
+
+    if is_null(value):
+        return ValueSnapshot(kind="null", value=None)
+    if isinstance(value, bool):
+        return ValueSnapshot(kind="bool", value=value)
+    if isinstance(value, int):
+        return ValueSnapshot(kind="int", value=value)
+    if isinstance(value, float):
+        serialized = value if math.isfinite(value) else str(value)
+        return ValueSnapshot(kind="float", value=serialized)
+    if isinstance(value, datetime):
+        return ValueSnapshot(kind="datetime", value=value.isoformat())
+    if isinstance(value, date):
+        return ValueSnapshot(kind="date", value=value.isoformat())
+    if isinstance(value, str):
+        return ValueSnapshot(kind="str", value=value)
+    return ValueSnapshot(kind="str", value=str(value))
+
+
+def _restore(snapshot: ValueSnapshot) -> Any:
+    if snapshot.kind == "null":
+        return None
+    if snapshot.kind == "bool":
+        return bool(snapshot.value)
+    if snapshot.kind == "int":
+        return int(snapshot.value)
+    if snapshot.kind == "float":
+        if snapshot.value == "nan":
+            return float("nan")
+        if snapshot.value == "inf":
+            return float("inf")
+        if snapshot.value == "-inf":
+            return float("-inf")
+        return float(snapshot.value)
+    if snapshot.kind == "datetime":
+        return datetime.fromisoformat(str(snapshot.value))
+    if snapshot.kind == "date":
+        return date.fromisoformat(str(snapshot.value))
+    return str(snapshot.value)
 
 
 def _canonical_number(value: float) -> int | float:
@@ -118,8 +149,8 @@ def preview_action(
                     table=action.table,
                     row_index=int(row_index),
                     column=action.column,
-                    old_value=_jsonable(value),
-                    new_value=_jsonable(new_value),
+                    old_value=_snapshot(value),
+                    new_value=_snapshot(new_value),
                 )
             )
     return ActionPreview(
@@ -149,8 +180,8 @@ def apply_action(
                 table=action.table,
                 row_index=int(row_index),
                 column=action.column,
-                old_value=_jsonable(value),
-                new_value=_jsonable(new_value),
+                old_value=_snapshot(value),
+                new_value=_snapshot(new_value),
             )
         )
         frame.at[row_index, action.column] = new_value
@@ -182,18 +213,24 @@ def apply_plan(
         )
 
     approved_ids = approved_ids or set()
+    known_ids = {action.id for action in plan.actions}
+    unknown = approved_ids - known_ids
+    if unknown:
+        raise ValueError(f"Unknown action id(s): {', '.join(sorted(unknown))}")
+
     cleaned = {name: frame.copy(deep=True) for name, frame in tables.items()}
     executions: list[ActionExecution] = []
 
     for action in plan.actions:
+        if action.decision == ActionDecision.REJECTED:
+            continue
         approved = (
             approve_all
             or action.decision == ActionDecision.APPROVED
             or action.id in approved_ids
         )
-        if not approved or action.decision == ActionDecision.REJECTED:
-            continue
-        executions.append(apply_action(cleaned, action))
+        if approved:
+            executions.append(apply_action(cleaned, action))
 
     return cleaned, ChangeSet(
         source_path=str(resolved),
@@ -216,7 +253,7 @@ def undo_changeset(
                 raise KeyError(
                     f"Unknown column during undo: {execution.table}.{change.column}"
                 )
-            frame.at[change.row_index, change.column] = change.old_value
+            frame.at[change.row_index, change.column] = _restore(change.old_value)
     return restored
 
 
@@ -246,10 +283,15 @@ def write_tables(tables: dict[str, pd.DataFrame], output_path: str | Path) -> Pa
     raise ValueError("Output must end in .csv, .xlsx, .xlsm, or .parquet")
 
 
-def write_recipe(plan: CleaningPlan, output_path: str | Path) -> Path:
+def write_recipe(
+    plan: CleaningPlan,
+    changeset: ChangeSet,
+    output_path: str | Path,
+) -> Path:
     output = Path(output_path).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    approved = [
+    executed = {execution.action_id for execution in changeset.executions}
+    actions = [
         {
             "type": action.type.value,
             "table": action.table,
@@ -257,10 +299,10 @@ def write_recipe(plan: CleaningPlan, output_path: str | Path) -> Path:
             "parameters": deepcopy(action.parameters),
         }
         for action in plan.actions
-        if action.decision == ActionDecision.APPROVED
+        if action.id in executed
     ]
     output.write_text(
-        yaml.safe_dump({"version": 1, "actions": approved}, sort_keys=False),
+        yaml.safe_dump({"version": 1, "actions": actions}, sort_keys=False),
         encoding="utf-8",
     )
     return output
