@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.2 — AI hardening (current)
+## v0.4.3 — bounded AI candidate selection (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -15,6 +15,10 @@
 - No AI row-deletion authority.
 - Exact rejected-proposal diagnostics and validator catch accounting.
 - Non-thinking Ollama mode by default for structured planning, with opt-in `--think`.
+- Deterministic construction of bounded candidate actions.
+- Short session-local candidate IDs for small-model reliability.
+- AI limited to semantic accept/defer decisions rather than action authoring.
+- Unsafe capabilities such as row deletion and identifier coercion removed from the AI candidate surface.
 
 ### v0.4.x evaluation and provider hardening
 
