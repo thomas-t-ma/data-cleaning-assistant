@@ -23,7 +23,7 @@ def _write_messy_csv(path: Path) -> None:
         "patient_id,sex,age,visit_date\n"
         "P001,Female,35,2026-01-01\n"
         "P002,female,N/A,01/03/2026\n"
-        "P003, Female ,41,January 5, 2026\n"
+        'P003, Female ,41,"January 5, 2026"\n'
         "P004,Male,forty,bad-date\n",
         encoding="utf-8",
     )
