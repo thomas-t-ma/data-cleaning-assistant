@@ -9,7 +9,7 @@ import pandas as pd
 from dateutil import parser as date_parser
 
 
-MISSING_TOKENS = {
+STRUCTURAL_MISSING_TOKENS = {
     "",
     "na",
     "n/a",
@@ -19,14 +19,24 @@ MISSING_TOKENS = {
     "null",
     "nil",
     "missing",
-    "unknown",
-    "unk",
-    "not available",
-    "not applicable",
     ".",
     "-",
     "--",
 }
+
+# These values often describe a scientifically meaningful state rather than an
+# absent observation. Detect them for QA, but do not treat them as null by
+# default without an explicit study schema or user rule.
+CONTEXTUAL_MISSING_TOKENS = {
+    "unknown",
+    "unk",
+    "not available",
+    "not applicable",
+}
+
+# Backward-compatible detector vocabulary: hidden-missing QA should surface
+# both structural null sentinels and contextual missingness labels.
+MISSING_TOKENS = STRUCTURAL_MISSING_TOKENS | CONTEXTUAL_MISSING_TOKENS
 
 DATE_NAME_PATTERN = re.compile(
     r"(^|_)(date|dob|birth|time|timestamp|dt)(_|$)|date|dob|birth|timestamp",
@@ -58,7 +68,12 @@ def normalize_text(value: Any) -> str:
 
 
 def is_missing_like(value: Any) -> bool:
-    return is_null(value) or normalize_text(value) in MISSING_TOKENS
+    """Return True only for nulls and structural missing-value sentinels."""
+    return is_null(value) or normalize_text(value) in STRUCTURAL_MISSING_TOKENS
+
+
+def is_contextual_missing_label(value: Any) -> bool:
+    return not is_null(value) and normalize_text(value) in CONTEXTUAL_MISSING_TOKENS
 
 
 def non_null_values(series: pd.Series, limit: int | None = None) -> list[Any]:
@@ -78,7 +93,7 @@ def parse_number(value: Any) -> float | None:
         number = float(value)
         return number if math.isfinite(number) else None
     text = str(value).strip().replace(",", "")
-    if not text or normalize_text(text) in MISSING_TOKENS:
+    if not text or normalize_text(text) in STRUCTURAL_MISSING_TOKENS:
         return None
     try:
         number = float(text)
@@ -114,7 +129,11 @@ def looks_like_identifier_name(name: str) -> bool:
 
 
 def infer_semantic_type(name: str, series: pd.Series) -> tuple[str, float, dict[str, float]]:
-    values = meaningful_values(series, limit=500)
+    values = [
+        value
+        for value in meaningful_values(series, limit=500)
+        if not is_contextual_missing_label(value)
+    ]
     if not values:
         return "empty", 1.0, {"numeric_ratio": 0.0, "date_ratio": 0.0}
 

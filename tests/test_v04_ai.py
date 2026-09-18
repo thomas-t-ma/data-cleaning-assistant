@@ -15,6 +15,7 @@ from data_cleaning_assistant.ai_provider import OllamaProvider
 from data_cleaning_assistant.cli import app
 from data_cleaning_assistant.engine import profile_dataset
 from data_cleaning_assistant.io import load_dataset
+from data_cleaning_assistant.planner import propose_actions
 from data_cleaning_assistant.transforms import apply_plan
 
 
@@ -368,3 +369,59 @@ def test_no_candidate_fast_path_does_not_call_provider(tmp_path: Path) -> None:
     assert result.response.selections == []
     assert "No AI-review candidates" in result.response.summary
     assert result.rejected == []
+
+
+def test_zero_padding_candidate_has_deterministic_equivalence_evidence(tmp_path: Path) -> None:
+    source = tmp_path / "visits.csv"
+    source.write_text(
+        "subject_id,visit_label\n"
+        "S001,Visit 1\n"
+        "S002,Visit 1\n"
+        "S003,Visit 01\n"
+        "S004,Visit 1\n",
+        encoding="utf-8",
+    )
+
+    candidate = _candidate_for(source, ActionType.NORMALIZE_CATEGORIES, "visit_label")
+
+    assert candidate.action.parameters == {"mapping": {"Visit 01": "Visit 1"}}
+    assert candidate.context.evidence["basis"] == "numeric_zero_padding_equivalence"
+    assert candidate.context.evidence["numeric_zero_padding_equivalent"] is True
+
+
+def test_contextual_missingness_is_flagged_but_not_actionable_by_default(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "outcomes.csv"
+    source.write_text(
+        "subject_id,outcome_category\n"
+        "S001,Response\n"
+        "S002,Unknown\n"
+        "S003,Progression\n"
+        "S004,Response\n",
+        encoding="utf-8",
+    )
+
+    report = profile_dataset(source)
+    issue = next(
+        item
+        for item in report.issues
+        if item.type == "hidden_missing_values" and item.column == "outcome_category"
+    )
+    assert issue.evidence["contextual_tokens"] == {"Unknown": 1}
+    assert issue.evidence["structural_tokens"] == {}
+
+    loaded = load_dataset(source)
+    candidates = build_ai_candidates(report, loaded.tables)
+    assert not any(
+        candidate.action.type == ActionType.NORMALIZE_MISSING
+        and candidate.action.column == "outcome_category"
+        for candidate in candidates
+    )
+
+    rule_plan = propose_actions(source)
+    assert not any(
+        action.type == ActionType.NORMALIZE_MISSING
+        and action.column == "outcome_category"
+        for action in rule_plan.actions
+    )

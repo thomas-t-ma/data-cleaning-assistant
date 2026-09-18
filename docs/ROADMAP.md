@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.5 — research benchmark expansion (current)
+## v0.4.6 — semantic safety hardening (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -23,6 +23,10 @@
 - Preserve the original core suite as a fixed regression benchmark.
 - Add a harder research suite with realistic semantic ambiguity and meaningful missing-like categories.
 - Support `core`, `research`, and combined benchmark execution.
+- Distinguish structural null sentinels from contextual missingness labels.
+- Remove contextual null-collapse actions from both deterministic and AI candidate surfaces by default.
+- Add explicit unsafe-candidate-exposure metrics.
+- Add numeric zero-padding equivalence evidence for research category labels.
 
 ### v0.4.x evaluation and provider hardening
 
@@ -30,6 +34,7 @@
 - Add multi-table benchmark fixtures and longitudinal temporal-consistency scenarios.
 - Add prompt/provider regression fixtures.
 - Add explicit context-size/token budgeting for very wide workbooks.
+- Add explicit study-schema configuration so users can define contextual missingness semantics safely.
 - Add user-configurable redaction policies for category/evidence values.
 - Add provider metadata and model/version information to plan/audit provenance.
 - Add optional hosted-provider adapters without changing execution semantics.

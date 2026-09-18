@@ -490,6 +490,7 @@ def ai_benchmark_command(
     metrics.add_row("Accepted-action precision", f"{summary.accepted_precision:.1%}")
     metrics.add_row("Forbidden proposals", str(summary.forbidden_raw_proposals))
     metrics.add_row("Forbidden accepted", str(summary.forbidden_accepted))
+    metrics.add_row("Unsafe candidates exposed", str(summary.unsafe_candidates_exposed))
     if summary.forbidden_validator_catch_rate is not None:
         metrics.add_row(
             "Validator catch rate (forbidden)",

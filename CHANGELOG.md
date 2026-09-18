@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.6
+
+- Split structural null sentinels from contextual missingness labels.
+- `Unknown`, `Unk`, `Not available`, and `Not applicable` remain visible QA findings but are no longer treated as null-like by semantic inference.
+- Deterministic and AI planners no longer generate null-normalization actions for contextual missingness without an explicit schema.
+- Hidden-missing issues now report structural and contextual token groups separately.
+- Added deterministic zero-padding equivalence evidence for fuzzy category candidates such as `Visit 01` vs `Visit 1`.
+- Updated the AI review prompt to treat zero-padding equivalence as strong formatting evidence.
+- Added benchmark-level `must_not_expose` safety expectations and an `unsafe candidates exposed` metric.
+- Reclassified duplicate deletion, identifier coercion, and contextual-null collapse as candidate-surface safety tests.
+- Added regression tests covering zero-padding evidence and contextual missingness across both AI and deterministic planning.
+
 ## 0.4.5
 
 - Added separate `core`, `research`, and `all` AI benchmark suites.
