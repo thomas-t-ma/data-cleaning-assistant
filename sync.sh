@@ -51,12 +51,26 @@ STAMP_FILE=".venv/.data-cleaning-assistant-pyproject.sha256"
 OLD_HASH=""
 [[ -f "$STAMP_FILE" ]] && OLD_HASH="$(cat "$STAMP_FILE")"
 
-if [[ "$DEPS_HASH" != "$OLD_HASH" ]]; then
-  echo "==> Installing/updating project dependencies"
+ENV_OK=1
+if ! .venv/bin/python -c 'import data_cleaning_assistant, openpyxl, pandas, pyarrow, pydantic, typer, rich, dateutil, yaml' >/dev/null 2>&1; then
+  ENV_OK=0
+fi
+if ! .venv/bin/python -m pip check >/dev/null 2>&1; then
+  ENV_OK=0
+fi
+
+if [[ "$DEPS_HASH" != "$OLD_HASH" || "$ENV_OK" -ne 1 ]]; then
+  if [[ "$ENV_OK" -ne 1 && "$DEPS_HASH" == "$OLD_HASH" ]]; then
+    echo "==> Environment is incomplete; repairing dependencies"
+  else
+    echo "==> Installing/updating project dependencies"
+  fi
   .venv/bin/python -m pip install -e ".[dev]"
+  .venv/bin/python -c 'import data_cleaning_assistant, openpyxl, pandas, pyarrow, pydantic, typer, rich, dateutil, yaml'
+  .venv/bin/python -m pip check
   printf '%s\n' "$DEPS_HASH" > "$STAMP_FILE"
 else
-  echo "==> Dependencies unchanged"
+  echo "==> Dependencies verified"
 fi
 
 if [[ "${1:-}" != "--no-test" ]]; then
