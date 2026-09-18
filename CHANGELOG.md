@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.2
+
+- Added source-workbook-preserving Excel output for approved cell edits.
+- Preserves untouched styles, widths, merged cells, freeze panes, and formulas.
+- Added explicit formula safety guards for worksheet row deletion/insertion.
+- Added reviewable surrounding-whitespace trimming.
+- Added reviewable exact duplicate-row removal.
+- Added full deleted-row snapshots and positional undo.
+- Added persisted save/reload/undo coverage for CSV and Excel duplicate removal.
+- Added recipe schema snapshots and schema-drift reporting.
+- Drift now reports new/missing tables and columns, inferred type changes, new categories, range expansion, and missingness shifts.
+- Added source overwrite protection and omission of no-op executions from audit/recipe output.
+
 ## 0.3.1
 
 - Added interactive CLI review with approve/reject/defer decisions.
