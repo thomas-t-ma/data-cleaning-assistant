@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- Added structured cleaning plans and typed `CleaningAction` objects.
+- Added deterministic proposals for category normalization, textual missing values, date standardization, and numeric coercion.
+- Added before/after cell previews.
+- Added explicit approval gates before execution.
+- Added source SHA-256 validation to reject stale plans.
+- Added deep-copy transformation execution; source files remain untouched.
+- Added cell-level reversible `ChangeSet` audit logs.
+- Added cleaned-output hashes for safe undo validation.
+- Added reproducible YAML recipe export.
+- Added CLI commands: `plan`, `preview`, `apply`, and `undo`.
+
 ## 0.2.0
 
 - Added candidate key inference.
