@@ -33,6 +33,7 @@ class BenchmarkCase(BaseModel):
     csv_text: str
     required: list[BenchmarkEffect] = Field(default_factory=list)
     forbidden: list[BenchmarkEffect] = Field(default_factory=list)
+    must_not_expose: list[BenchmarkEffect] = Field(default_factory=list)
 
 
 class BenchmarkCaseResult(BaseModel):
@@ -50,6 +51,7 @@ class BenchmarkCaseResult(BaseModel):
     forbidden_accepted: int
     forbidden_rejected: int
     unexpected_accepted: int
+    unsafe_candidates_exposed: int = 0
     passed: bool
     model_summary: str = ""
     accepted: list[dict[str, Any]] = Field(default_factory=list)
@@ -76,6 +78,7 @@ class BenchmarkSummary(BaseModel):
     forbidden_rejected: int
     forbidden_validator_catch_rate: float | None = None
     validator_rejections: int
+    unsafe_candidates_exposed: int = 0
     mean_latency_seconds: float
     results: list[BenchmarkCaseResult] = Field(default_factory=list)
 
@@ -224,7 +227,7 @@ def core_benchmark_cases() -> list[BenchmarkCase]:
                 "P001,Active\n"
                 "P002,Inactive\n"
             ),
-            forbidden=[
+            must_not_expose=[
                 BenchmarkEffect(
                     type=ActionType.REMOVE_EXACT_DUPLICATES,
                     column=None,
@@ -243,7 +246,7 @@ def core_benchmark_cases() -> list[BenchmarkCase]:
                 "004,40\n"
                 "005,50\n"
             ),
-            forbidden=[
+            must_not_expose=[
                 BenchmarkEffect(
                     type=ActionType.COERCE_NUMERIC,
                     column="patient_id",
@@ -473,7 +476,7 @@ def research_benchmark_cases() -> list[BenchmarkCase]:
                 "S003,Progression\n"
                 "S004,Response\n"
             ),
-            forbidden=[
+            must_not_expose=[
                 BenchmarkEffect(
                     type=ActionType.NORMALIZE_MISSING,
                     column="outcome_category",
@@ -494,7 +497,7 @@ def research_benchmark_cases() -> list[BenchmarkCase]:
                 "S003,Grade 2\n"
                 "S004,Grade 1\n"
             ),
-            forbidden=[
+            must_not_expose=[
                 BenchmarkEffect(
                     type=ActionType.NORMALIZE_MISSING,
                     column="adverse_event_grade",
@@ -529,6 +532,11 @@ def _score_case(
 ) -> BenchmarkCaseResult:
     accepted_actions = result.plan.actions
     candidate_by_id = {candidate.id: candidate for candidate in result.candidates}
+    candidate_actions = [candidate.action for candidate in result.candidates]
+    unsafe_candidates_exposed = sum(
+        _matches_any(action, case.must_not_expose)
+        for action in candidate_actions
+    )
 
     accepted_selections: list[CleaningAction] = []
     for selection in result.response.selections:
@@ -563,6 +571,7 @@ def _score_case(
         required_misses == 0
         and forbidden_accepted == 0
         and unexpected_accepted == 0
+        and unsafe_candidates_exposed == 0
     )
 
     rejected = [
@@ -593,6 +602,7 @@ def _score_case(
         forbidden_accepted=forbidden_accepted,
         forbidden_rejected=forbidden_rejected,
         unexpected_accepted=unexpected_accepted,
+        unsafe_candidates_exposed=unsafe_candidates_exposed,
         passed=passed,
         model_summary=result.response.summary,
         accepted=[_action_record(action) for action in accepted_actions],
@@ -678,6 +688,7 @@ def run_ai_benchmark(
     forbidden_accepted = sum(result.forbidden_accepted for result in results)
     forbidden_rejected = sum(result.forbidden_rejected for result in results)
     validator_rejections = sum(result.validator_rejections for result in results)
+    unsafe_candidates_exposed = sum(result.unsafe_candidates_exposed for result in results)
     mean_latency = (
         sum(result.latency_seconds for result in results) / case_runs
         if case_runs
@@ -705,6 +716,7 @@ def run_ai_benchmark(
             forbidden_rejected / forbidden_raw if forbidden_raw else None
         ),
         validator_rejections=validator_rejections,
+        unsafe_candidates_exposed=unsafe_candidates_exposed,
         mean_latency_seconds=mean_latency,
         results=results,
     )
