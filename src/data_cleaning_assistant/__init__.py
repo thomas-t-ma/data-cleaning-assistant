@@ -4,7 +4,7 @@ from .actions import ChangeSet, CleaningAction, CleaningPlan
 from .ai_context import build_ai_context
 from .ai_planner import propose_ai_plan
 from .ai_provider import OllamaProvider
-from .benchmark import benchmark_cases, run_ai_benchmark
+from .benchmark import benchmark_cases, research_benchmark_cases, run_ai_benchmark
 from .engine import profile_dataset
 from .models import DatasetReport, Issue
 from .planner import propose_actions
@@ -25,6 +25,7 @@ __all__ = [
     "propose_actions",
     "propose_ai_plan",
     "recipe_to_plan",
+    "research_benchmark_cases",
     "run_ai_benchmark",
 ]
-__version__ = "0.4.4"
+__version__ = "0.4.5"

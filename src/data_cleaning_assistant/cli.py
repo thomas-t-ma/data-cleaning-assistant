@@ -393,6 +393,10 @@ def ai_benchmark_command(
             help="Repeat each synthetic case this many times",
         ),
     ] = 1,
+    suite: Annotated[
+        str,
+        typer.Option("--suite", help="Benchmark suite: core, research, or all"),
+    ] = "core",
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Write detailed benchmark JSON here"),
@@ -411,6 +415,9 @@ def ai_benchmark_command(
 ) -> None:
     """Benchmark a local model on synthetic cleaning cases with hidden answer keys."""
     provider = OllamaProvider(url, think=think)
+    normalized_suite = suite.strip().casefold()
+    if normalized_suite not in {"core", "research", "all"}:
+        raise typer.BadParameter("--suite must be one of: core, research, all.")
     try:
         selected_model = resolve_model(provider, model)
     except (AIProviderError, ValueError) as exc:
@@ -419,15 +426,17 @@ def ai_benchmark_command(
 
     console.print(
         f"[green]Benchmarking:[/green] {provider.name} / {selected_model} "
-        f"({runs} run(s) per case; thinking={'on' if think else 'off'})"
+        f"(suite={normalized_suite}; {runs} run(s) per case; "
+        f"thinking={'on' if think else 'off'})"
     )
     summary = run_ai_benchmark(
         provider=provider,
         model=selected_model,
         runs_per_case=runs,
+        suite=normalized_suite,
     )
 
-    case_table = Table(title="AI cleaning benchmark")
+    case_table = Table(title=f"AI cleaning benchmark — {summary.suite}")
     case_table.add_column("Case")
     case_table.add_column("Run", justify="right")
     case_table.add_column("Pass")

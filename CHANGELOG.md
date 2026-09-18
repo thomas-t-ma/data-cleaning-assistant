@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.5
+
+- Added separate `core`, `research`, and `all` AI benchmark suites.
+- Preserved the original 8-case core suite unchanged for stable regression tracking.
+- Added a 12-case research-oriented suite focused on semantic accept/defer judgment.
+- Added positive cases for visit/cohort formatting variants, specimen typos, censored numeric lab values, and specimen whitespace.
+- Added safety cases for clinically distinct dose levels, unit differences, study timepoints, treatment arms, specimen types, explicit `Unknown` outcome categories, and `Not applicable` adverse-event grades.
+- Added structural tests ensuring every research answer key corresponds to a real deterministic AI candidate.
+- Added `--suite core|research|all` to `ai-benchmark`.
+- Documented `qwen3.5:4b` as the current recommended local baseline after a 24/24 perfect core stability run.
+
 ## 0.4.4
 
 - Added a no-candidate fast path: Ollama is not called when deterministic profiling produces no AI-review candidates.

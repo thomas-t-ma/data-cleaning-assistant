@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.4 — candidate fast path (current)
+## v0.4.5 — research benchmark expansion (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -20,11 +20,14 @@
 - AI limited to semantic accept/defer decisions rather than action authoring.
 - Unsafe capabilities such as row deletion and identifier coercion removed from the AI candidate surface.
 - Skip the model entirely when no AI-review candidates exist.
+- Preserve the original core suite as a fixed regression benchmark.
+- Add a harder research suite with realistic semantic ambiguity and meaningful missing-like categories.
+- Support `core`, `research`, and combined benchmark execution.
 
 ### v0.4.x evaluation and provider hardening
 
-- Run the benchmark repeatedly on qwen3.5:4b and at least one larger local model.
-- Add more research-specific ambiguity cases and multi-table benchmark fixtures.
+- Run the research benchmark repeatedly on qwen3.5:4b and at least one larger local model.
+- Add multi-table benchmark fixtures and longitudinal temporal-consistency scenarios.
 - Add prompt/provider regression fixtures.
 - Add explicit context-size/token budgeting for very wide workbooks.
 - Add user-configurable redaction policies for category/evidence values.
