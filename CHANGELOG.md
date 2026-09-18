@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3
+
+- Replaced free-form AI action authoring with bounded candidate selection.
+- Deterministic code now owns table names, columns, action types, mappings, tokens, formats, and parameters.
+- The model only returns short candidate IDs such as `C001`, an `accept` or `defer` decision, rationale, and confidence.
+- Added deterministic candidate construction from profiler issues.
+- Added frequency-aware fuzzy-category candidates while preserving semantic review by the model.
+- Removed row deletion and identifier numeric coercion from the AI candidate surface entirely.
+- Added candidates to `ai-context` so exported context still exactly matches what the model receives.
+- Updated benchmark scoring to measure candidate acceptance/defer behavior rather than model-authored action formatting.
+- Added regression tests for bounded fuzzy merges, semantic deferral, absent unsafe candidate surfaces, unknown candidate IDs, and CLI integration.
+
 ## 0.4.2
 
 - Made model-supplied issue IDs advisory provenance rather than a mutation-safety gate.
