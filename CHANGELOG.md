@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1
+
+- Added interactive CLI review with approve/reject/defer decisions.
+- Added YAML recipe loading and compatibility validation.
+- Added safe recipe replay with read-only preview by default.
+- Added explicit `--apply` gate for recipe execution.
+- Added single-table recipe remapping across differently named CSV/Parquet files.
+- Added rejection for missing recipe tables/columns instead of partial application.
+- Added regression tests for replay safety and output generation.
+- Hardened sync scripts to repair incomplete environments and rebuild virtualenvs missing pip.
+
 ## 0.3.0
 
 - Added structured cleaning plans and typed `CleaningAction` objects.
