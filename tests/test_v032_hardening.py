@@ -206,3 +206,64 @@ def test_recipe_reports_nonblocking_schema_drift(tmp_path: Path) -> None:
     assert "new_categories" in kinds
     assert "range_expansion" in kinds
     assert "missingness_change" in kinds
+
+
+def test_excel_duplicate_removal_can_be_undone_with_row_reinsertion(tmp_path: Path) -> None:
+    source = tmp_path / "styled_duplicates.xlsx"
+    cleaned_path = tmp_path / "styled_duplicates_cleaned.xlsx"
+    restored_path = tmp_path / "styled_duplicates_restored.xlsx"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    ws.column_dimensions["B"].width = 22
+    ws.append(["PatientID", "Status"])
+    ws.append(["P001", "Active"])
+    ws.append(["P001", "Active"])
+    ws.append(["P002", "Inactive"])
+    ws["B2"].fill = PatternFill(fill_type="solid", fgColor="FFFF00")
+    ws["B3"].fill = PatternFill(fill_type="solid", fgColor="FFFF00")
+    wb.save(source)
+
+    loaded = load_dataset(source)
+    original_frame = loaded.tables["Data"].copy(deep=True)
+    plan = propose_actions(source)
+    duplicate = next(
+        action
+        for action in plan.actions
+        if action.type == ActionType.REMOVE_EXACT_DUPLICATES
+    )
+    cleaned, changeset = apply_plan(
+        source,
+        loaded.tables,
+        plan,
+        approved_ids={duplicate.id},
+    )
+    write_cleaned_dataset(source, loaded.tables, cleaned, cleaned_path)
+
+    reloaded = load_dataset(cleaned_path)
+    restored = undo_changeset(reloaded.tables, changeset)
+    inserted_rows = {
+        "Data": [
+            row
+            for execution in changeset.executions
+            for row in execution.deleted_rows
+            if execution.table == "Data"
+        ]
+    }
+    write_cleaned_dataset(
+        cleaned_path,
+        reloaded.tables,
+        restored,
+        restored_path,
+        inserted_rows=inserted_rows,
+    )
+
+    final_loaded = load_dataset(restored_path)
+    pd.testing.assert_frame_equal(final_loaded.tables["Data"], original_frame)
+
+    final_wb = load_workbook(restored_path)
+    final_ws = final_wb["Data"]
+    assert final_ws.column_dimensions["B"].width == 22
+    assert final_ws["B2"].fill.fgColor.rgb == "00FFFF00"
+    assert final_ws["B3"].fill.fgColor.rgb == "00FFFF00"
