@@ -1,21 +1,19 @@
 # Roadmap
 
-## v0.3 — safe transformations (current)
+## v0.3.1 — replay + review (current)
 
-- Structured `CleaningAction` objects.
-- Before/after previews.
-- Explicit approval/rejection workflow.
-- Source-hash validation.
-- Reversible cell-level `ChangeSet` execution.
-- Cleaning recipe + audit log export.
-- Undo with cleaned-file hash validation.
+- Interactive plan review without hand-editing JSON.
+- Recipe compatibility validation.
+- Recipe preview before execution.
+- Explicit replay approval with `--apply`.
+- Single-table filename remapping for CSV/Parquet.
 
-### Follow-up hardening
+### Remaining hardening before AI
 
-- Recipe replay against new compatible datasets.
 - Workbook-format/style preservation for Excel.
+- Recipe/schema drift reporting rather than only pass/fail compatibility.
 - Safer row-level transformations with reversible row snapshots.
-- Interactive plan editing without hand-editing JSON.
+- More deterministic transformations and configurable rule packs.
 
 ## v0.4 — local AI planner
 
@@ -23,11 +21,12 @@
 - Local provider first (Ollama), hosted APIs optional.
 - Pydantic-validated action proposals.
 - Deterministic execution after review.
+- Explanations grounded in profiler evidence rather than raw free-form guesses.
 
 ## v0.5 — local visual review UI
 
 - Drag/drop dataset loading.
-- Dataset health dashboard.
+- Dataset quality dashboard.
 - Side-by-side change previews.
 - Accept/reject/modify controls.
 - Audit and recipe export from the UI.
