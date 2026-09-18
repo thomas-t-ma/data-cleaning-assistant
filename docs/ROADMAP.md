@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.3 — bounded AI candidate selection (current)
+## v0.4.4 — candidate fast path (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -19,6 +19,7 @@
 - Short session-local candidate IDs for small-model reliability.
 - AI limited to semantic accept/defer decisions rather than action authoring.
 - Unsafe capabilities such as row deletion and identifier coercion removed from the AI candidate surface.
+- Skip the model entirely when no AI-review candidates exist.
 
 ### v0.4.x evaluation and provider hardening
 

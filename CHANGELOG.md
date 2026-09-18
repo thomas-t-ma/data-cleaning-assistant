@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4
+
+- Added a no-candidate fast path: Ollama is not called when deterministic profiling produces no AI-review candidates.
+- Eliminates spurious unknown-candidate responses on duplicate-only and identifier-only safety cases.
+- Reduces unnecessary latency and removes meaningless validator rejections for empty candidate sets.
+- Added regression coverage proving the provider is never invoked when the candidate list is empty.
+
 ## 0.4.3
 
 - Replaced free-form AI action authoring with bounded candidate selection.

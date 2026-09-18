@@ -27,4 +27,4 @@ __all__ = [
     "recipe_to_plan",
     "run_ai_benchmark",
 ]
-__version__ = "0.4.3"
+__version__ = "0.4.4"
