@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.1**.
+Current version: **v0.4.2**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -26,7 +26,7 @@ Examples of enforced restrictions:
 - category merges can only use observed labels already surfaced as a detector pair
 - missing-value normalization can only use tokens already detected as missing-like
 - identifier-like columns cannot be proposed for numeric coercion
-- duplicate removal requires an exact-duplicate detector finding
+- AI cannot propose row deletion; exact duplicates remain a deterministic human-review action
 - outlier deletion and imputation are not supported AI actions
 - cyclic or chained category mappings are rejected
 
@@ -73,13 +73,15 @@ If exactly one model is installed, `ai-plan` can select it automatically. If mul
 
 v0.4.1 includes a fixed synthetic benchmark with hidden answer keys. The model sees only the same privacy-minimized profiler context used by normal AI planning; it never sees the benchmark description or expected actions.
 
-Run the benchmark against the installed local model:
+Run the benchmark against the installed local model. Structured planning uses Ollama with thinking disabled by default for lower latency:
 
 ```bash
 .venv/bin/data-cleaner ai-benchmark \
   --model qwen3.5:4b \
   --output ai_benchmark.json
 ```
+
+Use `--think` if you explicitly want to compare the model's thinking mode.
 
 For a more stable estimate, repeat every case three times:
 
@@ -89,6 +91,8 @@ For a more stable estimate, repeat every case three times:
   --runs 3 \
   --output ai_benchmark_qwen35_4b.json
 ```
+
+Failed cases now print the model summary, accepted actions, and exact validator rejection reasons directly in the terminal.
 
 The benchmark reports:
 
