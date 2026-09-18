@@ -9,7 +9,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 import yaml
 
-from .actions import ActionType, CleaningAction, CleaningPlan
+from .actions import ActionOrigin, ActionType, CleaningAction, CleaningPlan
 from .inference import infer_semantic_type, is_missing_like, parse_number
 from .planner import file_sha256
 
@@ -368,6 +368,7 @@ def recipe_to_plan(
                 parameters=recipe_action.parameters,
                 confidence=1.0,
                 issue_ids=[],
+                origin=ActionOrigin.RECIPE,
             )
         )
 
