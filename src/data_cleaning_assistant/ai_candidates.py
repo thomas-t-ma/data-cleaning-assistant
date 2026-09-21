@@ -13,6 +13,7 @@ from .actions import ActionOrigin, ActionType, CleaningAction
 from .ai_models import AICandidateContext
 from .inference import looks_like_identifier_name
 from .models import DatasetReport, Issue
+from .planning_policy import structural_only_column
 from .study_schema import StudySchema
 
 
@@ -336,6 +337,8 @@ def build_ai_candidates(
             continue
 
         if issue.type == "hidden_missing_values":
+            if structural_only_column(issue, frame):
+                continue
             if column_spec is not None and column_spec.missing_tokens:
                 continue
             source = issue.evidence.get("structural_tokens")

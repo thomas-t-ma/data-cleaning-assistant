@@ -198,9 +198,12 @@ def propose_ai_plan(
                 )
             )
 
+    # Planning notes must survive hybrid and AI-only modes: omitted
+    # structural-only fields remain visible as non-executable coverage QA.
+    rule_plan = propose_actions(resolved, schema=schema)
     actions: list[CleaningAction] = []
     if include_rules:
-        actions.extend(propose_actions(resolved, schema=schema).actions)
+        actions.extend(rule_plan.actions)
 
     existing = {_effect_key(action) for action in actions}
     for action in accepted:
@@ -215,6 +218,7 @@ def propose_ai_plan(
             source_sha256=file_sha256(resolved),
             actions=actions,
             deferred_reviews=deferred,
+            planning_notes=rule_plan.planning_notes,
             study_schema_sha256=schema.source_sha256 if schema else None,
             planner="hybrid_ai" if include_rules else "ai_only",
             model=model,

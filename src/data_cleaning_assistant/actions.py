@@ -55,12 +55,22 @@ class DeferredReview(BaseModel):
     status: str = "pending"
 
 
+class PlanningNote(BaseModel):
+    """A non-executable reason an issue did not become a cleaning action."""
+
+    table: str
+    column: str
+    issue_ids: list[str] = Field(default_factory=list)
+    reason: str
+
+
 class CleaningPlan(BaseModel):
     source_path: str
     source_sha256: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     actions: list[CleaningAction] = Field(default_factory=list)
     deferred_reviews: list[DeferredReview] = Field(default_factory=list)
+    planning_notes: list[PlanningNote] = Field(default_factory=list)
     study_schema_sha256: str | None = None
     planner: str = "deterministic"
     model: str | None = None

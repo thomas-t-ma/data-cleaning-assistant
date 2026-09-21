@@ -144,6 +144,27 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
 
 
 def _print_plan(plan: CleaningPlan) -> None:
+    if plan.planning_notes:
+        omitted: dict[str, set[str]] = {}
+        for note in plan.planning_notes:
+            if note.reason == "structural_only_column":
+                omitted.setdefault(note.table, set()).add(note.column)
+        if omitted:
+            total = sum(len(columns) for columns in omitted.values())
+            console.print(
+                f"[bold]Non-executable coverage QA:[/bold] {total} structural-only "
+                "column(s) omitted from routine missing-token proposals. "
+                "Original findings remain in the profile; plan notes retain "
+                "their targets and issue IDs. Explicit study-schema rules can "
+                "still propose a change."
+            )
+            breakdown = Table(title="Structural-only fields (no routine action)")
+            breakdown.add_column("Table")
+            breakdown.add_column("Columns", justify="right")
+            for name, columns in sorted(omitted.items()):
+                breakdown.add_row(name, str(len(columns)))
+            console.print(breakdown)
+
     table = Table(title="Proposed cleaning actions")
     table.add_column("Action ID")
     table.add_column("Type")

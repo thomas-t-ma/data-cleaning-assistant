@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.6.1 — mixed-assay QA safety (current)
+## v0.6.2 — actionability-aware missingness triage (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -36,6 +36,7 @@
 - Scope outlier QA to declared assay/unit groups.
 - Show overlap warnings for independently previewed actions.
 - Warn when unscoped generic numeric measurements mix multiple assay/unit categories.
+- Suppress routine actions for entirely structural-only columns, retaining non-executable issue-linked planning notes.
 
 ### v0.4.x evaluation and provider hardening
 

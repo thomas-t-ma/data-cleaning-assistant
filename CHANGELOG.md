@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.2
+
+- Kept structural-only all-missing columns as QA findings while omitting low-value routine null-normalization actions.
+- Persisted non-executable, issue-linked planning notes with compact per-table CLI counts; explicit study dictionary overrides remain reviewable.
+- Aligned deterministic, hybrid-AI and AI-only proposal surfaces with the same conservative triage.
+- Regressed wide clinical exports, mixed contextual/structural missingness, schema overrides, and unchanged source bytes.
+
 ## 0.6.1
 
 - Added a read-only guard for generic numerical result columns mixed across multiple assay/unit metadata categories.

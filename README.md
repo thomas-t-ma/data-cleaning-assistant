@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.6.1**.
+Current version: **v0.6.2**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -94,6 +94,42 @@ Retain the original v0.5.2 report to compare finding totals. Grouping is a
 display-only change: it must not reduce the raw finding count or introduce
 new cleaning actions. Add assay/unit groups to the schema only after verifying
 those fields and their meanings.
+
+### v0.6.2 — actionable missingness triage
+
+The public CoMMpass pilot exposed 104 deterministic cleaning actions, all
+`normalize_missing`, mostly for columns without a single meaningful value.
+A complete-coverage field is an important QA finding but usually not 100+ cells
+of useful researcher-by-researcher cleaning decisions.
+
+**Routine** missing-token actions are now omitted when every entry in a column
+is an actual null or a structural missing-value sentinel. These fields remain
+in the full `profile` report, and each omission is persisted in the cleaning
+plan's non-executable `planning_notes` with the table, column, source issue
+ID and `structural_only_column` reason. `plan`, `preview`, `review`, and
+`ai-plan` show a compact per-table summary. This does **not** silently remove
+columns, convert values, or authorize any automated edit.
+
+Partial missingness still produces normal reviewable proposals. Contextual
+labels such as `Unknown` are not treated as structural nulls. **An explicit
+study-schema `missing_tokens` declaration overrides the routine omission**
+and still creates an action requiring individual researcher approval. AI-only
+planning uses the same routine triage, so a local model is not asked to approve
+hundreds of coverage-only rewrites.
+
+Re-run the existing public-data pilot without changing the source workbook:
+
+```bash
+bash sync.sh
+.venv/bin/data-cleaner plan \
+  pilot_outputs/commpass_100/commpass_pilot.xlsx \
+  --schema pilot_outputs/commpass_100/study_schema.yaml \
+  -o pilot_outputs/commpass_100/plan_v062.json
+```
+
+Check the proposed-action count and per-table planning-note counts against the
+104-action v0.6.1 plan. Do not reuse old action approvals: review a fresh plan
+against the current source hash. No GDC records are downloaded by this command.
 
 ### v0.6.1 — mixed-measurement outlier scope
 
