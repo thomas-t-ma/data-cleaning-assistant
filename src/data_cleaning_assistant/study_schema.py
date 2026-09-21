@@ -40,6 +40,7 @@ class TableSpec(BaseModel):
     time_column: str | None = None
     order_column: str | None = None
     columns: dict[str, ColumnSpec] = Field(default_factory=dict)
+    numeric_groups: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_time(self) -> TableSpec:
@@ -47,6 +48,11 @@ class TableSpec(BaseModel):
             raise ValueError("time_column and order_column must be specified together")
         if self.time_column and not self.subject_id:
             raise ValueError("subject_id is required for chronological checks")
+        for numeric, by in self.numeric_groups.items():
+            if not by or len(set(by)) != len(by) or numeric in by:
+                raise ValueError(
+                    "numeric_groups requires distinct grouping columns other than the measured column"
+                )
         return self
 
 
@@ -80,6 +86,8 @@ class StudySchema(BaseModel):
             required = (
                 set(table_spec.grain_key)
                 | set(table_spec.columns)
+                | set(table_spec.numeric_groups)
+                | {column for by in table_spec.numeric_groups.values() for column in by}
                 | {
                     item
                     for item in (
