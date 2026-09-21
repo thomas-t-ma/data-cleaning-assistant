@@ -97,3 +97,77 @@ answer key, not the manually reviewed plan; these are separate tests.
 
 A pass does NOT mean the unmodified GDC workbook needs any cleaning or
 that synthetic labels are genuine clinical observations.
+
+
+## 5. Semantic accept/defer test using local Ollama (v0.7.1)
+
+This is a SEPARATE test from the four-defect deterministic benchmark. It runs
+only on the synthetic BenchmarkLabels candidates already created in step 1.
+It does not rerun the downloader, modify the workbook, apply any model-approved
+actions, or reveal the answer key to the model. The model receives no other
+CoMMpass sheets, GDC case identifiers, source paths, or patient values.
+
+First inspect the locally installed models:
+
+    ollama list
+
+Start Ollama locally if it is not running. Choose the EXACT model identifier
+from the list, for example qwen3.5:4b when that model is installed. Do not
+assume an example model is already present.
+
+From the repository root:
+
+    bash sync.sh
+
+    .venv/bin/python examples/score_commpass_semantics.py \
+      --challenge pilot_outputs/commpass_challenge_01 \
+      --model qwen3.5:4b \
+      --runs 3 \
+      --output pilot_outputs/commpass_challenge_01/semantic_qwen35_4b.json
+
+Change --model and --output together to compare two installed models. Each
+output is new; the scorer refuses to overwrite an earlier experiment.
+--think is an optional separate experiment; the default matches the standard
+non-thinking structured planner. --url selects another Ollama endpoint if
+you are not using the local default. Model calls are local but cannot run in
+GitHub CI; the offline CI uses fake providers.
+
+The score contains the expected and actual decision, candidate mapping,
+model rationale, confidence, response errors, per-run latency, and pass
+counts. Read the aggregate result without publishing source data:
+
+    .venv/bin/python - <<'PY'
+    import json
+    from pathlib import Path
+
+    p = Path("pilot_outputs/commpass_challenge_01/semantic_qwen35_4b.json")
+    data = json.loads(p.read_text())
+    print("Model:", data["model"])
+    print("Passing runs:", data["passing_runs"], "/", data["runs"])
+    print("Correct decisions:", data["correct_decisions"], "/",
+          data["total_decisions"])
+    print("Mean latency:", round(data["mean_latency_seconds"], 2), "seconds")
+    for run in data["results"]:
+        print("Run", run["run"], "passed:", run["passed"],
+              "error:", run.get("error"))
+        for choice in run["decisions"]:
+            print(" ", choice["column"], choice["expected"],
+                  "=>", choice["actual"], "correct:", choice["correct"])
+    PY
+
+The scorer requires BOTH decisions on EVERY run to count that run as passed.
+An omitted decision does not receive credit for "defer", and unknown or
+duplicate candidate IDs invalidate the run. The typo decision is
+ACCEPT for Peripheral Blod -> Peripheral Blood; the numbered assay pair
+requires DEFER. A model accepting the numbered assay merge fails even if
+it correctly identifies the typo.
+
+**Do not use AI-plan on the entire clinical challenge for this first
+semantic test.** AI-plan would include the other tables' non-synthetic QA
+contexts. The isolated script uses the same candidate construction and
+model prompt while deliberately narrowing the material sent to Ollama.
+
+A correct two-pair result is an engineering smoke test of semantic
+judgment, not evidence of clinical semantic accuracy or authorization
+to clean research records. More varied seeded cases and repeated runs
+will be needed before broad claims.
