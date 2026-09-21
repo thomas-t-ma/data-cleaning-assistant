@@ -290,6 +290,7 @@ def apply_plan(
         source_path=str(resolved),
         source_sha256=actual_hash,
         executions=executions,
+        study_schema_sha256=plan.study_schema_sha256,
     )
 
 

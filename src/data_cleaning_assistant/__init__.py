@@ -1,6 +1,6 @@
 """Local-first data profiling and cleaning infrastructure."""
 
-from .actions import ChangeSet, CleaningAction, CleaningPlan
+from .actions import ChangeSet, CleaningAction, CleaningPlan, DeferredReview
 from .ai_context import build_ai_context
 from .ai_planner import propose_ai_plan
 from .ai_provider import OllamaProvider
@@ -9,6 +9,7 @@ from .engine import profile_dataset
 from .models import DatasetReport, Issue
 from .planner import propose_actions
 from .recipe import CleaningRecipe, load_recipe, recipe_to_plan
+from .study_schema import StudySchema, load_study_schema
 
 __all__ = [
     "ChangeSet",
@@ -16,11 +17,14 @@ __all__ = [
     "CleaningPlan",
     "CleaningRecipe",
     "DatasetReport",
+    "DeferredReview",
     "Issue",
     "OllamaProvider",
+    "StudySchema",
     "benchmark_cases",
     "build_ai_context",
     "load_recipe",
+    "load_study_schema",
     "profile_dataset",
     "propose_actions",
     "propose_ai_plan",
@@ -28,4 +32,4 @@ __all__ = [
     "research_benchmark_cases",
     "run_ai_benchmark",
 ]
-__version__ = "0.4.7"
+__version__ = "0.5.0"

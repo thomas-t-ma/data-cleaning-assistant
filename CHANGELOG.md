@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- Added strict, optional YAML/JSON study schema validation and a synthetic workbook example.
+- Added declared grain-key missingness and uniqueness, allowed-category, cross-table foreign-key,
+  non-unique parent-key, and visit-order chronology QA findings (all read-only).
+- Added exact study-authorized canonical mappings and study-specific missing tokens as proposed,
+  human-reviewed deterministic actions; identifier edits and unknown schema references fail closed.
+- Schema-managed category columns no longer receive conflicting AI fuzzy-merge candidates.
+- Added source schema SHA-256 provenance to plans and execution audit logs.
+- Persisted AI deferrals as non-executable review records with evidence, rationale, and decision.
+- Added CLI manual review for deferred candidates; approve-all cannot silently execute deferrals.
+- Added regression coverage for semantic missingness, exact schema mappings, chronology,
+  foreign keys, deferred persistence, explicit approval, and CLI schema options.
+
 ## 0.4.7
 
 - Added conservative single-edit typo-shape evidence for fuzzy category candidates.

@@ -12,6 +12,7 @@ from .actions import ActionType, CleaningAction, CleaningPlan
 from .engine import profile_dataset
 from .inference import looks_like_identifier_name
 from .io import load_dataset
+from .study_schema import StudySchema
 
 
 def file_sha256(path: str | Path) -> str:
@@ -220,10 +221,74 @@ def _duplicate_action(issue) -> CleaningAction:
     )
 
 
-def propose_actions(path: str | Path) -> CleaningPlan:
+def _schema_actions(
+    tables: dict[str, pd.DataFrame],
+    schema: StudySchema,
+) -> list[CleaningAction]:
+    """Only explicit schema transformations, each still requiring human approval."""
+    schema.validate_dataset(tables)
+    actions: list[CleaningAction] = []
+    for table, table_spec in schema.tables.items():
+        for column, column_spec in table_spec.columns.items():
+            observed = {str(value) for value in tables[table][column].tolist()}
+            mapping = {
+                old: new
+                for old, new in column_spec.canonical_map.items()
+                if old in observed and old != new
+            }
+            if mapping:
+                parameters = {"mapping": mapping}
+                actions.append(
+                    CleaningAction(
+                        id=_stable_action_id(
+                            ActionType.NORMALIZE_CATEGORIES, table, column, parameters
+                        ),
+                        type=ActionType.NORMALIZE_CATEGORIES,
+                        table=table,
+                        column=column,
+                        title="Study-dictionary canonicalization",
+                        description=(
+                            "Exact source-to-canonical mapping explicitly declared in the "
+                            "researcher's study schema. Review before approval."
+                        ),
+                        parameters=parameters,
+                        confidence=1.0,
+                        issue_ids=[],
+                    )
+                )
+
+            tokens = sorted(set(column_spec.missing_tokens) & observed)
+            if tokens:
+                parameters = {"values": tokens}
+                actions.append(
+                    CleaningAction(
+                        id=_stable_action_id(
+                            ActionType.NORMALIZE_MISSING, table, column, parameters
+                        ),
+                        type=ActionType.NORMALIZE_MISSING,
+                        table=table,
+                        column=column,
+                        title="Study-defined missing-token normalization",
+                        description=(
+                            "Only the tokens explicitly defined as null by this study schema; "
+                            "review before approval."
+                        ),
+                        parameters=parameters,
+                        confidence=1.0,
+                        issue_ids=[],
+                    )
+                )
+    return actions
+
+
+def propose_actions(
+    path: str | Path,
+    *,
+    schema: StudySchema | None = None,
+) -> CleaningPlan:
     resolved = Path(path).expanduser().resolve()
     loaded = load_dataset(resolved)
-    report = profile_dataset(resolved)
+    report = profile_dataset(resolved, schema=schema)
     actions: list[CleaningAction] = []
 
     for issue in report.issues:
@@ -248,9 +313,21 @@ def propose_actions(path: str | Path) -> CleaningPlan:
         if action is not None:
             actions.append(action)
 
+    if schema is not None:
+        # An explicit study declaration wins over heuristic proposals for the
+        # same target and action type; never mix incompatible category mappings.
+        declared = _schema_actions(loaded.tables, schema)
+        controlled = {(a.type, a.table, a.column) for a in declared}
+        actions = [
+            action for action in actions
+            if (action.type, action.table, action.column) not in controlled
+        ]
+        actions.extend(declared)
+
     deduped = {action.id: action for action in actions}
     return CleaningPlan(
         source_path=str(resolved),
         source_sha256=file_sha256(resolved),
         actions=list(deduped.values()),
+        study_schema_sha256=schema.source_sha256 if schema else None,
     )

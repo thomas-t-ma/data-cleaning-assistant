@@ -18,6 +18,7 @@ from .engine import profile_dataset
 from .io import load_dataset
 from .planner import file_sha256, propose_actions
 from .recipe import load_recipe, recipe_to_plan
+from .study_schema import load_study_schema
 from .transforms import (
     apply_plan,
     preview_action,
@@ -125,6 +126,23 @@ def _print_plan(plan: CleaningPlan) -> None:
             action.title,
         )
     console.print(table)
+    if plan.deferred_reviews:
+        deferred_table = Table(title="Deferred AI reviews — not executable")
+        deferred_table.add_column("Candidate")
+        deferred_table.add_column("Target")
+        deferred_table.add_column("Proposed change")
+        deferred_table.add_column("Status")
+        deferred_table.add_column("Reason")
+        for deferred in plan.deferred_reviews:
+            action = deferred.proposed_action
+            deferred_table.add_row(
+                deferred.candidate_id,
+                f"{action.table}.{action.column or '(table)'}",
+                repr(action.parameters),
+                deferred.status,
+                deferred.rationale,
+            )
+        console.print(deferred_table)
     console.print(
         "\n[dim]No action is applied until it is explicitly approved.[/dim]"
     )
@@ -224,13 +242,18 @@ def _write_cleaning_outputs(
 @app.command()
 def profile(
     input_path: Annotated[Path, typer.Argument(help="CSV, XLSX/XLSM, or Parquet file to profile")],
+    schema_path: Annotated[
+        Path | None,
+        typer.Option("--schema", help="Study-schema YAML/JSON for read-only validation"),
+    ] = None,
     output: Annotated[
         Path | None,
         typer.Option("--output", "-o", help="Write the full JSON report to this path"),
     ] = None,
 ) -> None:
     """Profile a dataset without changing the source file."""
-    report = profile_dataset(input_path)
+    schema = load_study_schema(schema_path) if schema_path else None
+    report = profile_dataset(input_path, schema=schema)
     _print_summary(report)
 
     if output:
@@ -276,15 +299,20 @@ def ai_status_command(
 @app.command("ai-context")
 def ai_context_command(
     input_path: Annotated[Path, typer.Argument(help="Dataset to profile for AI planning")],
+    schema_path: Annotated[
+        Path | None,
+        typer.Option("--schema", help="Study-schema YAML/JSON"),
+    ] = None,
     output: Annotated[
         Path | None,
         typer.Option("--output", "-o", help="Write the exact AI context JSON to this path"),
     ] = None,
 ) -> None:
     """Show exactly what compact context would be sent to the AI planner."""
+    schema = load_study_schema(schema_path) if schema_path else None
     loaded = load_dataset(input_path)
-    report = profile_dataset(input_path)
-    candidates = build_ai_candidates(report, loaded.tables)
+    report = profile_dataset(input_path, schema=schema)
+    candidates = build_ai_candidates(report, loaded.tables, schema=schema)
     context = build_ai_context(report, candidates)
     payload = context.model_dump_json(indent=2)
 
@@ -300,6 +328,10 @@ def ai_context_command(
 @app.command("ai-plan")
 def ai_plan_command(
     input_path: Annotated[Path, typer.Argument(help="Dataset to inspect with local AI")],
+    schema_path: Annotated[
+        Path | None,
+        typer.Option("--schema", help="Study-schema YAML/JSON"),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Path for the AI-assisted cleaning plan JSON"),
@@ -334,12 +366,14 @@ def ai_plan_command(
     """Generate a reviewable local-AI-assisted plan without modifying data."""
     provider = OllamaProvider(url, think=think)
     try:
+        schema = load_study_schema(schema_path) if schema_path else None
         selected_model = resolve_model(provider, model)
         result = propose_ai_plan(
             input_path,
             provider=provider,
             model=selected_model,
             include_rules=rules,
+            schema=schema,
         )
     except (AIProviderError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -361,7 +395,11 @@ def ai_plan_command(
                 if rejected.column is not None
                 else rejected.table
             )
-            rejected_table.add_row(rejected.type.value, target, rejected.reason)
+            rejected_table.add_row(
+                rejected.type.value if rejected.type else "unknown",
+                target or rejected.candidate_id,
+                rejected.reason,
+            )
         console.print(rejected_table)
 
     _print_plan(result.plan)
@@ -509,13 +547,18 @@ def ai_benchmark_command(
 @app.command("plan")
 def plan_command(
     input_path: Annotated[Path, typer.Argument(help="Dataset to inspect")],
+    schema_path: Annotated[
+        Path | None,
+        typer.Option("--schema", help="Study-schema YAML/JSON"),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option("--output", "-o", help="Path for the proposed cleaning plan JSON"),
     ] = Path("cleaning_plan.json"),
 ) -> None:
     """Generate reviewable cleaning actions without changing the dataset."""
-    plan = propose_actions(input_path)
+    schema = load_study_schema(schema_path) if schema_path else None
+    plan = propose_actions(input_path, schema=schema)
     _print_plan(plan)
     output = output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -595,8 +638,60 @@ def review_command(
                 break
             if decision in {"q", "quit"}:
                 output = output.expanduser().resolve()
+                output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
                 console.print(f"[yellow]Review stopped. Partial plan saved to:[/yellow] {output}")
+                return
+            console.print("[red]Enter a, r, s, or q.[/red]")
+
+    for deferred in plan.deferred_reviews:
+        if deferred.status != "pending":
+            continue
+        action = deferred.proposed_action
+        console.rule(f"Deferred AI review {deferred.candidate_id}")
+        console.print(f"[bold]{action.table}.{action.column or '(table)'}[/bold]")
+        console.print(deferred.question)
+        console.print(f"[yellow]AI deferred:[/yellow] {deferred.rationale}")
+        console.print(f"Proposed parameters: {action.parameters!r}")
+        _print_action_preview(tables, action, sample_limit=sample)
+        while True:
+            decision = typer.prompt(
+                "Manual decision: [a]pprove candidate, [r]eject, [s]kip, [q]uit",
+                default="s",
+            ).strip().casefold()
+            if decision in {"a", "approve"}:
+                matching = next(
+                    (
+                        existing
+                        for existing in plan.actions
+                        if existing.type == action.type
+                        and existing.table == action.table
+                        and existing.column == action.column
+                        and existing.parameters == action.parameters
+                    ),
+                    None,
+                )
+                if matching is not None:
+                    matching.decision = ActionDecision.APPROVED
+                else:
+                    approved_action = action.model_copy(deep=True)
+                    approved_action.decision = ActionDecision.APPROVED
+                    approved_action.description = (
+                        "Manually approved deferred AI candidate: " + deferred.rationale
+                    )
+                    plan.actions.append(approved_action)
+                deferred.status = "approved"
+                break
+            if decision in {"r", "reject"}:
+                deferred.status = "rejected"
+                break
+            if decision in {"s", "skip", "defer"}:
+                break
+            if decision in {"q", "quit"}:
+                output = output.expanduser().resolve()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+                console.print(f"[yellow]Partial review saved to:[/yellow] {output}")
                 return
             console.print("[red]Enter a, r, s, or q.[/red]")
 

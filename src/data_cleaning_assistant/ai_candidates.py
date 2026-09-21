@@ -13,6 +13,7 @@ from .actions import ActionOrigin, ActionType, CleaningAction
 from .ai_models import AICandidateContext
 from .inference import looks_like_identifier_name
 from .models import DatasetReport, Issue
+from .study_schema import StudySchema
 
 
 @dataclass(slots=True)
@@ -303,6 +304,8 @@ def _category_candidates(
 def build_ai_candidates(
     report: DatasetReport,
     tables: dict[str, pd.DataFrame],
+    *,
+    schema: StudySchema | None = None,
 ) -> list[AICandidate]:
     candidates: list[AICandidate] = []
 
@@ -311,14 +314,30 @@ def build_ai_candidates(
             continue
         frame = tables[issue.table]
 
+        column_spec = (
+            schema.tables[issue.table].columns.get(issue.column)
+            if schema is not None
+            and issue.table in schema.tables
+            and issue.column is not None
+            else None
+        )
+
         if issue.type in {"category_inconsistency", "fuzzy_category_match"}:
-            candidates.extend(_category_candidates(issue, frame))
+            # The study dictionary, when provided, is the only authority for
+            # category normalization in a schema-managed column.
+            if column_spec is None or (
+                column_spec.allowed_values is None
+                and not column_spec.canonical_map
+            ):
+                candidates.extend(_category_candidates(issue, frame))
             continue
 
         if issue.column is None or issue.column not in frame.columns:
             continue
 
         if issue.type == "hidden_missing_values":
+            if column_spec is not None and column_spec.missing_tokens:
+                continue
             source = issue.evidence.get("structural_tokens")
             if source is None:
                 source = issue.evidence.get("tokens", {})
