@@ -21,3 +21,7 @@ ai_context*.json
 /replayed.*
 /restored.*
 ai_benchmark*.json
+
+# Synthetic pilot outputs
+/pilot_outputs/
+/examples/messy_research_example.xlsx

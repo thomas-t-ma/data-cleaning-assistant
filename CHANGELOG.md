@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- Added an end-to-end synthetic CLI pilot smoke test covering profiling, schema planning, preview, interactive review, approved edits, audit/recipe generation, preview-only replay, and undo.
+- Verified source workbook integrity and preserved duplicate observations across the workflow.
+- Added a Mac runbook for live Ollama validation on bundled synthetic data before any de-identified pilot.
+- Ignored generated pilot outputs and synthetic workbooks in git.
+
 ## 0.5.0
 
 - Added strict, optional YAML/JSON study schema validation and a synthetic workbook example.

@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.5.0**.
+Current version: **v0.5.1**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,10 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## Synthetic end-to-end pilot (v0.5.1)
+
+Start with [the synthetic pilot runbook](examples/PILOT.md). It covers the full CLI workflow, local Ollama test, explicit review, source-preserving apply, audit/recipe checks, and undo before trying de-identified research data. CI runs the deterministic pilot on Python 3.11, 3.12, and 3.13.
 
 ## Study schemas and research QA (v0.5)
 
