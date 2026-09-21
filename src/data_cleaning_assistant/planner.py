@@ -8,10 +8,11 @@ from typing import Any
 
 import pandas as pd
 
-from .actions import ActionType, CleaningAction, CleaningPlan
+from .actions import ActionType, CleaningAction, CleaningPlan, PlanningNote
 from .engine import profile_dataset
 from .inference import looks_like_identifier_name
 from .io import load_dataset
+from .planning_policy import structural_only_column
 from .study_schema import StudySchema
 
 
@@ -290,6 +291,7 @@ def propose_actions(
     loaded = load_dataset(resolved)
     report = profile_dataset(resolved, schema=schema)
     actions: list[CleaningAction] = []
+    notes: list[PlanningNote] = []
 
     for issue in report.issues:
         if issue.table not in loaded.tables:
@@ -300,6 +302,16 @@ def propose_actions(
         if issue.type == "category_inconsistency":
             action = _category_action(issue, frame)
         elif issue.type == "hidden_missing_values":
+            if structural_only_column(issue, frame):
+                notes.append(
+                    PlanningNote(
+                        table=issue.table,
+                        column=issue.column,
+                        issue_ids=[issue.id],
+                        reason="structural_only_column",
+                    )
+                )
+                continue
             action = _missing_action(issue)
         elif issue.type == "malformed_or_mixed_dates":
             action = _date_action(issue)
@@ -323,11 +335,23 @@ def propose_actions(
             if (action.type, action.table, action.column) not in controlled
         ]
         actions.extend(declared)
+        # A study-dictionary declaration explicitly authorizes an otherwise
+        # suppressed all-structural column; never mislabel it as omitted.
+        declared_targets = {
+            (action.table, action.column)
+            for action in declared
+            if action.type == ActionType.NORMALIZE_MISSING
+        }
+        notes = [
+            note for note in notes
+            if (note.table, note.column) not in declared_targets
+        ]
 
     deduped = {action.id: action for action in actions}
     return CleaningPlan(
         source_path=str(resolved),
         source_sha256=file_sha256(resolved),
         actions=list(deduped.values()),
+        planning_notes=notes,
         study_schema_sha256=schema.source_sha256 if schema else None,
     )
