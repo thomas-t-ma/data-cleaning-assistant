@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.7.1**.
+Current version: **v0.7.2**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,38 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## v0.7.2 independent synthetic semantic stress test
+
+The two-pair Ollama smoke test now has a harder companion: **40
+independent synthetic cases**, half expected accept and half defer.
+The corpus includes typos, formatting variations, numeric-code traps,
+medical-label examples, and matched cases in which explicit fictional
+study-dictionary context changes the correct decision. Category
+prevalences also vary.
+
+Each case uses real profiling and bounded candidate generation, and
+gets its **own single-candidate model call**. Detector misses are
+counted separately, not credited as correct model deferrals. The
+score separates unsafe merges, missed safe corrections, protocol
+failures, source-candidate coverage, explanations, and latency. No
+public workbook or GDC records are loaded or modified.
+
+Run a no-model exposure audit first, then try the installed local model:
+
+```bash
+bash sync.sh
+.venv/bin/python examples/semantic_stress_test.py --audit-only \
+  --output pilot_outputs/semantic_stress_coverage_v072.json
+
+.venv/bin/python examples/semantic_stress_test.py --model qwen3.5:4b --runs 1 \
+  --output pilot_outputs/semantic_stress_qwen35_4b_v072.json
+```
+
+The model name is an **example**; use the exact name from
+\`ollama list\`. See the [complete stress-test runbook](examples/SEMANTIC_STRESS.md)
+for the summary script, failure categories, caveats, and optional
+repeated experiments. The original CoMMpass challenge is unchanged.
 
 ## v0.7.1 synthetic-label semantic judgment benchmark
 

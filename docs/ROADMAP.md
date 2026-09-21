@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.7.1 — synthetic-only Ollama semantic benchmark (current)
+## v0.7.2 — forty-case independent semantic stress test (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
