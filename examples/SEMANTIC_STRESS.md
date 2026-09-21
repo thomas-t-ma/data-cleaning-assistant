@@ -133,3 +133,48 @@ Model confidence is self-reported and is NOT calibrated probability.
 This stress suite exercises semantic candidate review, not the approved
 cell-edit/undo code path already tested in v0.7.0. The existing
 \`examples/score_commpass_semantics.py\` two-pair smoke test remains intact.
+
+
+## v0.7.3: analyze the first live stress run without changing production
+
+The first qwen3.5:4b run on the original v0.7.2 scorer produced 32/40
+candidate exposures and 22/32 correct model decisions, with zero unsafe
+merges and ten safe typo corrections deferred. Some rationales imagined
+unsupported distinct clinical meanings for ordinary misspellings. This
+documents model behavior, **not** independent confirmation that any
+clinical terminology is interchangeable.
+
+The initial scorer also marked s20 as ambiguous because it encountered both
+a precise category mapping and an independently bounded whitespace-trimming
+proposal. The revised scorer admits that specific harmless overlap; it
+continues to reject other extra candidates. A fresh coverage audit should
+therefore expose s20 without changing the original forty test cases.
+
+The production AI planner's system prompt is **unchanged**. To compare it
+against a benchmark-only evidence-proportional prompt on the exact same
+synthetic corpus, with separate non-overwriting files:
+
+    bash sync.sh
+    .venv/bin/python examples/semantic_stress_test.py \
+      --audit-only \
+      --output pilot_outputs/semantic_stress_coverage_v073.json
+
+    .venv/bin/python examples/semantic_stress_test.py \
+      --model qwen3.5:4b --runs 1 --prompt-variant baseline \
+      --output pilot_outputs/semantic_stress_baseline_v073.json
+
+    .venv/bin/python examples/semantic_stress_test.py \
+      --model qwen3.5:4b --runs 1 --prompt-variant evidence_calibrated \
+      --output pilot_outputs/semantic_stress_calibrated_v073.json
+
+Inspect model decisions for the same exposed cases rather than comparing
+only aggregate accuracy. The benchmark output includes corpus SHA-256,
+prompt variant and system-prompt SHA-256 for transparent comparisons.
+The calibrated prompt rejects hypothetical semantic distinctions without
+evidence, **but still requires deferral for distinct codes, doses, stages,
+markers, analytes, assay IDs and explicit study-dictionary differences**.
+Do not deploy it globally unless the live unsafe-merge counter remains zero
+and the safe-correction deferral count improves on repeated runs.
+
+No CoMMpass records, original workbook, or source datasets are sent to
+Ollama or modified by this independent synthetic test.
