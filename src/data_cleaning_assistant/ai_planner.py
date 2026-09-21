@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .actions import ActionOrigin, CleaningAction, CleaningPlan
+from .actions import ActionOrigin, CleaningAction, CleaningPlan, DeferredReview
 from .ai_candidates import AICandidate, build_ai_candidates
 from .ai_context import build_ai_context
 from .ai_models import AIPlannerContext, AIPlannerResponse, AIRejectedProposal, CandidateDecision
@@ -12,6 +12,7 @@ from .ai_provider import StructuredAIProvider
 from .engine import profile_dataset
 from .io import load_dataset
 from .planner import file_sha256, propose_actions
+from .study_schema import StudySchema
 
 
 SYSTEM_PROMPT = """You are a conservative research-data quality reviewer.
@@ -111,11 +112,12 @@ def propose_ai_plan(
     provider: StructuredAIProvider,
     model: str,
     include_rules: bool = True,
+    schema: StudySchema | None = None,
 ) -> AIPlanResult:
     resolved = Path(path).expanduser().resolve()
     loaded = load_dataset(resolved)
-    report = profile_dataset(resolved)
-    candidates = build_ai_candidates(report, loaded.tables)
+    report = profile_dataset(resolved, schema=schema)
+    candidates = build_ai_candidates(report, loaded.tables, schema=schema)
     context = build_ai_context(report, candidates)
 
     if candidates:
@@ -134,6 +136,7 @@ def propose_ai_plan(
     candidate_by_id = {candidate.id: candidate for candidate in candidates}
     seen: set[str] = set()
     accepted: list[CleaningAction] = []
+    deferred: list[DeferredReview] = []
     rejected: list[AIRejectedProposal] = []
 
     for selection in response.selections:
@@ -163,6 +166,16 @@ def propose_ai_plan(
         seen.add(selection.candidate_id)
 
         if selection.decision == CandidateDecision.DEFER:
+            deferred.append(
+                DeferredReview(
+                    candidate_id=candidate.id,
+                    proposed_action=candidate.action.model_copy(deep=True),
+                    question=candidate.context.question,
+                    rationale=selection.rationale,
+                    confidence=selection.confidence,
+                    evidence=candidate.context.evidence,
+                )
+            )
             continue
 
         action = candidate.action.model_copy(deep=True)
@@ -171,10 +184,23 @@ def propose_ai_plan(
         action.origin = ActionOrigin.AI
         accepted.append(action)
 
-    # Missing selections are treated as defer, never as acceptance.
+    # Missing selections are also explicit, non-executable human review items.
+    for candidate in candidates:
+        if candidate.id not in seen:
+            deferred.append(
+                DeferredReview(
+                    candidate_id=candidate.id,
+                    proposed_action=candidate.action.model_copy(deep=True),
+                    question=candidate.context.question,
+                    rationale="Model did not return a decision; no action was proposed.",
+                    confidence=0.0,
+                    evidence=candidate.context.evidence,
+                )
+            )
+
     actions: list[CleaningAction] = []
     if include_rules:
-        actions.extend(propose_actions(resolved).actions)
+        actions.extend(propose_actions(resolved, schema=schema).actions)
 
     existing = {_effect_key(action) for action in actions}
     for action in accepted:
@@ -188,6 +214,8 @@ def propose_ai_plan(
             source_path=str(resolved),
             source_sha256=file_sha256(resolved),
             actions=actions,
+            deferred_reviews=deferred,
+            study_schema_sha256=schema.source_sha256 if schema else None,
             planner="hybrid_ai" if include_rules else "ai_only",
             model=model,
         ),
