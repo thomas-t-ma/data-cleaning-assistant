@@ -1,0 +1,30 @@
+# Synthetic example for examples/messy_research_example.xlsx.
+# Names must match workbook sheets and columns exactly. Never add real patient identifiers here.
+version: 1
+tables:
+  Visits:
+    grain_key: [PatientID, VisitDate]
+    subject_id: PatientID
+    columns:
+      Sex:
+        allowed_values: [Female, Male]
+        canonical_map:
+          female: Female
+          " Female ": Female
+          MALE: Male
+      Age:
+        missing_tokens: ["N/A"]
+      StudyArm:
+        allowed_values: [A, B]
+  Subjects:
+    grain_key: [PatientID]
+    columns:
+      Status:
+        allowed_values: [Active, Inactive]
+        canonical_map:
+          active: Active
+foreign_keys:
+  - child_table: Visits
+    child_column: PatientID
+    parent_table: Subjects
+    parent_column: PatientID
