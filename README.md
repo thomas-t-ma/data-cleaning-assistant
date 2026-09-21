@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.4.7**.
+Current version: **v0.5.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,69 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## Study schemas and research QA (v0.5)
+
+Study dictionaries are **opt-in**. The default no-schema workflow stays unchanged. A local
+YAML/JSON file may define exact workbook sheet names, grain keys, allowed categories, explicit
+canonical mappings, study-specific null tokens, and foreign-key relationships. A subject ID,
+visit order, and date enable a read-only chronological check.
+
+Try the bundled **synthetic** workbook and schema:
+
+```bash
+.venv/bin/python examples/make_messy_example.py
+.venv/bin/data-cleaner profile examples/messy_research_example.xlsx \
+  --schema examples/study_schema_example.yaml -o schema_report.json
+.venv/bin/data-cleaner plan examples/messy_research_example.xlsx \
+  --schema examples/study_schema_example.yaml -o schema_plan.json
+.venv/bin/data-cleaner ai-plan examples/messy_research_example.xlsx \
+  --schema examples/study_schema_example.yaml --model qwen3.5:4b \
+  -o ai_cleaning_plan.json
+```
+
+The schema uses exact source values and target values. For example:
+
+```yaml
+version: 1
+tables:
+  Visits:
+    grain_key: [PatientID, VisitDate]
+    subject_id: PatientID
+    columns:
+      SpecimenSource:
+        allowed_values: [Peripheral Blood, Bone Marrow]
+        canonical_map:
+          Peripheral Blod: Peripheral Blood
+      MissingReason:
+        missing_tokens: [Unknown] # Only when this study truly defines it as null
+```
+
+**Use the actual sheet and column names for your dataset.** An unknown schema reference
+fails validation instead of silently guessing an alias. Canonical targets must be declared
+allowed values when `allowed_values` is present; identifier-edit mappings are prohibited.
+The schema file's SHA-256 is recorded in the plan and audit log (not the raw schema content).
+`unit` is available as descriptive schema metadata but unit conversion is not implemented.
+
+The read-only schema checks currently include declared grain-key missingness/duplicates,
+unrecognized categorical values, child-to-parent foreign-key gaps, non-unique parent keys,
+and visit dates that reverse declared visit order for the same subject. None of these checks
+authorizes record deletion, imputes a value, or reorders visits.
+
+Study-defined canonical mappings and null tokens create **proposed actions only**; a researcher
+still needs to inspect and approve them. In schema-managed category columns, the study
+dictionary takes precedence over heuristic fuzzy category merges. Undeclared `Unknown` and
+`Not applicable` remain untouched.
+
+### Deferred AI reviews
+
+Model deferrals are saved in `CleaningPlan.deferred_reviews` with the bounded proposed
+action, exact candidate ID, evidence, question, rationale, and status. They are
+**not** in `CleaningPlan.actions`; `apply --approve-all` cannot execute them.
+`data-cleaner review INPUT PLAN -o REVIEWED.json` displays each deferred item and
+allows explicit approval, rejection, or leaving it pending. Approving one converts that
+bounded action to an approved, reviewable plan action; no model-generated parameters
+can enter the plan.
 
 ## AI privacy / transparency
 
