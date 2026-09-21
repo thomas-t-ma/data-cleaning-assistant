@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.4.7 — conservative typo evidence (current)
+## v0.5.0 — study-schema and deferred reviews (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -28,6 +28,8 @@
 - Add explicit unsafe-candidate-exposure metrics.
 - Add numeric zero-padding equivalence evidence for research category labels.
 - Add conservative single-edit typo-shape evidence while excluding numeric and short-token semantic distinctions.
+- Add opt-in study dictionaries and read-only longitudinal/cross-table QA.
+- Persist non-executable AI deferrals for explicit researcher review.
 
 ### v0.4.x evaluation and provider hardening
 
@@ -35,7 +37,7 @@
 - Add multi-table benchmark fixtures and longitudinal temporal-consistency scenarios.
 - Add prompt/provider regression fixtures.
 - Add explicit context-size/token budgeting for very wide workbooks.
-- Add explicit study-schema configuration so users can define contextual missingness semantics safely.
+- Expand study-schema rules with typed field/unit validation and exportable data dictionaries.
 - Add user-configurable redaction policies for category/evidence values.
 - Add provider metadata and model/version information to plan/audit provenance.
 - Add optional hosted-provider adapters without changing execution semantics.
