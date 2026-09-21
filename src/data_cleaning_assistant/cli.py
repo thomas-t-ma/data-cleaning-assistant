@@ -51,7 +51,7 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
     table.add_column("Rows", justify="right")
     table.add_column("Columns", justify="right")
     table.add_column("Grain")
-    table.add_column("Candidate key")
+    table.add_column("Inferred key")
     table.add_column("Issues", justify="right")
     for profile in report.tables:
         issue_count = sum(1 for issue in report.issues if issue.table == profile.name)
@@ -72,7 +72,8 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
         rel_table.add_column("Left")
         rel_table.add_column("Right")
         rel_table.add_column("Relationship")
-        rel_table.add_column("Shared", justify="right")
+        rel_table.add_column("Shared keys", justify="right")
+        rel_table.add_column("Basis")
         rel_table.add_column("Confidence", justify="right")
         for rel in report.relationships:
             rel_table.add_row(
@@ -80,7 +81,8 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
                 f"{rel.right_table}.{rel.right_column}",
                 rel.relationship,
                 str(rel.shared_value_count),
-                f"{rel.confidence:.0%}",
+                rel.source,
+                "—" if rel.source == "declared" else f"{rel.confidence:.0%}",
             )
         console.print(rel_table)
 
@@ -102,7 +104,7 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
             if coverage_table.row_count:
                 console.print(coverage_table)
         issue_table = Table(
-            title="All QA findings" if all_issues else "Review-worthy QA findings"
+            title="All QA findings" if all_issues else "Remaining QA findings (incl. informational)"
         )
         issue_table.add_column("Severity")
         issue_table.add_column("Type")
