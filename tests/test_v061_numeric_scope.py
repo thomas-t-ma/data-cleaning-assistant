@@ -149,7 +149,7 @@ def test_unscoped_issue_is_read_only_and_in_full_json(tmp_path: Path) -> None:
         app, ["profile", str(path), "--output", str(output)]
     )
     assert result.exit_code == 0, result.output
-    assert "Pooled outlier check skipped" in result.output
+    assert "Numeric QA scope check skipped" in result.output
     assert "Remaining QA findings" in result.output
     report = json.loads(output.read_text(encoding="utf-8"))
     scope_issues = [
