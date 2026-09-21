@@ -5,8 +5,9 @@ from pathlib import Path
 from .detectors import detect_basic_issues, detect_fuzzy_categories
 from .detectors.basic import _iqr_outliers
 from .io import load_dataset
-from .inference import is_missing_like
+from .inference import is_missing_like, parse_number
 from .models import CrossTableRelationship, DatasetReport, GrainInference
+from .numeric_scope import heterogeneous_measurement_metadata, unscoped_measurement_issue
 from .profiling import profile_table
 from .schema_qa import schema_issues
 from .study_schema import StudySchema
@@ -118,7 +119,34 @@ def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> D
             ]
             for column, by in table_spec.numeric_groups.items():
                 basic.extend(_grouped_outliers(table_name, frame, column, by))
-        issues.extend(basic)
+
+        scoped = table_spec.numeric_groups if table_spec else {}
+        # A pooled test is inappropriate even if it happens to detect *zero*
+        # outliers. Identify heterogeneous generic measurement columns first.
+        unscoped = {
+            str(column)
+            for column in frame.columns
+            if column not in scoped
+            and heterogeneous_measurement_metadata(frame, str(column))
+            and sum(parse_number(v) is not None for v in frame[column]) >= 8
+        }
+        pooled_findings = {}
+        safe_basic = []
+        for issue in basic:
+            if (
+                issue.type == "statistical_outlier"
+                and issue.column in unscoped
+            ):
+                pooled_findings[issue.column] = issue
+                continue
+            safe_basic.append(issue)
+        for column in sorted(unscoped):
+            safe_basic.append(
+                unscoped_measurement_issue(
+                    table_name, column, frame, pooled_findings.get(column)
+                )
+            )
+        issues.extend(safe_basic)
         issues.extend(detect_fuzzy_categories(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
 

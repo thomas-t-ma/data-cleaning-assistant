@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1
+
+- Added a read-only guard for generic numerical result columns mixed across multiple assay/unit metadata categories.
+- Replaced potentially misleading pooled outlier findings with an explicit scope warning, even when the pooled detector found no outliers.
+- Preserved opt-in within-assay/unit `numeric_groups` checks and left specific independent numeric columns unchanged.
+- Clarified inferred candidate keys, declared relationship basis, distinct shared-key counts, and informational QA headings.
+- Added regression coverage for heterogeneous, single-assay, explicitly grouped, and no-pooled-outlier cases.
+
 ## 0.6.0
 
 - Grouped complete-coverage constant/missingness QA findings in terminal reports; original issue records remain in JSON and `profile --all-issues` restores expanded display.
