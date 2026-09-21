@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.6.3**.
+Current version: **v0.7.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,33 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## v0.7 known-answer challenge on public CoMMpass data
+
+After the unmodified 100-case public pilot correctly produced **zero**
+deterministic cleaning actions, the next test is whether the cleaner finds
+genuine seeded defects **without** introducing unjustified edits. A local
+script creates a separate, reproducible corrupt copy of the public workbook,
+records an answer key, injects four bounded cell defects in the existing
+sheets, and adds a clearly synthetic sheet for safe-versus-ambiguous fuzzy
+category review. A read-only scoring command checks the resulting plan;
+an explicit opt-in command exercises fixture-only apply, workbook save/reload,
+and undo against the answer key. Original and corrupt-input hashes are checked.
+
+See [the complete Mac runbook](examples/COMMPASS_CHALLENGE.md). Start here
+once the original pilot workbook already exists:
+
+```bash
+bash sync.sh
+.venv/bin/python examples/commpass_challenge.py make \
+  --source pilot_outputs/commpass_100/commpass_pilot.xlsx \
+  --schema pilot_outputs/commpass_100/study_schema.yaml \
+  --out pilot_outputs/commpass_challenge_01
+```
+
+Do not claim this validates a particular AI model's decisions: the harness
+only verifies that the synthetic fuzzy pairs are exposed for semantic review,
+not that a local model accepted or deferred the right merges.
 
 ## Research-aware QA and review (v0.6)
 

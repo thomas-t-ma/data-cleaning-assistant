@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.6.3 — empty-cell semantics (current)
+## v0.7.0 — known-answer real-data challenge (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -38,6 +38,8 @@
 - Warn when unscoped generic numeric measurements mix multiple assay/unit categories.
 - Suppress routine actions for entirely structural-only columns, retaining non-executable issue-linked planning notes.
 - Treat exact blank CSV/Excel cells as existing missingness coverage, not proposed null conversions.
+- Seed four bounded test defects in an isolated public-data workbook and score deterministic proposals against a private answer key.
+- Exercise fixture-only transformations, persistence, and undo; protect original and challenge input hashes.
 
 ### v0.4.x evaluation and provider hardening
 
