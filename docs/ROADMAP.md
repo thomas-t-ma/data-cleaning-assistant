@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.5.0 — study-schema and deferred reviews (current)
+## v0.5.2 — public clinical-data pilot (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -30,6 +30,7 @@
 - Add conservative single-edit typo-shape evidence while excluding numeric and short-token semantic distinctions.
 - Add opt-in study dictionaries and read-only longitudinal/cross-table QA.
 - Persist non-executable AI deferrals for explicit researcher review.
+- Acquire and audit open CoMMpass clinical metadata before real-data modeling.
 
 ### v0.4.x evaluation and provider hardening
 
