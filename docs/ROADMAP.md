@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.6.0 — research-aware QA (current)
+## v0.6.1 — mixed-assay QA safety (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -35,6 +35,7 @@
 - Prefer declared foreign-key relationships and grain over inferred shared identifiers.
 - Scope outlier QA to declared assay/unit groups.
 - Show overlap warnings for independently previewed actions.
+- Warn when unscoped generic numeric measurements mix multiple assay/unit categories.
 
 ### v0.4.x evaluation and provider hardening
 
