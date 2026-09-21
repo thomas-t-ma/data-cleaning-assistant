@@ -49,6 +49,8 @@ score separates unsafe merges, missed safe corrections, protocol
 failures, source-candidate coverage, explanations, and latency. No
 public workbook or GDC records are loaded or modified.
 
+The initial live qwen3.5:4b stress run surfaced 32/40 candidates, made 22/32 correct model decisions, accepted zero unsafe merges, and deferred ten safe corrections. The benchmark now recognizes a separate bounded whitespace-trim action as an overlapping proposal rather than a second semantic candidate. A **benchmark-only** `--prompt-variant evidence_calibrated` tests less speculative deferrals; the production AI planner remains unchanged until comparisons establish both safety and usefulness. See the runbook for baseline-versus-calibrated commands.
+
 Run a no-model exposure audit first, then try the installed local model:
 
 ```bash
