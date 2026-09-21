@@ -6,6 +6,8 @@ from .detectors import detect_basic_issues, detect_fuzzy_categories
 from .io import load_dataset
 from .models import DatasetReport
 from .profiling import profile_table
+from .schema_qa import schema_issues
+from .study_schema import StudySchema
 from .structure import (
     infer_candidate_keys,
     infer_grain,
@@ -14,7 +16,7 @@ from .structure import (
 )
 
 
-def profile_dataset(path: str | Path) -> DatasetReport:
+def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> DatasetReport:
     loaded = load_dataset(path)
     table_profiles = []
     issues = []
@@ -28,6 +30,9 @@ def profile_dataset(path: str | Path) -> DatasetReport:
         issues.extend(detect_basic_issues(table_name, frame))
         issues.extend(detect_fuzzy_categories(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
+
+    if schema is not None:
+        issues.extend(schema_issues(loaded.tables, schema))
 
     return DatasetReport(
         source_path=str(loaded.path),
