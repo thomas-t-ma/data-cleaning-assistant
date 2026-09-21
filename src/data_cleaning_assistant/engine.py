@@ -89,6 +89,8 @@ def _grouped_outliers(table: str, frame, column: str, by: list[str]):
 
 def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> DatasetReport:
     loaded = load_dataset(path)
+    if schema is not None:
+        schema.validate_dataset(loaded.tables)
     table_profiles = []
     issues = []
 
