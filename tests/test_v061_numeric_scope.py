@@ -56,8 +56,33 @@ def test_mixed_assay_measurements_skip_pooled_outliers_without_schema(
     assert issue.evidence["grouping_metadata_unique_counts"] == {
         "laboratory_test": 2, "test_units": 2,
     }
-    assert issue.evidence["suppressed_pooled_outlier_count"] > 0
+    assert issue.evidence["suppressed_pooled_outlier_count"] == 0
     assert issue.evidence["grouped_outlier_check_performed"] is False
+
+
+def test_actual_pooled_outlier_flag_is_suppressed(tmp_path: Path) -> None:
+    path = tmp_path / "measurements.csv"
+    rows = [
+        {"laboratory_test": "A", "test_units": "unit A", "test_value": n}
+        for n in list(range(1, 9)) + [100]
+    ] + [
+        {"laboratory_test": "B", "test_units": "unit B", "test_value": n}
+        for n in range(1, 10)
+    ]
+    pd.DataFrame(rows).to_csv(path, index=False)
+    report = profile_dataset(path)
+    scoped = [
+        issue for issue in report.issues
+        if issue.type == "unscoped_numeric_measurement"
+    ]
+    assert len(scoped) == 1
+    assert scoped[0].evidence["suppressed_pooled_outlier_count"] > 0
+    assert not any(
+        issue.type == "statistical_outlier" and issue.column == "test_value"
+        for issue in report.issues
+    )
+
+
 
 
 def test_explicit_assay_and_unit_grouping_restores_within_group_qa(
