@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+- Added a local-only seeded corruption challenge for the already downloaded public CoMMpass clinical workbook; preserves original input and writes a separate test copy and answer key.
+- Added four realistic existing-sheet defects and a clearly synthetic sixth sheet for fuzzy category semantic-review safety.
+- Added answer-key scoring for deterministic plan targets, bounded effects, unexpected proposals, and fuzzy candidate exposure.
+- Added explicit fixture-only apply/Excel export/undo validation with both original and challenge input hash checks.
+- Added an offline multi-table CI integration test, reproducibility checks, and the Mac challenge runbook.
+
 ## 0.6.3
 
 - Treated literal zero-length cells as already empty for CSV/Excel column coverage rather than hidden missing-value tokens.
