@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- Grouped complete-coverage constant/missingness QA findings in terminal reports; original issue records remain in JSON and `profile --all-issues` restores expanded display.
+- Prefer study-declared grain and foreign keys over coincidental shared-identifier inferred relationships.
+- Added opt-in `numeric_groups` to scope numeric outlier flags within declared assay/unit strata, without changing any values.
+- Added independent-preview overlap warnings in CLI preview/review, retaining accurate sequential execution audit counts.
+- Added regression tests for lossless summaries, foreign-key precedence, grouped outliers, schema validation and overlapping edits.
+
 ## 0.5.2
 
 - Added a reproducible download of open NCI GDC MMRF-CoMMpass clinical metadata, using fixed project filtering, pagination, and fail-closed completeness checks.
