@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2
+
+- Added a reproducible download of open NCI GDC MMRF-CoMMpass clinical metadata, using fixed project filtering, pagination, and fail-closed completeness checks.
+- Preserved the untouched source response plus API URLs, retrieval timestamp, row counts, and source SHA-256.
+- Generated a linked multi-sheet exploratory workbook and conservative study schema without guessing clinical categorical or missingness semantics.
+- Added offline regression tests for pagination, in-project filtering, repeated visits/labs, workbook structure, and schema QA.
+- No live GDC API download in CI; first Mac retrieval still requires validation.
+
 ## 0.5.1
 
 - Added an end-to-end synthetic CLI pilot smoke test covering profiling, schema planning, preview, interactive review, approved edits, audit/recipe generation, preview-only replay, and undo.
