@@ -103,6 +103,17 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
                     coverage_table.add_row(table_name, str(len(columns)), kind)
             if coverage_table.row_count:
                 console.print(coverage_table)
+        unscoped = [
+            issue for issue in report.issues
+            if issue.type == "unscoped_numeric_measurement"
+        ]
+        for issue in unscoped:
+            console.print(
+                "[yellow]Numeric QA scope check skipped:[/yellow] "
+                f"{issue.table}.{issue.column}. "
+                "Mixed assay/unit metadata; configure schema numeric_groups "
+                "before interpreting outliers."
+            )
         issue_table = Table(
             title="All QA findings" if all_issues else "Remaining QA findings (incl. informational)"
         )
