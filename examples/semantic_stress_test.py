@@ -18,6 +18,7 @@ from typing import Any
 
 import pandas as pd
 
+from data_cleaning_assistant.actions import ActionType
 from data_cleaning_assistant.ai_candidates import build_ai_candidates
 from data_cleaning_assistant.ai_context import build_ai_context
 from data_cleaning_assistant.ai_models import AIPlannerResponse
@@ -53,9 +54,19 @@ def _prepare_case(case: SemanticCase, folder: Path) -> dict[str, Any]:
     ]
     if not matching:
         return {"case": case, "candidate": None, "reason": "not_exposed"}
-    if len(matching) != 1 or len(candidates) != 1:
+    if len(matching) != 1:
         return {"case": case, "candidate": None, "reason": "ambiguous_candidate_set"}
     candidate = matching[0]
+    # A whitespace variant may independently produce a bounded TRIM_WHITESPACE
+    # proposal and a category mapping. That is not a second semantic mapping.
+    # Permit only this known overlap; any other extra action is a coverage failure.
+    other_candidates = [item for item in candidates if item is not candidate]
+    if any(
+        item.action.type != ActionType.TRIM_WHITESPACE
+        or item.action.column != case.column
+        for item in other_candidates
+    ):
+        return {"case": case, "candidate": None, "reason": "ambiguous_candidate_set"}
     if (
         case.expected == "accept"
         and candidate.action.parameters["mapping"]
