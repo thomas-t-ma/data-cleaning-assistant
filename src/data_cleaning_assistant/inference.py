@@ -63,6 +63,17 @@ def is_null(value: Any) -> bool:
         return False
 
 
+
+def is_empty_cell(value: Any) -> bool:
+    """A native null or exact empty text, not a nonempty sentinel.
+
+    Pandas reads ordinary blank Excel cells as '' when na_filter=False.
+    Treat them as already empty for profiling, without mutating the source.
+    Whitespace-only strings and tokens such as NA remain distinct.
+    """
+    return is_null(value) or (isinstance(value, str) and value == "")
+
+
 def normalize_text(value: Any) -> str:
     return str(value).strip().casefold()
 
