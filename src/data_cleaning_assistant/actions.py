@@ -43,11 +43,25 @@ class CleaningAction(BaseModel):
     origin: ActionOrigin = ActionOrigin.RULE
 
 
+class DeferredReview(BaseModel):
+    """Non-executable candidate retained for explicit human judgment."""
+
+    candidate_id: str
+    proposed_action: CleaningAction
+    question: str
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    status: str = "pending"
+
+
 class CleaningPlan(BaseModel):
     source_path: str
     source_sha256: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     actions: list[CleaningAction] = Field(default_factory=list)
+    deferred_reviews: list[DeferredReview] = Field(default_factory=list)
+    study_schema_sha256: str | None = None
     planner: str = "deterministic"
     model: str | None = None
 
@@ -93,6 +107,7 @@ class ChangeSet(BaseModel):
     source_sha256: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     executions: list[ActionExecution] = Field(default_factory=list)
+    study_schema_sha256: str | None = None
     result_path: str | None = None
     result_sha256: str | None = None
 
