@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.5.2 — public clinical-data pilot (current)
+## v0.6.0 — research-aware QA (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -31,6 +31,10 @@
 - Add opt-in study dictionaries and read-only longitudinal/cross-table QA.
 - Persist non-executable AI deferrals for explicit researcher review.
 - Acquire and audit open CoMMpass clinical metadata before real-data modeling.
+- Summarize complete-coverage findings without dropping them from JSON.
+- Prefer declared foreign-key relationships and grain over inferred shared identifiers.
+- Scope outlier QA to declared assay/unit groups.
+- Show overlap warnings for independently previewed actions.
 
 ### v0.4.x evaluation and provider hardening
 

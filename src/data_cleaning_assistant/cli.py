@@ -16,7 +16,9 @@ from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
 from .io import load_dataset
+from .issue_summary import summarize_issues, visible_issues
 from .planner import file_sha256, propose_actions
+from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
 from .study_schema import load_study_schema
 from .transforms import (
@@ -40,7 +42,7 @@ def main() -> None:
     """Data Cleaning Assistant command-line interface."""
 
 
-def _print_summary(report) -> None:
+def _print_summary(report, *, all_issues: bool = False) -> None:
     console.print(f"\n[bold]Source:[/bold] {report.source_path}")
     console.print(f"[bold]Type:[/bold] {report.source_type}")
 
@@ -83,14 +85,32 @@ def _print_summary(report) -> None:
         console.print(rel_table)
 
     if report.issues:
-        issue_table = Table(title="Issues")
+        summary = summarize_issues(report)
+        console.print(
+            f"\\n[bold]QA findings:[/bold] {summary['total_issues']} total; "
+            f"{sum(t['coverage_noise_issues'] for t in summary['by_table'].values())} "
+            "complete-coverage missing/constant findings grouped below."
+        )
+        if not all_issues:
+            coverage_table = Table(title="Coverage-only findings (details retained in JSON)")
+            coverage_table.add_column("Table")
+            coverage_table.add_column("Entirely flagged columns")
+            coverage_table.add_column("Finding type")
+            for table_name, statistics in summary["by_table"].items():
+                for kind, columns in statistics["coverage_noise_columns"].items():
+                    coverage_table.add_row(table_name, str(len(columns)), kind)
+            if coverage_table.row_count:
+                console.print(coverage_table)
+        issue_table = Table(
+            title="All QA findings" if all_issues else "Review-worthy QA findings"
+        )
         issue_table.add_column("Severity")
         issue_table.add_column("Type")
         issue_table.add_column("Table")
         issue_table.add_column("Column")
         issue_table.add_column("Affected", justify="right")
         issue_table.add_column("Description")
-        for issue in report.issues:
+        for issue in report.issues if all_issues else visible_issues(report):
             issue_table.add_row(
                 issue.severity.value,
                 issue.type,
@@ -100,6 +120,12 @@ def _print_summary(report) -> None:
                 issue.title,
             )
         console.print(issue_table)
+        if not all_issues:
+            console.print(
+                "[dim]Complete-coverage findings are grouped for display only; "
+                "the --output JSON retains every original finding. "
+                "Use --all-issues to show them here.[/dim]"
+            )
     else:
         console.print("[green]No issues detected by the current rule set.[/green]")
 
@@ -181,6 +207,19 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
     console.print(table)
 
 
+def _print_overlap_warning(overlaps, action_id: str) -> None:
+    related = overlaps.get(action_id, [])
+    if not related:
+        return
+    summary = ", ".join(f"{other} ({count} shared row(s))" for other, count in related)
+    console.print(
+        "[yellow]Independent-preview overlap:[/yellow] "
+        + summary
+        + ". These previews all use the original data; sequential execution may "
+        "turn a later action into a no-op or change its effective count."
+    )
+
+
 def _print_drift(compatibility) -> None:
     if not compatibility.drift:
         return
@@ -242,6 +281,10 @@ def _write_cleaning_outputs(
 @app.command()
 def profile(
     input_path: Annotated[Path, typer.Argument(help="CSV, XLSX/XLSM, or Parquet file to profile")],
+    all_issues: Annotated[
+        bool,
+        typer.Option("--all-issues", help="Show every issue instead of grouping coverage noise"),
+    ] = False,
     schema_path: Annotated[
         Path | None,
         typer.Option("--schema", help="Study-schema YAML/JSON for read-only validation"),
@@ -254,7 +297,7 @@ def profile(
     """Profile a dataset without changing the source file."""
     schema = load_study_schema(schema_path) if schema_path else None
     report = profile_dataset(input_path, schema=schema)
-    _print_summary(report)
+    _print_summary(report, all_issues=all_issues)
 
     if output:
         output = output.expanduser().resolve()
@@ -583,8 +626,10 @@ def preview_command(
         )
     tables = load_dataset(input_path).tables
     _print_plan(plan)
+    overlaps = overlapping_previews(tables, plan.actions)
     for action in plan.actions:
         _print_action_preview(tables, action, sample_limit=sample)
+        _print_overlap_warning(overlaps, action.id)
 
 
 @app.command("review")
@@ -608,6 +653,7 @@ def review_command(
         )
 
     tables = load_dataset(input_path).tables
+    overlaps = overlapping_previews(tables, plan.actions)
     for index, action in enumerate(plan.actions, start=1):
         console.rule(f"Action {index}/{len(plan.actions)}")
         target = (
@@ -621,6 +667,7 @@ def review_command(
         )
         console.print(action.description)
         _print_action_preview(tables, action, sample_limit=sample)
+        _print_overlap_warning(overlaps, action.id)
 
         while True:
             decision = typer.prompt(

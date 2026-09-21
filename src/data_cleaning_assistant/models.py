@@ -54,6 +54,7 @@ class CrossTableRelationship(BaseModel):
     left_coverage: float = Field(ge=0.0, le=1.0)
     right_coverage: float = Field(ge=0.0, le=1.0)
     confidence: float = Field(ge=0.0, le=1.0)
+    source: str = "inferred"
 
 
 class ColumnProfile(BaseModel):
