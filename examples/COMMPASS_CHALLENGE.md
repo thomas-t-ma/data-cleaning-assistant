@@ -171,3 +171,61 @@ A correct two-pair result is an engineering smoke test of semantic
 judgment, not evidence of clinical semantic accuracy or authorization
 to clean research records. More varied seeded cases and repeated runs
 will be needed before broad claims.
+
+
+## 6. Forty-case independent semantic stress test (v0.7.2)
+
+This stand-alone synthetic-only experiment **does not read any CoMMpass workbook**.
+Its forty fixed cases each create a separate, temporary one-column CSV. The
+original two-pair challenge remains unchanged. The suite deliberately includes
+twenty intended safe corrections and twenty distinct-label deferrals. It
+scores **detector/candidate coverage separately from model judgments**: a
+detector-negative example is NOT counted as a correct model deferral.
+
+An actual baseline run of qwen3.5:4b on the initial forty-case corpus returned
+32/40 candidates exposed, 22/32 correct decisions, zero unsafe merges and ten
+safe corrections deferred. Its repeated justifications invented theoretical
+clinical meanings for obvious misspellings. This is a preliminary engineering
+benchmark on fixed synthetic cases, NOT an estimate of clinical accuracy.
+
+The initial suite erroneously counted one whitespace case (s20) as a
+candidate-coverage gap because an independent whitespace-trim proposal and a
+category-mapping proposal coexisted. The revised scorer recognizes the
+bounded trim/mapping overlap and scores the semantic mapping separately.
+Compare **case-level results and corpus/prompt hashes**, not only topline
+numbers, when using previously saved scores.
+
+First audit production detector exposure without calling the model:
+
+    bash sync.sh
+    .venv/bin/python examples/semantic_stress_test.py \
+      --audit-only \
+      --output pilot_outputs/semantic_stress_v072_coverage.json
+
+Then reproduce the current production-prompt baseline with the same model:
+
+    .venv/bin/python examples/semantic_stress_test.py \
+      --model qwen3.5:4b --runs 1 \
+      --prompt-variant baseline \
+      --output pilot_outputs/semantic_stress_v072_baseline.json
+
+For a **separate experimental prompt** that requests evidence-proportional
+decisions rather than speculative deferrals:
+
+    .venv/bin/python examples/semantic_stress_test.py \
+      --model qwen3.5:4b --runs 1 \
+      --prompt-variant evidence_calibrated \
+      --output pilot_outputs/semantic_stress_v072_calibrated.json
+
+The evidence-calibrated addendum is benchmark-only: **the production AI planner
+prompt has not changed**. It emphasizes accepting ordinary, clearly
+typo-shaped words where there is no concrete contrary evidence, while
+preserving numeric codes, stages, doses, biomarkers, and explicit study
+dictionary distinctions. Compare unsafe merges, safe deferrals, and
+context-contrasting zero-padding cases before changing the product prompt.
+
+The JSON report records per-case expected/actual choice, exposure reason,
+candidate mapping, rationale, confidence, latency, unknown IDs, protocol
+failures, and grouped statistics. Existing scores are never overwritten.
+Model runs may be slow because each exposed candidate gets its own local
+Ollama request. No workbook transformations are executed.
