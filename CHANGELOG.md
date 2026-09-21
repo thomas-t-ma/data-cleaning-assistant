@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2
+
+- Added forty independently evaluated synthetic semantic-label cases: twenty proposed corrections and twenty expected deferrals, including context-contrast controls and varied frequencies.
+- Ran each case through production fuzzy detection/candidate construction and a separate synthetic-only model call; withheld expected decisions from the prompt.
+- Reported detector coverage separately from model decisions, with unsafe-merge acceptances, safe-correction deferrals, malformed/missing model selections, rationale and latency.
+- Added an offline detector-only audit and non-overwriting, repeatable model-scoring JSON.
+- Added fake-provider tests for correct/unsafe decisions, protocol errors, 40-case accounting, and opposite contextual answers.
+
 ## 0.7.1
 
 - Added isolated, model-specific local Ollama semantic evaluation on the already generated synthetic BenchmarkLabels sheet.
