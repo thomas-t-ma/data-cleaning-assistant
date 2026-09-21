@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from .inference import infer_semantic_type, is_null, non_null_values, parse_number
+from .inference import infer_semantic_type, is_empty_cell, non_null_values, parse_number
 from .models import ColumnProfile, TableProfile
 
 
@@ -14,7 +14,7 @@ def _safe_sample(series: pd.Series, n: int = 5) -> list[Any]:
     seen: set[str] = set()
     for value in non_null_values(series):
         key = repr(value)
-        if key in seen:
+        if key in seen or is_empty_cell(value):
             continue
         seen.add(key)
         output.append(value)
@@ -44,7 +44,7 @@ def profile_table(name: str, frame: pd.DataFrame) -> TableProfile:
     for column_name in frame.columns:
         column_name = str(column_name)
         series = frame[column_name]
-        null_count = sum(is_null(value) for value in series.tolist())
+        null_count = sum(is_empty_cell(value) for value in series.tolist())
         unique_count = int(series.nunique(dropna=False))
         inferred_type, confidence, ratios = infer_semantic_type(column_name, series)
 
