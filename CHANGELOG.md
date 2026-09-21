@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.3
+
+- Fixed the s20 benchmark false coverage gap when independent whitespace trimming coexists with a bounded category mapping.
+- Added optional baseline versus evidence-calibrated benchmark-only prompt comparison with prompt variant and prompt SHA-256 recorded in scores.
+- Retained production AI planner instructions while testing whether real-model typo recall improves without additional unsafe merges.
+- Added offline regressions for overlapping proposals and isolated prompt control.
+
 ## 0.7.2
 
 - Added forty independently evaluated synthetic semantic-label cases: twenty proposed corrections and twenty expected deferrals, including context-contrast controls and varied frequencies.
