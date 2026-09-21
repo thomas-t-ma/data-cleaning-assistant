@@ -77,6 +77,10 @@ def test_corpus_size_balance_and_contrasting_context() -> None:
     assert (safe.canonical, safe.variant) == (risky.canonical, risky.variant)
     assert safe.context != risky.context
     assert safe.expected != risky.expected
+    assert len({(c.canonical_count, c.variant_count) for c in cases}) >= 4
+    assert (safe.canonical_count, safe.variant_count) == (
+        risky.canonical_count, risky.variant_count
+    )
 
 
 def test_independent_calls_score_and_source_free(tmp_path: Path, monkeypatch) -> None:
@@ -232,3 +236,27 @@ def test_never_overwrite_prior_score(tmp_path: Path, monkeypatch) -> None:
     else:
         raise AssertionError("Existing experiment was overwritten")
     assert output.read_bytes() == prior
+
+
+def test_all_forty_are_counted_in_offline_coverage_audit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
+    from semantic_stress_test import run_suite
+
+    result = run_suite(
+        None, None, runs=1,
+        audit_only=True, output=tmp_path / "forty.json",
+    )
+    assert result["unique_cases"] == 40
+    assert result["total_case_runs"] == 40
+    assert result["safe_cases"] == 20
+    assert result["unsafe_cases"] == 20
+    assert result["exposed_case_runs"] + result["not_exposed_case_runs"] == 40
+    assert result["safe_coverage"] <= result["safe_total"] == 20
+    assert result["unsafe_exposure"] <= result["unsafe_total"] == 20
+    assert result["model_calls"] == 0
+    assert sum(result["coverage_reasons"].values()) == result["not_exposed_case_runs"]
+    assert {item["id"] for item in result["results"]} == {
+        case.id for case in semantic_cases()
+    }
