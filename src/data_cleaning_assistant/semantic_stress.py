@@ -6,7 +6,7 @@ labels, not that two codes have identical meaning in every clinical context.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +18,8 @@ class SemanticCase:
     variant: str
     expected: str
     context: str = ""
+    canonical_count: int = 3
+    variant_count: int = 1
 
 
 def semantic_cases() -> list[SemanticCase]:
@@ -95,6 +97,18 @@ def semantic_cases() -> list[SemanticCase]:
          "Fixture dictionary: padded and unpadded labels are different specimen collection streams."),
     ]
     corpus = [SemanticCase(*row) for row in rows]
+    # Vary label frequencies to test the false assumption that prevalence
+    # proves meaning. Keep matched opposing-context fixtures controlled.
+    frequencies = ((3, 1), (5, 2), (7, 1), (4, 3))
+    controlled = {"s16", "n18", "s17", "n20", "s18", "n19"}
+    corpus = [
+        replace(
+            case,
+            canonical_count=(3 if case.id in controlled else frequencies[i % 4][0]),
+            variant_count=(1 if case.id in controlled else frequencies[i % 4][1]),
+        )
+        for i, case in enumerate(corpus)
+    ]
     if len(corpus) != 40 or len({case.id for case in corpus}) != 40:
         raise AssertionError("Semantic corpus must have 40 distinct cases")
     if sum(c.expected == "accept" for c in corpus) != 20:
