@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.6.2**.
+Current version: **v0.6.3**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -94,6 +94,48 @@ Retain the original v0.5.2 report to compare finding totals. Grouping is a
 display-only change: it must not reduce the raw finding count or introduce
 new cleaning actions. Add assay/unit groups to the schema only after verifying
 those fields and their meanings.
+
+### v0.6.3 — empty-cell semantics
+
+The CoMMpass v0.6.2 pilot produced ten remaining actions, all
+`normalize_missing` with token `''`. With `na_filter=False`, pandas can
+represent ordinary blank Excel cells as empty strings. A proposed
+`'' → None` change may therefore be a reader-representation artifact,
+not a meaningful workbook cleanup. By default, **exact empty text is
+already empty** for profiling and planning:
+
+- Blank CSV/Excel cells count toward each column's `null_count` and
+  `null_percent`, and are omitted from sample values.
+- Exact empty strings do not produce `hidden_missing_values` or
+  `constant_column` findings. The CLI prints a compact
+  `Already-empty fields` count, so column coverage is not lost.
+- No routine empty-string-to-null action is generated from these cells.
+  Nonempty sentinels such as `NA`, `N/A`, and whitespace-only strings
+  remain separately reviewable; meaningful contextual labels such as
+  `Unknown` remain preserved.
+- A researcher's explicit `missing_tokens: [""]` study rule remains
+  permitted and still requires approval. This is not blanket permission
+  to convert all missingness labels.
+
+The loader does not modify the source. A profile from this release may
+contain *fewer* issues and planning notes than v0.6.2: the previously
+spurious empty-token findings are now represented as column coverage,
+not silently filtered only in the terminal. Do not compare raw issue
+counts across the versions as though the same detectors were unchanged.
+
+To rerun the **same** local pilot without downloading or applying data:
+
+```bash
+bash sync.sh
+.venv/bin/data-cleaner profile \
+  pilot_outputs/commpass_100/commpass_pilot.xlsx \
+  --schema pilot_outputs/commpass_100/study_schema.yaml \
+  -o pilot_outputs/commpass_100/profile_v063.json
+.venv/bin/data-cleaner plan \
+  pilot_outputs/commpass_100/commpass_pilot.xlsx \
+  --schema pilot_outputs/commpass_100/study_schema.yaml \
+  -o pilot_outputs/commpass_100/plan_v063.json
+```
 
 ### v0.6.2 — actionable missingness triage
 
