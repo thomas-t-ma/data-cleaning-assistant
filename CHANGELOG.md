@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+- Added isolated, model-specific local Ollama semantic evaluation on the already generated synthetic BenchmarkLabels sheet.
+- Scored literal accept/defer judgments against a withheld answer key, including missing, duplicate, and unknown candidate-ID protocol failures.
+- Recorded per-run model rationales, confidence, success, and latency to a non-overwriting local JSON report.
+- Kept original public CoMMpass sheet profiles, identifiers, source path, and answer key outside the model prompt.
+- Added offline fake-provider tests for both correct and unsafe decisions, missing outputs, reproducible fixture context, and unchanged workbook hashes.
+
 ## 0.7.0
 
 - Added a local-only seeded corruption challenge for the already downloaded public CoMMpass clinical workbook; preserves original input and writes a separate test copy and answer key.

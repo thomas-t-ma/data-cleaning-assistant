@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.7.0**.
+Current version: **v0.7.1**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,28 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## v0.7.1 synthetic-label semantic judgment benchmark
+
+The CoMMpass real-data challenge now has a **separate local Ollama
+evaluation**. It uses the same bounded deterministic fuzzy candidates
+and AI-planner prompt but sends **only the synthetic BenchmarkLabels sheet**
+to the model; no public patient records, file paths, answer key, or the
+other CoMMpass tables enter model context. The expected decisions remain
+outside the prompt:
+
+- Accept the typo-shaped `Peripheral Blod` → `Peripheral Blood`.
+- Defer the genuinely distinct `Synthetic assay control 101` versus
+  `Synthetic assay control 102` pair.
+
+Each model run records literal decisions, rationales, confidence, protocol
+errors, and latency. Missing/duplicate/unknown candidate IDs count as
+failures; no workbook modifications are made. The test is intentionally
+two decisions and does not measure performance on clinical research
+categories generally.
+
+See [the CoMMpass challenge runbook](examples/COMMPASS_CHALLENGE.md) for
+the exact `--model`, `--runs`, and `--output` commands.
 
 ## v0.7 known-answer challenge on public CoMMpass data
 
