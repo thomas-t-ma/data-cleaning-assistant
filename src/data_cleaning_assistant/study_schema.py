@@ -18,7 +18,7 @@ class ColumnSpec(BaseModel):
     unit: str | None = None
 
     @model_validator(mode="after")
-    def validate_mappings(self) -> "ColumnSpec":
+    def validate_mappings(self) -> ColumnSpec:
         if len(set(self.missing_tokens)) != len(self.missing_tokens):
             raise ValueError("missing_tokens may not contain duplicates")
         if set(self.canonical_map) & set(self.missing_tokens):
@@ -42,7 +42,7 @@ class TableSpec(BaseModel):
     columns: dict[str, ColumnSpec] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_time(self) -> "TableSpec":
+    def validate_time(self) -> TableSpec:
         if bool(self.time_column) != bool(self.order_column):
             raise ValueError("time_column and order_column must be specified together")
         if self.time_column and not self.subject_id:
@@ -67,7 +67,7 @@ class StudySchema(BaseModel):
     source_sha256: str | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
-    def validate_version(self) -> "StudySchema":
+    def validate_version(self) -> StudySchema:
         if self.version != 1:
             raise ValueError("Unsupported study schema version; expected version: 1")
         return self
@@ -124,7 +124,7 @@ def load_study_schema(path: str | Path) -> StudySchema:
     resolved = Path(path).expanduser().resolve()
     raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise ValueError("Study schema must be a YAML/JSON mapping")
+        raise TypeError("Study schema must be a YAML/JSON mapping")
     schema = StudySchema.model_validate(raw)
     schema.source_path = str(resolved)
     schema.source_sha256 = hashlib.sha256(resolved.read_bytes()).hexdigest()
