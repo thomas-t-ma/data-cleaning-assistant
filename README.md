@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.5.1**.
+Current version: **v0.5.2**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,34 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## NCI GDC CoMMpass public clinical-data pilot (v0.5.2)
+
+The first non-synthetic research pilot uses the **open clinical metadata** from
+NCI GDC project `MMRF-COMMPASS`. It does not download controlled-access genomic
+data. This script must be run locally with access to `api.gdc.cancer.gov`;
+GitHub CI uses offline fixtures and does not download research data.
+
+```bash
+bash sync.sh
+.venv/bin/python examples/fetch_gdc_commpass.py \
+  --limit 100 --output pilot_outputs/commpass_100
+
+.venv/bin/data-cleaner profile pilot_outputs/commpass_100/commpass_pilot.xlsx \
+  --schema pilot_outputs/commpass_100/study_schema.yaml \
+  -o pilot_outputs/commpass_100/profile.json
+```
+
+The downloader keeps the unmodified response in `source_cases.json`, records
+the query URLs and SHA-256 in `source_manifest.json`, and generates Cases,
+Diagnoses, Treatments, FollowUps, and LabTests sheets with explicit parent
+keys. No clinical categories or null semantics are guessed in the generated
+schema. Check row counts and the presence of needed variables before forming
+a prognostic model. Use `--limit 0` to request the full GDC project **only
+after** validating the 100-case pilot. An already-populated output folder
+is not overwritten.
+
+See `examples/PILOT.md` for the earlier synthetic end-to-end pilot.
 
 ## Synthetic end-to-end pilot (v0.5.1)
 
