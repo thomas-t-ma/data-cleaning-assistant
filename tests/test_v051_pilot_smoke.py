@@ -112,7 +112,7 @@ def test_synthetic_workbook_complete_cli_pilot(tmp_path: Path) -> None:
     invoke(
         "review", str(source), str(plan_path),
         "--output", str(reviewed_path),
-        input_text="\\n".join(answers) + "\\n",
+        input_text="\n".join(answers) + "\n",
     )
     reviewed = CleaningPlan.model_validate_json(
         reviewed_path.read_text(encoding="utf-8")
