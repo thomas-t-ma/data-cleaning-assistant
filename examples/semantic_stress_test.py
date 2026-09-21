@@ -29,6 +29,37 @@ from data_cleaning_assistant.io import load_dataset
 from data_cleaning_assistant.semantic_stress import SemanticCase, semantic_cases
 
 
+# Experimental benchmark-only variant. Do not change the production planner
+# prompt on the strength of this stress test. Compare against the frozen
+# baseline on the same corpus and the same local model first.
+EVIDENCE_CALIBRATED_ADDENDUM = """
+Use evidence-proportional judgment when reviewing a bounded category candidate.
+A merely imaginable difference is not evidence of a scientific distinction.
+For a commonplace full-word misspelling with a single nonnumeric character edit,
+unchanged surrounding words, and a more frequent correctly spelled form, accept
+when there is no concrete competing code, definition, or semantic distinction.
+Do not invent historical spellings, abbreviations, procedures, or coding meanings
+to explain a deferral; if one is relevant, identify evidence present in the prompt.
+Preserve distinct numeric IDs, units, doses, stages, timepoints, analytes, marker
+names, treatments, outcome categories, and contextual missingness labels.
+These protections take priority over high lexical similarity or label frequency.
+If the supplied study dictionary explicitly establishes that two codes differ,
+defer even when a numeric-zero-padding heuristic suggests equivalence.
+If it explicitly establishes they are equivalent, that specific evidence
+outweighs unsupported speculation about different meanings.
+Never infer that two assay labels are equivalent from spelling similarity alone.
+Return the supplied candidate ID with accept or defer; never invent a mapping.
+"""
+
+
+def _system_prompt(variant: str) -> str:
+    if variant == "baseline":
+        return SYSTEM_PROMPT
+    if variant == "evidence_calibrated":
+        return SYSTEM_PROMPT + "\n" + EVIDENCE_CALIBRATED_ADDENDUM
+    raise ValueError("Unknown prompt variant: " + variant)
+
+
 def _prepare_case(case: SemanticCase, folder: Path) -> dict[str, Any]:
     """Use production profiling + production bounded-candidate construction."""
     path = folder / "fixture.csv"
@@ -131,9 +162,11 @@ def run_suite(
     output: Path,
     audit_only: bool = False,
     cases: list[SemanticCase] | None = None,
+    prompt_variant: str = "baseline",
 ) -> dict[str, Any]:
     if runs < 1:
         raise ValueError("--runs must be at least 1")
+    system_prompt = _system_prompt(prompt_variant)
     if not audit_only and (provider is None or not model):
         raise ValueError("A model and provider are required unless --audit-only is used")
     output = output.expanduser().resolve()
@@ -192,7 +225,7 @@ def run_suite(
                         try:
                             response = provider.generate_structured(
                                 model=model,
-                                system_prompt=SYSTEM_PROMPT,
+                                system_prompt=system_prompt,
                                 user_prompt=item["prompt"],
                                 response_model=AIPlannerResponse,
                             )
@@ -255,6 +288,8 @@ def run_suite(
     payload = {
         "version": 1,
         "purpose": "Synthetic-only independent semantic stress test; no edits",
+        "prompt_variant": prompt_variant,
+        "system_prompt_sha256": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
         "model": model if not audit_only else None,
         "provider": provider.name if provider and not audit_only else None,
         "audit_only": audit_only,
@@ -312,6 +347,12 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--think", action="store_true", help="Optional thinking-mode experiment")
     parser.add_argument(
+        "--prompt-variant",
+        choices=("baseline", "evidence_calibrated"),
+        default="baseline",
+        help="Compare the frozen production prompt against an experimental benchmark-only addendum",
+    )
+    parser.add_argument(
         "--audit-only", action="store_true",
         help="Check detector/candidate coverage without calling Ollama",
     )
@@ -322,6 +363,7 @@ def main() -> None:
     run_suite(
         provider, model, runs=args.runs, output=args.output,
         audit_only=args.audit_only,
+        prompt_variant=args.prompt_variant,
     )
 
 
