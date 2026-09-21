@@ -263,3 +263,52 @@ def test_cli_profile_plan_accept_schema(tmp_path: Path) -> None:
     assert plan_result.exit_code == 0, plan_result.output
     plan = CleaningPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
     assert plan.study_schema_sha256
+
+
+def test_schema_canonical_mapping_does_not_need_ai_acceptance(tmp_path: Path) -> None:
+    source = tmp_path / "study.csv"
+    source.write_text(
+        "specimen_id,specimen_source\n"
+        "SP001,Peripheral Blood\n"
+        "SP002,Peripheral Blood\n"
+        "SP003,Peripheral Blod\n"
+        "SP004,Peripheral Blood\n",
+        encoding="utf-8",
+    )
+    schema = StudySchema.model_validate(
+        {"tables": {
+            "study": {
+                "columns": {
+                    "specimen_source": {
+                        "allowed_values": ["Peripheral Blood", "Bone Marrow"],
+                        "canonical_map": {"Peripheral Blod": "Peripheral Blood"},
+                    }
+                }
+            }
+        }}
+    )
+
+    class MustNotCallAI:
+        name = "fake"
+
+        def generate_structured(self, **kwargs):
+            raise AssertionError("Schema-authorized mapping must not depend on AI judgment")
+
+    result = propose_ai_plan(
+        source,
+        provider=MustNotCallAI(),
+        model="fake",
+        schema=schema,
+    )
+    assert result.candidates == []
+    categories = [
+        a for a in result.plan.actions
+        if a.type == ActionType.NORMALIZE_CATEGORIES
+        and a.column == "specimen_source"
+    ]
+    assert len(categories) == 1
+    assert categories[0].parameters == {
+        "mapping": {"Peripheral Blod": "Peripheral Blood"}
+    }
+    assert categories[0].decision == ActionDecision.PROPOSED
+    assert result.plan.deferred_reviews == []
