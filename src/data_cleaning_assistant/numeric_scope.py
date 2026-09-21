@@ -57,7 +57,7 @@ def unscoped_measurement_issue(
     table: str,
     column: str,
     frame: pd.DataFrame,
-    original_outlier: Issue,
+    original_outlier: Issue | None = None,
 ) -> Issue:
     """Replace misleading pooled outlier counts with one scope warning."""
     metadata = heterogeneous_measurement_metadata(frame, column)
@@ -78,7 +78,9 @@ def unscoped_measurement_issue(
         affected_count=sum(parse_number(value) is not None for value in frame[column]),
         evidence={
             "grouping_metadata_unique_counts": metadata,
-            "suppressed_pooled_outlier_count": original_outlier.affected_count,
+            "suppressed_pooled_outlier_count": (
+                original_outlier.affected_count if original_outlier else 0
+            ),
             "grouped_outlier_check_performed": False,
         },
         suggested_action=(
