@@ -49,8 +49,14 @@ def test_excel_blanks_are_missing_coverage_not_hidden_missing_actions(
     assert not [
         issue for issue in report.issues
         if issue.column in {"all_blank", "partial"}
-        and issue.type in {"hidden_missing_values", "constant_column"}
+        and issue.type == "hidden_missing_values"
     ]
+    assert not [
+        issue for issue in report.issues
+        if issue.column == "all_blank" and issue.type == "constant_column"
+    ]
+    # One observed value among otherwise blank cells is still constant among
+    # non-missing observations; that independent informational finding remains.
 
     plan = propose_actions(source)
     assert not [
@@ -140,7 +146,13 @@ def test_cli_prints_blank_coverage_without_fictitious_actions(tmp_path: Path) ->
     result = runner.invoke(app, ["profile", str(source)])
     assert result.exit_code == 0, result.output
     assert "Already-empty fields" in result.output
-    plan_result = runner.invoke(app, ["plan", str(source)])
+    plan_path = tmp_path / "plan.json"
+    plan_result = runner.invoke(
+        app, ["plan", str(source), "--output", str(plan_path)]
+    )
     assert plan_result.exit_code == 0, plan_result.output
-    assert "normalize_missing" in plan_result.output
-    assert "all_blank" not in plan_result.output
+    from data_cleaning_assistant.actions import CleaningPlan
+
+    plan = CleaningPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    assert {a.column for a in plan.actions} == {"sentinel", "spaces"}
+    assert not any(note.column == "all_blank" for note in plan.planning_notes)
