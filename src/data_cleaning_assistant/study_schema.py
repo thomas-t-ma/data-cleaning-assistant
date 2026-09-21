@@ -7,7 +7,7 @@ import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .inference import is_missing_like, looks_like_identifier_name
+from .inference import is_missing_like, normalize_column_name
 
 
 class ColumnSpec(BaseModel):
@@ -100,7 +100,12 @@ class StudySchema(BaseModel):
             if table_spec.subject_id:
                 identifiers.add(table_spec.subject_id)
             for column, spec in table_spec.columns.items():
-                if (column in identifiers or looks_like_identifier_name(column)) and (
+                normalized = normalize_column_name(column)
+                named_identifier = (
+                    normalized in {"id", "mrn", "identifier"}
+                    or normalized.endswith(("_id", "_mrn", "_identifier"))
+                )
+                if (column in identifiers or named_identifier) and (
                     spec.canonical_map or spec.missing_tokens
                 ):
                     raise ValueError(
