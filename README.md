@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.7.2**.
+Current version: **v0.7.3**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,23 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## v0.7.3 — evidence-calibrated benchmark experiment
+
+The first live 40-case stress run exposed 32 candidates, with 22 correct
+model decisions, **zero unsafe merges**, and ten safe typo corrections
+deferred. The model frequently speculated about nonexistent distinct
+scientific meanings for ordinary misspellings.
+
+v0.7.3 fixes one erroneous detector-coverage gap for a whitespace case
+that had both a valid trim and a valid category mapping. It also introduces
+`--prompt-variant evidence_calibrated` for a **benchmark-only** paired
+comparison against the unchanged production prompt (`baseline`).
+It emphasizes concrete evidence over hypothetical objections without
+weakening the protection of distinct codes, markers, doses, stages, and
+study dictionary distinctions. No production prompt change or data
+transformation occurs in the comparison. See the
+[stress-test runbook](examples/SEMANTIC_STRESS.md).
 
 ## v0.7.2 independent synthetic semantic stress test
 
