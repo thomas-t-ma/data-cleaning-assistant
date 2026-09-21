@@ -67,6 +67,24 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
         )
     console.print(table)
 
+    blank_fields = {
+        profile.name: sum(
+            col.row_count > 0 and col.null_count == col.row_count
+            for col in profile.columns
+        )
+        for profile in report.tables
+    }
+    if any(blank_fields.values()):
+        console.print(
+            "[bold]Already-empty fields:[/bold] "
+            + ", ".join(
+                f"{name}: {count}"
+                for name, count in blank_fields.items()
+                if count
+            )
+            + ". Counted in column null coverage, not proposed as blank-to-null edits."
+        )
+
     if report.relationships:
         rel_table = Table(title="Cross-table relationships")
         rel_table.add_column("Left")

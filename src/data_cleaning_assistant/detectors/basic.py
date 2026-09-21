@@ -14,6 +14,7 @@ from ..inference import (
     STRUCTURAL_MISSING_TOKENS,
     infer_semantic_type,
     is_contextual_missing_label,
+    is_empty_cell,
     is_missing_like,
     is_null,
     looks_like_identifier_name,
@@ -36,7 +37,7 @@ def _hidden_missing(table: str, column: str, series: pd.Series) -> list[Issue]:
     mask: list[bool] = []
     counts: dict[str, int] = defaultdict(int)
     for value in series.tolist():
-        if is_null(value):
+        if is_empty_cell(value):
             mask.append(False)
             continue
         normalized = normalize_text(value)
@@ -96,7 +97,7 @@ def _hidden_missing(table: str, column: str, series: pd.Series) -> list[Issue]:
 
 
 def _constant_column(table: str, column: str, series: pd.Series) -> list[Issue]:
-    values = [value for value in series.tolist() if not is_null(value)]
+    values = [value for value in series.tolist() if not is_empty_cell(value)]
     if not values or len({repr(value) for value in values}) != 1 or len(series) < 2:
         return []
     return [

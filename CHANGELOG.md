@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3
+
+- Treated literal zero-length cells as already empty for CSV/Excel column coverage rather than hidden missing-value tokens.
+- Counted blank cells in null percentages, omitted blank samples, and summarized entirely blank fields in the terminal.
+- Prevented routine `'' → None` actions that arose from pandas Excel blank representation; left nonempty sentinels and explicit study rules reviewable.
+- Added Excel/CSV regression tests protecting nonempty missingness tokens, whitespace-only strings, schema overrides, and untouched source bytes.
+
 ## 0.6.2
 
 - Kept structural-only all-missing columns as QA findings while omitting low-value routine null-normalization actions.
