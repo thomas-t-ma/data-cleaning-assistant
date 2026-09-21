@@ -260,3 +260,39 @@ def test_all_forty_are_counted_in_offline_coverage_audit(
     assert {item["id"] for item in result["results"]} == {
         case.id for case in semantic_cases()
     }
+
+
+def test_whitespace_overlap_is_not_a_missing_semantic_candidate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
+    from semantic_stress_test import _prepare_case
+
+    result = _prepare_case(_select("s20")[0], tmp_path)
+    assert result["candidate"] is not None
+    assert result["reason"] is None
+    assert result["candidate"].action.parameters["mapping"] == {
+        " Peripheral Blood ": "Peripheral Blood"
+    }
+
+
+def test_prompt_variant_changes_only_benchmark_system_instructions(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
+    from semantic_stress_test import _system_prompt, run_suite
+
+    baseline = _system_prompt("baseline")
+    calibrated = _system_prompt("evidence_calibrated")
+    assert calibrated.startswith(baseline)
+    assert "A merely imaginable difference is not evidence" in calibrated
+    assert "Preserve distinct numeric IDs" in calibrated
+    assert "expected_decision" not in calibrated
+    result = run_suite(
+        None, None, runs=1, audit_only=True,
+        output=tmp_path / "audit_calibrated.json",
+        prompt_variant="evidence_calibrated",
+        cases=_select("s01", "n01"),
+    )
+    assert result["prompt_variant"] == "evidence_calibrated"
+    assert result["system_prompt_sha256"] != ""
