@@ -7,6 +7,7 @@ from .detectors.basic import _iqr_outliers
 from .io import load_dataset
 from .inference import is_missing_like
 from .models import CrossTableRelationship, DatasetReport, GrainInference
+from .numeric_scope import heterogeneous_measurement_metadata, unscoped_measurement_issue
 from .profiling import profile_table
 from .schema_qa import schema_issues
 from .study_schema import StudySchema
@@ -118,7 +119,26 @@ def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> D
             ]
             for column, by in table_spec.numeric_groups.items():
                 basic.extend(_grouped_outliers(table_name, frame, column, by))
-        issues.extend(basic)
+
+        scoped = table_spec.numeric_groups if table_spec else {}
+        checked: set[str] = set()
+        safe_basic = []
+        for issue in basic:
+            column = issue.column
+            if (
+                issue.type == "statistical_outlier"
+                and column is not None
+                and column not in scoped
+                and heterogeneous_measurement_metadata(frame, column)
+            ):
+                if column not in checked:
+                    safe_basic.append(
+                        unscoped_measurement_issue(table_name, column, frame, issue)
+                    )
+                    checked.add(column)
+                continue
+            safe_basic.append(issue)
+        issues.extend(safe_basic)
         issues.extend(detect_fuzzy_categories(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
 
