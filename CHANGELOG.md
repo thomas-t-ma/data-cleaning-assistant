@@ -7,6 +7,8 @@
 - Reported detector coverage separately from model decisions, with unsafe-merge acceptances, safe-correction deferrals, malformed/missing model selections, rationale and latency.
 - Added an offline detector-only audit and non-overwriting, repeatable model-scoring JSON.
 - Added fake-provider tests for correct/unsafe decisions, protocol errors, 40-case accounting, and opposite contextual answers.
+- Fixed the scorer's `s20` false coverage gap caused by independent whitespace-trim and bounded category-mapping proposals.
+- Added an optional, versioned benchmark-only evidence-calibrated system-prompt variant; the production planner prompt is unchanged pending paired evaluation.
 
 ## 0.7.1
 
