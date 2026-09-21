@@ -7,11 +7,12 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from data_cleaning_assistant.actions import ActionType, CleaningAction
+from data_cleaning_assistant.actions import ActionType, CleaningAction, CleaningPlan
 from data_cleaning_assistant.cli import app
 from data_cleaning_assistant.engine import profile_dataset
 from data_cleaning_assistant.issue_summary import summarize_issues, visible_issues
 from data_cleaning_assistant.preview_overlap import overlapping_previews
+from data_cleaning_assistant.planner import file_sha256
 from data_cleaning_assistant.study_schema import StudySchema
 
 
@@ -165,3 +166,43 @@ def test_unconfigured_workflow_remains_unchanged(tmp_path: Path) -> None:
     report = profile_dataset(path)
     assert all(r.source == "inferred" for r in report.relationships)
     assert any(i.type == "hidden_missing_values" for i in report.issues)
+
+
+def test_cli_review_warns_when_independent_previews_overlap(tmp_path: Path) -> None:
+    source = tmp_path / "study.csv"
+    source.write_text(
+        "Sex\\n Female \\nfemale\\nMale\\n",
+        encoding="utf-8",
+    )
+    plan = CleaningPlan(
+        source_path=str(source.resolve()),
+        source_sha256=file_sha256(source),
+        actions=[
+            CleaningAction(
+                id="trim",
+                type=ActionType.TRIM_WHITESPACE,
+                table="study",
+                column="Sex",
+                title="Trim",
+                description="Trim whitespace",
+                confidence=1.0,
+                parameters={},
+            ),
+            CleaningAction(
+                id="dictionary",
+                type=ActionType.NORMALIZE_CATEGORIES,
+                table="study",
+                column="Sex",
+                title="Canonical",
+                description="Canonical",
+                confidence=1.0,
+                parameters={"mapping": {" Female ": "Female", "female": "Female"}},
+            ),
+        ],
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(plan.model_dump_json(), encoding="utf-8")
+    result = CliRunner().invoke(app, ["preview", str(source), str(plan_path)])
+    assert result.exit_code == 0, result.output
+    assert "Independent-preview overlap" in result.output
+    assert "1 shared row(s)" in result.output
