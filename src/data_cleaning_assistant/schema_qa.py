@@ -66,9 +66,8 @@ def _chronology_issues(
         latest: pd.Timestamp | None = None
         latest_order: float | None = None
         for visit, date, index in entries:
-            if latest is not None and latest_order is not None:
-                if visit > latest_order and date < latest:
-                    affected.add(index)
+            if latest is not None and latest_order is not None and visit > latest_order and date < latest:
+                affected.add(index)
             if latest_order is None or visit > latest_order:
                 latest, latest_order = date, visit
             elif visit == latest_order and latest is not None:
