@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.6.0**.
+Current version: **v0.6.1**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -40,18 +40,18 @@ findings, misleading inferred joins between repeated-event tables, pooled numeri
 outliers across heterogeneous assays, and overlapping change previews. The
 following improvements are **general-purpose**, not hard-coded to CoMMpass:
 
-- \`profile\` groups complete-coverage missing-token and constant-column
-  *findings in the terminal only*. \`--all-issues\` restores the expanded view;
-  \`--output\` always saves **all** original issues, including contextual
+- `profile` groups complete-coverage missing-token and constant-column
+  *findings in the terminal only*. `--all-issues` restores the expanded view;
+  `--output` always saves **all** original issues, including contextual
   missingness. Do not interpret "complete coverage" as permission to discard a
-  clinically meaningful \`Unknown\` category.
+  clinically meaningful `Unknown` category.
 - If a schema declares foreign keys, the relationship table shows **only
-  declared parent-child relationships**, with source \`declared\`. Inferred
+  declared parent-child relationships**, with source `declared`. Inferred
   relationships remain available without a declared key map. A common
-  \`case_id\` between two event tables does not constitute a safe row-by-row join.
+  `case_id` between two event tables does not constitute a safe row-by-row join.
 - Declared table grain is displayed with the key columns and never inferred
   from duplicated subject IDs when a study schema supplies the grain.
-- Optional \`numeric_groups\` scopes **outlier QA only** to separate assay/unit
+- Optional `numeric_groups` scopes **outlier QA only** to separate assay/unit
   strata. The group columns must exist and groups with too few numeric values
   produce no outlier findings. No values are standardized, deleted, or converted
   across units; blank grouping labels are excluded rather than silently pooled.
@@ -59,19 +59,19 @@ following improvements are **general-purpose**, not hard-coded to CoMMpass:
 For example, once you have *verified the actual dataset column names*, extend
 the relevant table in its study schema:
 
-\`\`\`yaml
+```yaml
 tables:
   Measurements:
     grain_key: [measurement_id]
     numeric_groups:
       value: [assay, unit]
-\`\`\`
+```
 
 Do not use subject IDs as assay groups or imply that this schema performs unit
 conversion. A candidate column must be explicitly listed; the cleaner does
 not infer whether two assays are biologically comparable.
 
-\`preview\` and \`review\` now display an **independent-preview overlap** warning
+`preview` and `review` now display an **independent-preview overlap** warning
 when two proposed edits touch the same original cells. The notice is advisory:
 previews always use the original source while approved actions execute in
 sequence. The audit remains the authority for the **actual** cell-change count.
@@ -79,7 +79,7 @@ Row-deletion interactions are not yet included in overlap analysis.
 
 Re-run the existing public-data pilot from the repo root:
 
-\`\`\`bash
+```bash
 bash sync.sh
 .venv/bin/data-cleaner profile pilot_outputs/commpass_100/commpass_pilot.xlsx \\
   --schema pilot_outputs/commpass_100/study_schema.yaml \\
@@ -88,12 +88,41 @@ bash sync.sh
 # Optional expanded issue view, without changing the dataset:
 .venv/bin/data-cleaner profile pilot_outputs/commpass_100/commpass_pilot.xlsx \\
   --schema pilot_outputs/commpass_100/study_schema.yaml --all-issues
-\`\`\`
+```
 
 Retain the original v0.5.2 report to compare finding totals. Grouping is a
 display-only change: it must not reduce the raw finding count or introduce
 new cleaning actions. Add assay/unit groups to the schema only after verifying
 those fields and their meanings.
+
+### v0.6.1 — mixed-measurement outlier scope
+
+When a generic result column (for example, `test_value`) is accompanied by
+**multiple observed assay/type or unit labels**, a pooled IQR test is not
+interpretable. The profiler replaces any pooled `statistical_outlier` issue
+with one read-only `unscoped_numeric_measurement` warning, even if a pooled
+test happens to find no outliers. The warning reports metadata column names,
+distinct-label counts, and whether pooled flags were suppressed. It never
+labels individual measurements erroneous.
+
+This is a conservative name-based safety guard, **not** proof that two assays
+are incomparable and not automatic assay matching. It does not apply to
+specific independent numeric columns such as `hemoglobin`; those still need
+the researcher's judgment. If the study schema explicitly declares
+`numeric_groups`, the cleaner runs separate QA only within those declared
+assay/unit groups instead. No unit conversion or editing is performed.
+
+```bash
+bash sync.sh
+.venv/bin/data-cleaner profile \
+  pilot_outputs/commpass_100/commpass_pilot.xlsx \
+  --schema pilot_outputs/commpass_100/study_schema.yaml \
+  -o pilot_outputs/commpass_100/profile_v061.json
+```
+
+Compare the `LabTests.test_value` issue with v0.6.0. The source workbook is
+unchanged, and the new scope warning remains in the full JSON. Do not add
+`numeric_groups` until the actual column names and meanings have been checked.
 
 ## NCI GDC CoMMpass public clinical-data pilot (v0.5.2)
 
