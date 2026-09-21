@@ -18,6 +18,7 @@ from .engine import profile_dataset
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
 from .planner import file_sha256, propose_actions
+from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
 from .study_schema import load_study_schema
 from .transforms import (
@@ -204,6 +205,19 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
             repr(change.new_value.value),
         )
     console.print(table)
+
+
+def _print_overlap_warning(overlaps, action_id: str) -> None:
+    related = overlaps.get(action_id, [])
+    if not related:
+        return
+    summary = ", ".join(f"{other} ({count} shared row(s))" for other, count in related)
+    console.print(
+        "[yellow]Independent-preview overlap:[/yellow] "
+        + summary
+        + ". These previews all use the original data; sequential execution may "
+        "turn a later action into a no-op or change its effective count."
+    )
 
 
 def _print_drift(compatibility) -> None:
@@ -612,8 +626,10 @@ def preview_command(
         )
     tables = load_dataset(input_path).tables
     _print_plan(plan)
+    overlaps = overlapping_previews(tables, plan.actions)
     for action in plan.actions:
         _print_action_preview(tables, action, sample_limit=sample)
+        _print_overlap_warning(overlaps, action.id)
 
 
 @app.command("review")
@@ -637,6 +653,7 @@ def review_command(
         )
 
     tables = load_dataset(input_path).tables
+    overlaps = overlapping_previews(tables, plan.actions)
     for index, action in enumerate(plan.actions, start=1):
         console.rule(f"Action {index}/{len(plan.actions)}")
         target = (
@@ -650,6 +667,7 @@ def review_command(
         )
         console.print(action.description)
         _print_action_preview(tables, action, sample_limit=sample)
+        _print_overlap_warning(overlaps, action.id)
 
         while True:
             decision = typer.prompt(
