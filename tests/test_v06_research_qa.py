@@ -169,11 +169,7 @@ def test_unconfigured_workflow_remains_unchanged(tmp_path: Path) -> None:
 
 
 def test_cli_review_warns_when_independent_previews_overlap(tmp_path: Path) -> None:
-    source = tmp_path / "study.csv"
-    source.write_text(
-        "Sex\\n Female \\nfemale\\nMale\\n",
-        encoding="utf-8",
-    )
+    source = _small_study(tmp_path)
     plan = CleaningPlan(
         source_path=str(source.resolve()),
         source_sha256=file_sha256(source),
@@ -182,7 +178,7 @@ def test_cli_review_warns_when_independent_previews_overlap(tmp_path: Path) -> N
                 id="trim",
                 type=ActionType.TRIM_WHITESPACE,
                 table="study",
-                column="Sex",
+                column="group",
                 title="Trim",
                 description="Trim whitespace",
                 confidence=1.0,
@@ -192,11 +188,11 @@ def test_cli_review_warns_when_independent_previews_overlap(tmp_path: Path) -> N
                 id="dictionary",
                 type=ActionType.NORMALIZE_CATEGORIES,
                 table="study",
-                column="Sex",
+                column="group",
                 title="Canonical",
                 description="Canonical",
                 confidence=1.0,
-                parameters={"mapping": {" Female ": "Female", "female": "Female"}},
+                parameters={"mapping": {" Female ": "Female"}},
             ),
         ],
     )
