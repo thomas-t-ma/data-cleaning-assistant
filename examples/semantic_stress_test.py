@@ -32,7 +32,12 @@ def _prepare_case(case: SemanticCase, folder: Path) -> dict[str, Any]:
     """Use production profiling + production bounded-candidate construction."""
     path = folder / "fixture.csv"
     pd.DataFrame(
-        {case.column: [case.canonical] * 3 + [case.variant]}
+        {
+            case.column: (
+                [case.canonical] * case.canonical_count
+                + [case.variant] * case.variant_count
+            )
+        }
     ).to_csv(path, index=False)
     report = profile_dataset(path)
     candidates = build_ai_candidates(report, load_dataset(path).tables)
@@ -131,6 +136,7 @@ def run_suite(
     if any(
         case.expected not in {"accept", "defer"}
         or case.canonical == case.variant
+        or min(case.canonical_count, case.variant_count) < 1
         for case in selected
     ):
         raise ValueError("Invalid corpus: expected accept/defer and two different labels")
