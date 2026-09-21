@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.7.0 — known-answer real-data challenge (current)
+## v0.7.1 — synthetic-only Ollama semantic benchmark (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -40,6 +40,7 @@
 - Treat exact blank CSV/Excel cells as existing missingness coverage, not proposed null conversions.
 - Seed four bounded test defects in an isolated public-data workbook and score deterministic proposals against a private answer key.
 - Exercise fixture-only transformations, persistence, and undo; protect original and challenge input hashes.
+- Score local model accept/defer decisions on two isolated synthetic-label pairs, with per-run latency and protocol failures.
 
 ### v0.4.x evaluation and provider hardening
 
