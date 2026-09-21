@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.6.2 — actionability-aware missingness triage (current)
+## v0.6.3 — empty-cell semantics (current)
 
 - Fixed synthetic cleaning corpus with hidden answer keys.
 - AI-only scoring so deterministic rules do not inflate model performance.
@@ -37,6 +37,7 @@
 - Show overlap warnings for independently previewed actions.
 - Warn when unscoped generic numeric measurements mix multiple assay/unit categories.
 - Suppress routine actions for entirely structural-only columns, retaining non-executable issue-linked planning notes.
+- Treat exact blank CSV/Excel cells as existing missingness coverage, not proposed null conversions.
 
 ### v0.4.x evaluation and provider hardening
 
