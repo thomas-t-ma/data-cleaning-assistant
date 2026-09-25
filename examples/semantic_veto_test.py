@@ -38,16 +38,19 @@ Your only job is to decide whether the two differing terms are:
 - UNCERTAIN: the evidence is insufficient to confidently choose SAME_TYPO or DISTINCT.
 
 Rules:
-- Ignore label frequency as evidence of semantic equivalence.
+- You are intentionally NOT given label frequency, similarity score, mapping direction,
+  or the primary reviewer's rationale. Do not infer which term is supposed to be canonical.
 - A one-character edit is NOT evidence that two terms mean the same thing.
-- Use ordinary scientific/medical knowledge when the terms are established concepts.
-- Do not invent hypothetical meanings, codes, abbreviations, historical spellings, or
-  study-specific categories.
-- If both spellings are recognizable valid terms with different meanings, choose DISTINCT.
-- If the variant is an obvious malformed spelling/nonword of the canonical term and has no
-  independently recognized meaning, choose SAME_TYPO.
-- If you genuinely cannot tell, choose UNCERTAIN.
-- Return the supplied candidate ID exactly and do not create or modify mappings.
+- Use ordinary scientific/medical knowledge when either spelling is an established concept.
+- Do not invent hypothetical meanings, codes, abbreviations, or study-specific categories.
+- If BOTH spellings have any independently recognized scientific, clinical, anatomical,
+  laboratory, procedural, or ordinary meaning and those meanings differ, choose DISTINCT.
+  This remains true when one term is rare, archaic, less common, domain-specific, or would
+  be unusual in the supplied column. Relative commonness is irrelevant to this veto.
+- Choose SAME_TYPO only when one spelling is clearly a malformed/nonword spelling of the
+  other and you do not recognize an independent legitimate meaning for it.
+- If you genuinely cannot establish that the variant is a nonword typo, choose UNCERTAIN.
+- Return the supplied candidate ID exactly.
 """
 
 
@@ -59,15 +62,24 @@ class NeighborAuditResponse(BaseModel):
 
 
 def _audit_user_prompt(candidate) -> str:
+    typo = candidate.context.evidence.get("single_edit_typo_evidence") or {}
+    left_token = typo.get("left_token")
+    right_token = typo.get("right_token")
+    if not left_token or not right_token:
+        raise ValueError("Blind auditor requires explicit differing tokens")
+
+    # Intentionally withhold mapping direction, counts, frequency, similarity,
+    # and primary-review rationale so semantic validity is judged independently.
     payload = {
         "candidate_id": candidate.id,
         "column": candidate.action.column,
-        "proposed_mapping": candidate.action.parameters.get("mapping", {}),
-        "evidence": candidate.context.evidence,
+        "term_a": left_token,
+        "term_b": right_token,
     }
     return (
-        "Audit this already-bounded single-edit candidate for semantic collision. "
-        "Do not infer or alter any mapping.\n\n"
+        "Judge only whether these two spellings are independently valid terms with "
+        "different meanings, or whether one is clearly a nonword typo of the other. "
+        "Do not guess which term is more common or intended as canonical.\n\n"
         + json.dumps(payload, indent=2, sort_keys=True)
     )
 
@@ -224,7 +236,7 @@ def run_veto_suite(
 
     payload = {
         "version": 1,
-        "purpose": "Benchmark-only two-stage semantic-neighbor veto; no edits",
+        "purpose": "Benchmark-only blind two-stage semantic-neighbor veto; no edits",
         "model": model,
         "provider": provider.name,
         "runs": runs,
