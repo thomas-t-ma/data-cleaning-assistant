@@ -16,6 +16,9 @@ from data_cleaning_assistant.semantic_holdout import semantic_neighbor_holdout_c
 class FakeTwoStageProvider:
     name = "fake_two_stage"
 
+    def __init__(self) -> None:
+        self.audit_payloads = []
+
     def generate_structured(
         self, *, model, system_prompt, user_prompt, response_model
     ):
@@ -37,14 +40,11 @@ class FakeTwoStageProvider:
                 ],
             )
 
-        mapping = payload["proposed_mapping"]
-        pair = set(mapping) | set(mapping.values())
+        self.audit_payloads.append(payload)
+        pair = {payload["term_a"], payload["term_b"]}
         verdict = (
             "distinct"
-            if pair == {
-                "Clinical Term Facial",
-                "Clinical Term Fascial",
-            }
+            if pair == {"facial", "fascial"}
             else "same_typo"
         )
         return response_model(
@@ -66,8 +66,9 @@ def test_veto_blocks_valid_neighbor_but_preserves_clear_typo(
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
     from semantic_veto_test import run_veto_suite
 
+    provider = FakeTwoStageProvider()
     result = run_veto_suite(
-        FakeTwoStageProvider(),
+        provider,
         "fixture:model",
         runs=1,
         output=tmp_path / "veto.json",
@@ -86,3 +87,11 @@ def test_veto_blocks_valid_neighbor_but_preserves_clear_typo(
         "same_typo": 1,
         "distinct": 1,
     }
+    assert len(provider.audit_payloads) == 2
+    for payload in provider.audit_payloads:
+        assert set(payload) == {"candidate_id", "column", "term_a", "term_b"}
+        serialized = json.dumps(payload)
+        assert "count" not in serialized
+        assert "similarity" not in serialized
+        assert "mapping" not in serialized
+        assert "canonical" not in serialized
