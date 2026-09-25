@@ -44,7 +44,7 @@ class FakeTwoStageProvider:
         pair = {payload["term_a"], payload["term_b"]}
         verdict = (
             "distinct"
-            if pair == {"facial", "fascial"}
+            if pair in ({"facial", "fascial"}, {"cardial", "cardiac"})
             else "same_typo"
         )
         return response_model(
@@ -72,22 +72,22 @@ def test_veto_blocks_valid_neighbor_but_preserves_clear_typo(
         "fixture:model",
         runs=1,
         output=tmp_path / "veto.json",
-        cases=_select("h01", "r20"),
+        cases=_select("h01", "r19", "r20"),
     )
 
     assert result["primary_safe_accepts"] == 1
     assert result["final_safe_accepts"] == 1
-    assert result["primary_unsafe_accepts"] == 1
+    assert result["primary_unsafe_accepts"] == 2
     assert result["final_unsafe_accepts"] == 0
-    assert result["correct_final_decisions"] == 2
-    assert result["audits_called"] == 2
+    assert result["correct_final_decisions"] == 3
+    assert result["audits_called"] == 3
     assert result["protocol_failures"] == 0
     assert result["model_errors"] == 0
     assert result["audit_verdict_counts"] == {
         "same_typo": 1,
-        "distinct": 1,
+        "distinct": 2,
     }
-    assert len(provider.audit_payloads) == 2
+    assert len(provider.audit_payloads) == 3
     for payload in provider.audit_payloads:
         assert set(payload) == {"candidate_id", "column", "term_a", "term_b"}
         serialized = json.dumps(payload)
