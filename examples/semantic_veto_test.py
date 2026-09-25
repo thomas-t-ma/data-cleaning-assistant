@@ -78,6 +78,7 @@ def run_veto_suite(
     *,
     runs: int,
     output: Path,
+    cases=None,
 ) -> dict:
     if runs < 1:
         raise ValueError("--runs must be at least 1")
@@ -85,7 +86,9 @@ def run_veto_suite(
     if output.exists():
         raise FileExistsError(f"Benchmark score already exists: {output}")
 
-    cases = semantic_neighbor_holdout_cases()
+    cases = list(cases if cases is not None else semantic_neighbor_holdout_cases())
+    if not cases:
+        raise ValueError("At least one case is required")
     primary_system = _system_prompt("evidence_calibrated")
     records = []
 
