@@ -417,11 +417,22 @@ def propose_ai_plan(
     model: str,
     include_rules: bool = True,
     schema: StudySchema | None = None,
+    semantic_only: bool = False,
 ) -> AIPlanResult:
     resolved = Path(path).expanduser().resolve()
     loaded = load_dataset(resolved)
     report = profile_dataset(resolved, schema=schema)
     candidates = build_ai_candidates(report, loaded.tables, schema=schema)
+    if semantic_only:
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.action.type == ActionType.NORMALIZE_CATEGORIES
+        ]
+        for index, candidate in enumerate(candidates, start=1):
+            session_id = f"C{index:03d}"
+            candidate.id = session_id
+            candidate.context.id = session_id
     context = build_ai_context(report, candidates)
 
     response, rejected, review_call_count, disagreement_count = (
