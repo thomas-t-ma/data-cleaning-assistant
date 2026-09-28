@@ -1,0 +1,145 @@
+# Real-workflow pilot (v0.9 development)
+
+This pilot measures whether the cleaner is actually useful on a messy research
+workbook, not just whether it performs well on synthetic semantic benchmarks.
+
+The workflow is intentionally read-only until the researcher separately decides
+to apply an approved plan. The pilot itself never edits the source file.
+
+## What to use
+
+Choose one **realistic research workbook** that:
+
+- you already understand well enough to review its proposed changes;
+- contains genuine messiness rather than deliberately seeded benchmark defects;
+- is a working copy, export, de-identified dataset, or otherwise appropriate for
+  local analysis under your organization's data-handling rules;
+- is not currently being modified by another process during the pilot.
+
+A study schema is strongly preferred when you have one. Do not invent a schema
+just to improve the score.
+
+The model is local Ollama. The AI context excludes source paths, raw row samples,
+and identifier values, but it can contain category labels, missing-value tokens,
+and bounded detector evidence needed for semantic review. Pilot artifacts are
+local and may therefore still contain sensitive research terminology. Do not
+publish or upload them casually.
+
+## 1. Start a fresh pilot
+
+From the repository root:
+
+```bash
+.venv/bin/python examples/workflow_pilot.py start \
+  --source /path/to/research_workbook.xlsx \
+  --schema /path/to/study_schema.yaml \
+  --model qwen3.5:4b \
+  --out pilot_outputs/workflow_real_01
+```
+
+Omit `--schema` only if no verified study dictionary is available.
+
+The harness writes:
+
+- `profile.json` — complete read-only QA profile;
+- `ai_context.json` — exact compact context sent to the local model;
+- `ai_plan.json` — hybrid deterministic + AI plan;
+- `decision_trace.json` — candidate decision/rationale/coverage telemetry;
+- `pilot_manifest.json` — source hash and local provenance.
+
+It applies **zero edits**.
+
+## 2. Preview the plan
+
+```bash
+.venv/bin/data-cleaner preview \
+  /path/to/research_workbook.xlsx \
+  pilot_outputs/workflow_real_01/ai_plan.json \
+  --sample 8
+```
+
+Look for obviously duplicated proposals, scientifically questionable changes,
+large affected-cell counts, or proposals whose meaning cannot be judged from the
+available study context.
+
+## 3. Review every item
+
+Do **not** use `--approve-all` for the pilot. Review each action individually:
+
+```bash
+.venv/bin/data-cleaner review \
+  /path/to/research_workbook.xlsx \
+  pilot_outputs/workflow_real_01/ai_plan.json \
+  --sample 8 \
+  --output pilot_outputs/workflow_real_01/reviewed_plan.json
+```
+
+For ordinary proposed actions:
+
+- **approve** when you would genuinely want that exact transformation;
+- **reject** when it is wrong, misleading, or unnecessary;
+- **skip/defer** only when you genuinely cannot decide.
+
+For AI-deferred candidates, use the same standard. Approving one indicates that
+the model was too conservative; rejecting one indicates the deferral protected
+you from an undesirable merge/change.
+
+Human review is treated as workflow feedback, **not scientific ground truth**.
+
+## 4. Record obvious misses
+
+After the review, inspect the workbook/profile with your normal domain knowledge.
+Write down any important issue the tool completely failed to surface. Examples:
+
+- a meaningful category inconsistency it did not detect;
+- a date/numeric problem it missed;
+- a relationship/grain problem that would matter in analysis;
+- a misleading proposal class you would want the product to suppress.
+
+Do not count features the project does not currently claim to detect merely to
+inflate the miss count.
+
+## 5. Score the workflow
+
+If review took about 12 minutes and you noticed two missed issues:
+
+```bash
+.venv/bin/python examples/workflow_pilot.py score \
+  --pilot pilot_outputs/workflow_real_01 \
+  --reviewed-plan pilot_outputs/workflow_real_01/reviewed_plan.json \
+  --review-minutes 12 \
+  --missed-issue "Visits.Status: two semantically equivalent labels were not surfaced" \
+  --missed-issue "Labs.ResultDate: mixed date representation was overlooked"
+```
+
+If there were no obvious misses, omit `--missed-issue`.
+
+The score reports:
+
+- candidate decisions resolved by the human reviewer;
+- human/AI agreement among resolved candidates;
+- **human rejected AI accept** — possible model overreach;
+- **human approved AI defer** — possible model overcaution;
+- approved/rejected/unresolved deterministic plan actions;
+- deferred-candidate outcomes;
+- review time;
+- reviewer-reported missed issues.
+
+These are product-development metrics, not clinical validation metrics.
+
+## What would count as a promising pilot?
+
+Do not reduce the result to one accuracy number. For early product development,
+the strongest pattern would be:
+
+- zero or very few human-rejected AI accepts;
+- AI deferrals concentrated in genuinely ambiguous cases;
+- most approved actions save meaningful manual cleanup work;
+- little duplicate/repetitive review burden;
+- no destructive or semantically unsafe proposal;
+- few important reviewer-observed misses;
+- a review workflow that feels materially faster than manual inspection.
+
+One workbook is qualitative evidence, not generalization. Repeat the same protocol
+on several structurally different research datasets before changing production
+policy based on the results.
