@@ -189,9 +189,15 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
         target = f"{issue.get('table', '?')}.{issue.get('column') or '(table)'}"
         issue_targets[target] = issue_targets.get(target, 0) + 1
 
+    issue_by_id = {
+        str(issue.get("id")): issue
+        for issue in profile.get("issues", [])
+        if issue.get("id") is not None
+    }
     action_types: dict[str, int] = {}
     action_targets: dict[str, int] = {}
     action_origins: dict[str, int] = {}
+    action_families: dict[str, dict[str, Any]] = {}
     for action in plan.actions:
         key = action.type.value
         action_types[key] = action_types.get(key, 0) + 1
@@ -199,6 +205,27 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
         action_targets[target] = action_targets.get(target, 0) + 1
         origin = action.origin.value
         action_origins[origin] = action_origins.get(origin, 0) + 1
+
+        params = json.dumps(action.parameters, sort_keys=True, default=str)
+        family_key = f"{action.type.value} | {params}"
+        family = action_families.setdefault(
+            family_key,
+            {
+                "type": action.type.value,
+                "parameters": action.parameters,
+                "actions": 0,
+                "issue_affected_total": 0,
+                "targets": [],
+            },
+        )
+        family["actions"] += 1
+        if len(family["targets"]) < 10:
+            family["targets"].append(target)
+        family["issue_affected_total"] += sum(
+            int(issue_by_id[issue_id].get("affected_count", 0))
+            for issue_id in action.issue_ids
+            if issue_id in issue_by_id
+        )
 
     candidate_bases: dict[str, int] = {}
     candidate_types: dict[str, int] = {}
@@ -232,6 +259,10 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
         "issue_types": dict(sorted(issue_types.items())),
         "action_types": dict(sorted(action_types.items())),
         "action_origins": dict(sorted(action_origins.items())),
+        "action_families": sorted(
+            action_families.values(),
+            key=lambda item: (-item["actions"], item["type"], str(item["parameters"])),
+        ),
         "candidate_types": dict(sorted(candidate_types.items())),
         "candidate_bases": dict(sorted(candidate_bases.items())),
         "candidate_decisions": dict(sorted(candidate_decisions.items())),
@@ -254,6 +285,13 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
     print("\nAction origins:")
     for name, count in payload["action_origins"].items():
         print(f"  {name}: {count}")
+    print("\nAction families:")
+    for family in payload["action_families"][:15]:
+        print(
+            f"  {family['type']} {family['parameters']}: "
+            f"{family['actions']} action(s), "
+            f"{family['issue_affected_total']} detector-affected row(s)"
+        )
     print("\nCandidate types:")
     for name, count in payload["candidate_types"].items():
         print(f"  {name}: {count}")
