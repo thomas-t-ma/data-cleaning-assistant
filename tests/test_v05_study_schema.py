@@ -215,7 +215,8 @@ def test_ai_deferral_is_persisted_but_never_auto_applied(tmp_path: Path) -> None
     assert result.plan.actions == []
     assert len(result.plan.deferred_reviews) == 1
     deferred = result.plan.deferred_reviews[0]
-    assert deferred.rationale.startswith("Check the study codebook")
+    assert deferred.rationale.startswith("Adaptive consensus 2/2 defer:")
+    assert "Check the study codebook before merging the labels." in deferred.rationale
     assert deferred.proposed_action.parameters == {"mapping": {"Basline": "Baseline"}}
     assert deferred.status == "pending"
 
