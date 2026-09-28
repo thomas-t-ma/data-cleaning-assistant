@@ -26,20 +26,31 @@ def test_adaptive_consensus_corpus_is_balanced_and_fresh() -> None:
     assert not ({_pair(case) for case in cases} & prior_pairs)
 
 
-def test_adaptive_consensus_all_cases_reach_candidate_review(
+def test_adaptive_consensus_all_safe_cases_reach_candidate_review(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
     from semantic_stress_test import _prepare_case
 
-    failures = []
+    safe_failures = []
+    unsafe_screened = []
     for case in adaptive_consensus_cases():
         folder = tmp_path / case.id
         folder.mkdir()
         item = _prepare_case(case, folder)
         if item["candidate"] is None:
-            failures.append((case.id, item["reason"]))
-    assert failures == []
+            entry = (case.id, item["reason"])
+            if case.expected == "accept":
+                safe_failures.append(entry)
+            else:
+                unsafe_screened.append(entry)
+
+    # A safe correction that never reaches review is lost automation coverage.
+    assert safe_failures == []
+
+    # Unsafe pairs may be screened out by deterministic candidate construction.
+    # That is a valid fail-closed outcome and the live report records it separately.
+    assert all(reason in {"not_exposed", "ambiguous_candidate_set"} for _, reason in unsafe_screened)
 
 
 def test_consensus_majority_and_fail_closed(monkeypatch) -> None:
