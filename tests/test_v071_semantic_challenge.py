@@ -134,7 +134,7 @@ def test_omitted_defer_does_not_count_as_correct(tmp_path: Path, monkeypatch) ->
         for item in result["results"][0]["decisions"]
     )
     assert any(
-        item["actual"] == "missing"
+        item["actual"] == "defer" and item["fail_closed"]
         for item in result["results"][0]["decisions"]
     )
 
