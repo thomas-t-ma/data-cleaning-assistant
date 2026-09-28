@@ -25,33 +25,34 @@ and bounded detector evidence needed for semantic review. Pilot artifacts are
 local and may therefore still contain sensitive research terminology. Do not
 publish or upload them casually.
 
-## Public starter workbook: GRAPE
+## Public starter dataset: NHANES sample
 
-If you do not want to use private research data for the first workflow pilot, use
-the published GRAPE glaucoma workbook. It is a real CC0 research dataset with
-263 baseline eye records and 1115 follow-up visits in two sheets.
+For the first public workflow pilot, use OpenIntro's `nhanes.samp`: a direct
+CSV containing 200 observations and 76 variables derived from the NHANES teaching
+dataset. It is based on real US National Health and Nutrition Examination Survey
+data, but adapted for educational use rather than intended as an analysis-ready
+research database.
 
-Fetch and validate the exact public workbook:
+Fetch and validate it:
 
 ```bash
-.venv/bin/python examples/fetch_grape_workbook.py \
-  --out pilot_outputs/grape_public
+.venv/bin/python examples/fetch_nhanes_sample.py \
+  --out pilot_outputs/nhanes_public
 ```
 
-The fetcher records the article/DOI/download provenance and SHA-256 and refuses
-unexpected sheet structure or record counts. It does not call a model.
+The fetcher verifies the published 200 x 76 shape and several expected fields,
+then records source provenance and SHA-256. It does not call a model.
 
 Then use:
 
 ```bash
-SOURCE="pilot_outputs/grape_public/grape_vf_clinical_information.xlsx"
-OUT="pilot_outputs/workflow_grape_01"
+SOURCE="pilot_outputs/nhanes_public/nhanes_openintro_sample.csv"
+OUT="pilot_outputs/workflow_nhanes_01"
 ```
 
-For the first pass, do **not** invent a study schema. The publication documents
-several field meanings and states that `/` denotes absence of a corresponding
-CFP or OCT examination, but we want to see what the generic cleaner infers before
-adding source-specific dictionary knowledge.
+For the first pass, do not invent a study schema. We want to observe the generic
+cleaner's behavior on real health-survey structure before adding any source-specific
+dictionary knowledge.
 
 ## 1. Start a fresh pilot
 
