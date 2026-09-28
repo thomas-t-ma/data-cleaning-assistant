@@ -104,6 +104,39 @@ def _effect_key(action: CleaningAction) -> str:
     )
 
 
+def _action_is_covered_by_existing(
+    proposed: CleaningAction,
+    existing: CleaningAction,
+) -> bool:
+    """Return True when an existing deterministic action subsumes an AI proposal."""
+    if (
+        proposed.type != existing.type
+        or proposed.table != existing.table
+        or proposed.column != existing.column
+    ):
+        return False
+
+    if _effect_key(proposed) == _effect_key(existing):
+        return True
+
+    if proposed.type == ActionType.NORMALIZE_CATEGORIES:
+        proposed_mapping = proposed.parameters.get("mapping")
+        existing_mapping = existing.parameters.get("mapping")
+        if isinstance(proposed_mapping, dict) and isinstance(existing_mapping, dict):
+            return bool(proposed_mapping) and all(
+                existing_mapping.get(source) == target
+                for source, target in proposed_mapping.items()
+            )
+
+    if proposed.type == ActionType.NORMALIZE_MISSING:
+        proposed_values = proposed.parameters.get("values")
+        existing_values = existing.parameters.get("values")
+        if isinstance(proposed_values, list) and isinstance(existing_values, list):
+            return bool(proposed_values) and set(proposed_values).issubset(existing_values)
+
+    return False
+
+
 def _build_user_prompt(context: AIPlannerContext) -> str:
     return (
         "Review every candidate below. Return one accept/defer selection per candidate ID. "
@@ -470,12 +503,13 @@ def propose_ai_plan(
     if include_rules:
         actions.extend(rule_plan.actions)
 
-    existing = {_effect_key(action) for action in actions}
     for action in accepted:
-        key = _effect_key(action)
-        if key not in existing:
-            actions.append(action)
-            existing.add(key)
+        if any(
+            _action_is_covered_by_existing(action, existing_action)
+            for existing_action in actions
+        ):
+            continue
+        actions.append(action)
 
     return AIPlanResult(
         plan=CleaningPlan(
