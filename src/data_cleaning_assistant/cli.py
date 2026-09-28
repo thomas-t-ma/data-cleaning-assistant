@@ -477,6 +477,12 @@ def ai_plan_command(
     console.print(
         f"[green]AI planner:[/green] {result.provider} / {result.model}"
     )
+    if result.review_call_count:
+        console.print(
+            "[bold]Adaptive review:[/bold] "
+            f"{result.review_call_count} model call(s); "
+            f"{result.consensus_disagreement_count} candidate disagreement(s)"
+        )
     console.print(f"[bold]Model summary:[/bold] {result.response.summary}")
 
     if result.rejected:
