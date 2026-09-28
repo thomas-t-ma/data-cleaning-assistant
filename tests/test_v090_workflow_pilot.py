@@ -161,6 +161,43 @@ def test_workflow_pilot_summary_groups_review_flood(
     assert "Candidate decisions:" in captured
 
 
+def test_workflow_pilot_routes_mechanical_cleanup_without_ai(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
+    from workflow_pilot import start_pilot
+
+    source = tmp_path / "mechanical.csv"
+    source.write_text(
+        "subject_id,value,label\n"
+        "S001,NA, Alpha \n"
+        "S002,12,Alpha\n"
+        "S003,13,Alpha\n",
+        encoding="utf-8",
+    )
+
+    class NeverCalledProvider:
+        name = "offline_fake"
+
+        def generate_structured(self, **kwargs):
+            raise AssertionError(
+                "Semantic-only workflow pilot must not send mechanical cleanup to AI."
+            )
+
+    result = start_pilot(
+        source,
+        tmp_path / "pilot",
+        provider=NeverCalledProvider(),
+        model="fake-model",
+    )
+
+    assert result["trace"]["candidate_count"] == 0
+    assert result["trace"]["review_call_count"] == 0
+    action_types = {action.type.value for action in result["plan"].actions}
+    assert "normalize_missing" in action_types
+    assert "trim_whitespace" in action_types
+
+
 def test_workflow_pilot_refuses_changed_source(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
     from workflow_pilot import score_pilot, start_pilot
