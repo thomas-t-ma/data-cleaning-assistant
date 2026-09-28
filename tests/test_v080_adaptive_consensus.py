@@ -4,7 +4,6 @@ from pathlib import Path
 
 from data_cleaning_assistant.actions import ActionType
 from data_cleaning_assistant.ai_candidates import build_ai_candidates
-from data_cleaning_assistant.ai_models import AIPlannerResponse
 from data_cleaning_assistant.ai_planner import propose_ai_plan
 from data_cleaning_assistant.ai_provider import AIProviderError
 from data_cleaning_assistant.engine import profile_dataset
