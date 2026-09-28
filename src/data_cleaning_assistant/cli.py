@@ -477,6 +477,17 @@ def ai_plan_command(
     console.print(
         f"[green]AI planner:[/green] {result.provider} / {result.model}"
     )
+    if result.review_call_count:
+        console.print(
+            "[bold]Adaptive review:[/bold] "
+            f"{result.review_call_count} model call(s); "
+            f"{result.consensus_disagreement_count} candidate disagreement(s)"
+        )
+    if result.covered_ai_action_count:
+        console.print(
+            "[bold]AI actions already covered by deterministic plan:[/bold] "
+            f"{result.covered_ai_action_count} omitted from duplicate execution"
+        )
     console.print(f"[bold]Model summary:[/bold] {result.response.summary}")
 
     if result.rejected:

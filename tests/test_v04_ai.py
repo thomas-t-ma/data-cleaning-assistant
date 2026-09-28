@@ -239,8 +239,12 @@ def test_unknown_candidate_id_is_rejected(tmp_path: Path) -> None:
     )
 
     assert result.plan.actions == []
-    assert len(result.rejected) == 1
-    assert "unknown candidate ID" in result.rejected[0].reason
+    assert len(result.rejected) == 2
+    assert all("unknown candidate ID" in item.reason for item in result.rejected)
+    assert {item.reason for item in result.rejected} == {
+        "Review 1 referenced an unknown candidate ID.",
+        "Review 2 referenced an unknown candidate ID.",
+    }
 
 
 def test_model_resolution_requires_choice_when_multiple_are_installed() -> None:

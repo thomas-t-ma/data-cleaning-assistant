@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.7.3**.
+Current version: **v0.8.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,28 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+
+## v0.8.0 — adaptive calibrated consensus
+
+v0.8.0 promotes the evidence-calibrated semantic-review policy into the production
+AI planner and adds a conservative repeated-review aggregation rule.
+
+For every bounded candidate, the local model is reviewed twice with the same
+evidence-calibrated prompt. If both valid decisions agree, that result is used. If
+they disagree, one third review is requested and a 2-of-3 majority decides. Any
+structured-output/model failure or malformed candidate selection fails closed to a
+non-executable human-review deferral.
+
+The policy was selected after a 100-case synthetic architecture comparison and then
+tested on a **new frozen 100-case validation corpus**. On that fresh set, all 50
+expected-safe corrections reached model review, seven expected-unsafe cases were
+screened out deterministically, and adaptive consensus produced **47/50 safe
+acceptances with 0/50 unsafe acceptances and zero protocol failures**. These are
+synthetic engineering results, not clinical-safety validation.
+
+The production planner still preserves all previous boundaries: deterministic code
+owns the candidate action, AI decisions remain proposed rather than approved, and
+preview/human approval/source hashing/audit logging remain mandatory.
 
 ## v0.7.3 — evidence-calibrated benchmark experiment
 
