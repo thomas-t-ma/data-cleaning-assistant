@@ -47,7 +47,7 @@ Run this before any live model call:
   --output pilot_outputs/adaptive_consensus_coverage_v078.json
 ```
 
-Expected: 100/100 candidate exposure.
+Expected: all 50 expected-safe corrections must be exposed. Some expected-unsafe cases may be screened out by deterministic candidate construction; those are valid fail-closed outcomes and are reported separately.
 
 ## 2. One-shot live validation
 
