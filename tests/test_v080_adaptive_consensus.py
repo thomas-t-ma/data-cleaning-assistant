@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from data_cleaning_assistant.actions import ActionType
@@ -201,3 +202,64 @@ def test_unknown_candidate_vote_cannot_create_action(tmp_path: Path) -> None:
     assert len(result.plan.deferred_reviews) == 1
     assert result.rejected
     assert "Review 1 referenced an unknown candidate ID" in result.rejected[0].reason
+
+
+class AcceptAllCandidatesProvider:
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_structured(
+        self, *, model, system_prompt, user_prompt, response_model
+    ):
+        assert model == "fake-model"
+        self.calls += 1
+        payload = json.loads(user_prompt.split("\n\n", 1)[1])
+        selections = [
+            {
+                "candidate_id": candidate["id"],
+                "decision": "accept",
+                "rationale": "fixture accept",
+                "confidence": 0.9,
+            }
+            for candidate in payload["candidates"]
+        ]
+        return response_model.model_validate(
+            {"summary": "accept all fixture candidates", "selections": selections}
+        )
+
+
+def test_hybrid_plan_suppresses_ai_category_mapping_already_covered_by_rule(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "study.csv"
+    source.write_text(
+        "subject_id,sex\n"
+        "S001,Female\n"
+        "S002,female\n"
+        "S003,Male\n"
+        "S004,MALE\n",
+        encoding="utf-8",
+    )
+    provider = AcceptAllCandidatesProvider()
+
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model="fake-model",
+        include_rules=True,
+    )
+
+    category_actions = [
+        action
+        for action in result.plan.actions
+        if action.type == ActionType.NORMALIZE_CATEGORIES
+        and action.column == "sex"
+    ]
+    assert len(category_actions) == 1
+    assert category_actions[0].origin.value == "rule"
+    assert category_actions[0].parameters == {
+        "mapping": {"female": "Female", "MALE": "Male"}
+    }
+    assert provider.calls == 2
