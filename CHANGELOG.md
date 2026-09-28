@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- Promoted the evidence-calibrated semantic-review prompt from benchmark-only testing into the production local AI planner.
+- Added adaptive consensus: two calibrated reviews per candidate set, with a third tie-break review only when candidate decisions disagree.
+- Fail closed to non-executable human review on structured-output/model errors, missing selections, or malformed duplicate candidate selections.
+- Preserved deterministic ownership of action parameters and mandatory human approval before execution.
+- Added CLI reporting for review-call count and candidate disagreements.
+- Added offline regressions for 2/2 agreement, 2/3 accept/defer majorities, unknown candidate IDs, and structured-output failures.
+- Production selection was informed by a fresh frozen 100-case synthetic validation that produced 47/50 safe accepts and 0/50 unsafe accepts with no protocol failures; this is engineering validation, not clinical validation.
+
 ## 0.7.3
 
 - Fixed the s20 benchmark false coverage gap when independent whitespace trimming coexists with a bounded category mapping.
