@@ -91,6 +91,7 @@ def _trace_payload(result) -> dict[str, Any]:
         "purpose": "Local real-workflow pilot decision trace; no data edits",
         "provider": result.provider,
         "model": result.model,
+        "candidate_routing": "semantic_only",
         "review_call_count": result.review_call_count,
         "candidate_disagreement_count": result.consensus_disagreement_count,
         "covered_ai_action_count": result.covered_ai_action_count,
@@ -126,6 +127,7 @@ def start_pilot(
         model=model,
         include_rules=True,
         schema=schema,
+        semantic_only=True,
     )
 
     _write_json(out / PROFILE, report.model_dump(mode="json"))
@@ -144,6 +146,7 @@ def start_pilot(
         "schema": _schema_descriptor(schema_path),
         "model": model,
         "provider": provider.name,
+        "candidate_routing": "semantic_only",
         "files": {
             "profile": PROFILE,
             "ai_context": CONTEXT,
