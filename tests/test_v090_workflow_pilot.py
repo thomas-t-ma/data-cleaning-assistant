@@ -4,8 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-from openpyxl import Workbook
-
 from data_cleaning_assistant.actions import ActionDecision
 from data_cleaning_assistant.ai_models import CandidateDecision
 from data_cleaning_assistant.planner import file_sha256
@@ -161,44 +159,39 @@ def test_workflow_pilot_refuses_changed_source(tmp_path: Path, monkeypatch) -> N
         score_pilot(pilot, reviewed_path)
 
 
-def test_grape_fetcher_validates_expected_sheet_shape(tmp_path: Path, monkeypatch) -> None:
+def test_nhanes_fetcher_validates_expected_shape(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
-    from fetch_grape_workbook import validate_workbook
+    from fetch_nhanes_sample import validate_csv
 
-    workbook = tmp_path / "grape.xlsx"
-    book = Workbook()
-    baseline = book.active
-    baseline.title = "Baseline"
-    baseline.append([f"c{i}" for i in range(80)])
-    for _ in range(263):
-        baseline.append([None] * 80)
+    source = tmp_path / "nhanes.csv"
+    header = [
+        "ID", "SurveyYr", "Gender", "Age", "Race1", "BMI",
+        *[f"extra_{index}" for index in range(70)],
+    ]
+    rows = [
+        [str(index), "2009_10", "male", "34", "White", "22.1", *[""] * 70]
+        for index in range(200)
+    ]
+    source.write_text(
+        ",".join(header) + "\n"
+        + "\n".join(",".join(row) for row in rows)
+        + "\n",
+        encoding="utf-8",
+    )
 
-    followup = book.create_sheet("Follow-up")
-    followup.append([f"c{i}" for i in range(69)])
-    for _ in range(1115):
-        followup.append([None] * 69)
-    book.save(workbook)
-
-    assert validate_workbook(workbook) == {
-        "Baseline": 263,
-        "Follow-up": 1115,
-    }
+    assert validate_csv(source) == {"rows": 200, "columns": 76}
 
 
-def test_grape_fetcher_rejects_wrong_shape(tmp_path: Path, monkeypatch) -> None:
+def test_nhanes_fetcher_rejects_wrong_shape(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
-    from fetch_grape_workbook import validate_workbook
+    from fetch_nhanes_sample import validate_csv
 
-    workbook = tmp_path / "wrong.xlsx"
-    book = Workbook()
-    baseline = book.active
-    baseline.title = "Baseline"
-    baseline.append(["x"] * 80)
-    baseline.append(["x"] * 80)
-    followup = book.create_sheet("Follow-up")
-    followup.append(["x"] * 69)
-    followup.append(["x"] * 69)
-    book.save(workbook)
+    source = tmp_path / "wrong.csv"
+    source.write_text(
+        "ID,SurveyYr,Gender,Age,Race1,BMI\n"
+        "1,2009_10,male,34,White,22.1\n",
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ValueError, match="row counts differ"):
-        validate_workbook(workbook)
+    with pytest.raises(ValueError, match="Unexpected NHANES sample shape"):
+        validate_csv(source)
