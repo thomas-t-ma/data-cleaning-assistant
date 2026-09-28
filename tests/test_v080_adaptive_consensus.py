@@ -262,4 +262,5 @@ def test_hybrid_plan_suppresses_ai_category_mapping_already_covered_by_rule(
     assert category_actions[0].parameters == {
         "mapping": {"female": "Female", "MALE": "Male"}
     }
+    assert result.covered_ai_action_count == 2
     assert provider.calls == 2
