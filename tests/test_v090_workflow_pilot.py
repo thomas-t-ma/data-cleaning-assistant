@@ -173,8 +173,8 @@ def test_workflow_pilot_routes_mechanical_cleanup_without_ai(
     source.write_text(
         "subject_id,value,label\n"
         "S001,NA, Alpha \n"
-        "S002,12,Alpha\n"
-        "S003,13,Alpha\n",
+        "S002,12, Alpha \n"
+        "S003,13, Alpha \n",
         encoding="utf-8",
     )
 
