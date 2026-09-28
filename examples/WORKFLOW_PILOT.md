@@ -78,7 +78,21 @@ The harness writes:
 
 It applies **zero edits**.
 
-## 2. Preview the plan
+## 2. Triage before reviewing
+
+Before opening dozens of actions one-by-one, summarize the pilot:
+
+```bash
+.venv/bin/python examples/workflow_pilot.py summarize \
+  --pilot pilot_outputs/workflow_nhanes_01
+```
+
+This prints grouped counts for issue types, action types, action origins,
+candidate types, evidence bases, decisions, and the highest-volume candidate
+targets. It is intended to identify detector/review floods before the human
+reviewer spends time on them.
+
+## 3. Preview the plan
 
 ```bash
 .venv/bin/data-cleaner preview \
@@ -91,7 +105,7 @@ Look for obviously duplicated proposals, scientifically questionable changes,
 large affected-cell counts, or proposals whose meaning cannot be judged from the
 available study context.
 
-## 3. Review every item
+## 4. Review every item
 
 Do **not** use `--approve-all` for the pilot. Review each action individually:
 
@@ -115,7 +129,7 @@ you from an undesirable merge/change.
 
 Human review is treated as workflow feedback, **not scientific ground truth**.
 
-## 4. Record obvious misses
+## 5. Record obvious misses
 
 After the review, inspect the workbook/profile with your normal domain knowledge.
 Write down any important issue the tool completely failed to surface. Examples:
@@ -128,7 +142,7 @@ Write down any important issue the tool completely failed to surface. Examples:
 Do not count features the project does not currently claim to detect merely to
 inflate the miss count.
 
-## 5. Score the workflow
+## 6. Score the workflow
 
 If review took about 12 minutes and you noticed two missed issues:
 
