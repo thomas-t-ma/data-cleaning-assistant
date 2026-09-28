@@ -20,10 +20,17 @@ A study schema is strongly preferred when you have one. Do not invent a schema
 just to improve the score.
 
 The model is local Ollama. The AI context excludes source paths, raw row samples,
-and identifier values, but it can contain category labels, missing-value tokens,
-and bounded detector evidence needed for semantic review. Pilot artifacts are
-local and may therefore still contain sensitive research terminology. Do not
-publish or upload them casually.
+and identifier values. In this v0.9 workflow experiment, **AI routing is semantic-only**:
+the model reviews bounded category-equivalence/fuzzy-label candidates, while
+mechanical missing-token, whitespace, date, numeric, and duplicate proposals
+remain deterministic human-review items and are never re-decided by the LLM.
+
+This routing is experimental; v0.8 production behavior is unchanged. The goal is
+to test whether removing redundant LLM review reduces burden without weakening
+the deterministic safety/human-approval boundary.
+
+Pilot artifacts are local and may still contain sensitive research terminology.
+Do not publish or upload them casually.
 
 ## Public starter dataset: NHANES sample
 
