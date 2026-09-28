@@ -89,6 +89,7 @@ class AIPlanResult:
     provider: str
     review_call_count: int = 0
     consensus_disagreement_count: int = 0
+    covered_ai_action_count: int = 0
 
 
 def _effect_key(action: CleaningAction) -> str:
@@ -503,11 +504,13 @@ def propose_ai_plan(
     if include_rules:
         actions.extend(rule_plan.actions)
 
+    covered_ai_action_count = 0
     for action in accepted:
         if any(
             _action_is_covered_by_existing(action, existing_action)
             for existing_action in actions
         ):
+            covered_ai_action_count += 1
             continue
         actions.append(action)
 
@@ -530,4 +533,5 @@ def propose_ai_plan(
         provider=provider.name,
         review_call_count=review_call_count,
         consensus_disagreement_count=disagreement_count,
+        covered_ai_action_count=covered_ai_action_count,
     )
