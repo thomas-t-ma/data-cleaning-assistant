@@ -16,7 +16,7 @@ from data_cleaning_assistant.actions import ActionType
 from data_cleaning_assistant.ai_candidates import build_ai_candidates
 from data_cleaning_assistant.ai_context import build_ai_context
 from data_cleaning_assistant.ai_models import AIPlannerResponse, CandidateDecision
-from data_cleaning_assistant.ai_planner import SYSTEM_PROMPT, _build_user_prompt, resolve_model
+from data_cleaning_assistant.ai_planner import _adaptive_consensus_review, resolve_model
 from data_cleaning_assistant.ai_provider import OllamaProvider, StructuredAIProvider
 from data_cleaning_assistant.engine import profile_dataset
 from data_cleaning_assistant.io import load_dataset
@@ -124,6 +124,10 @@ def score_response(
         actual = selection.decision.value if selection else "missing"
         required = expectation[candidate.id]
         mapping = candidate.action.parameters["mapping"]
+        rationale = selection.rationale if selection else "No model selection"
+        fail_closed = rationale.startswith("Adaptive consensus failed closed") or (
+            "tie-break review failed" in rationale
+        )
         row = {
             "candidate_id": candidate.id,
             "column": candidate.action.column,
@@ -131,13 +135,23 @@ def score_response(
             "basis": candidate.context.evidence.get("basis"),
             "expected": required,
             "actual": actual,
-            "correct": actual == required and candidate.id not in duplicates,
+            "correct": (
+                actual == required
+                and candidate.id not in duplicates
+                and not fail_closed
+            ),
             "confidence": selection.confidence if selection else None,
-            "rationale": selection.rationale if selection else "No model selection",
+            "rationale": rationale,
+            "fail_closed": fail_closed,
         }
         records.append(row)
     correct = sum(row["correct"] for row in records)
-    protocol_ok = not unknown and not duplicates and len(seen) == len(candidates)
+    protocol_ok = (
+        not unknown
+        and not duplicates
+        and len(seen) == len(candidates)
+        and not any(row["fail_closed"] for row in records)
+    )
     return {
         "correct": correct,
         "total": len(candidates),
@@ -164,10 +178,10 @@ def run(
             f"Score already exists: {output}. Choose a new --output to preserve history."
         )
     context, candidates, expectation = prepare(challenge_dir)
-    prompt = _build_user_prompt(context)
+    prompt = context.model_dump_json()
     # No test answer, source identifiers, source path, or other GDC tables go
-    # into the model prompt. We score using answer-key expectations only AFTER
-    # the returned model decisions are fixed.
+    # into the model context. We score using answer-key expectations only AFTER
+    # the returned consensus decisions are fixed.
     if any(
         item in prompt
         for item in (
@@ -181,14 +195,20 @@ def run(
     for index in range(1, runs + 1):
         started = time.perf_counter()
         try:
-            response = provider.generate_structured(
+            response, rejected, review_calls, disagreements = _adaptive_consensus_review(
+                provider,
                 model=model,
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=prompt,
-                response_model=AIPlannerResponse,
+                context=context,
+                candidates=candidates,
             )
             result = score_response(response, candidates, expectation)
             result["model_summary"] = response.summary
+            result["review_calls"] = review_calls
+            result["candidate_disagreements"] = disagreements
+            result["rejected_review_outputs"] = len(rejected)
+            if rejected:
+                result["protocol_ok"] = False
+                result["passed"] = False
             result["error"] = None
         except Exception as exc:
             # Make errors count as failures, not false deferrals.
@@ -207,7 +227,7 @@ def run(
         )
     payload = {
         "version": 1,
-        "purpose": "Synthetic-label semantic accept/defer benchmark, no data edits",
+        "purpose": "Synthetic-label adaptive-consensus benchmark, no data edits",
         "provider": provider.name,
         "model": model,
         "challenge_sha256": file_sha256(challenge_dir / WORKBOOK),
@@ -219,12 +239,21 @@ def run(
         "mean_latency_seconds": (
             sum(result["latency_seconds"] for result in results) / runs
         ),
+        "mean_review_calls": (
+            sum(result.get("review_calls", 0) for result in results) / runs
+        ),
+        "total_candidate_disagreements": sum(
+            result.get("candidate_disagreements", 0) for result in results
+        ),
         "results": results,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"Semantic score: {output}")
-    print("Only synthetic label metadata were sent to the local model; no edits were made.")
+    print(
+        "Only synthetic label metadata were sent to the local model; "
+        "adaptive consensus was used and no edits were made."
+    )
     return payload
 
 

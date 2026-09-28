@@ -93,7 +93,9 @@ def test_isolated_semantic_model_pass_and_unmodified_source(
     assert result["passing_runs"] == 3
     assert result["correct_decisions"] == 6
     assert result["total_decisions"] == 6
-    assert len(provider.prompts) == 3
+    assert len(provider.prompts) == 6
+    assert all(item["review_calls"] == 2 for item in result["results"])
+    assert result["mean_review_calls"] == 2.0
     assert all(item["protocol_ok"] for item in result["results"])
     assert file_sha256(source) == before
     assert file_sha256(challenge / "commpass_challenge.xlsx") == challenge_hash
@@ -128,7 +130,11 @@ def test_omitted_defer_does_not_count_as_correct(tmp_path: Path, monkeypatch) ->
     assert result["results"][0]["protocol_ok"] is False
     assert result["results"][0]["correct"] == 1
     assert any(
-        item["actual"] == "missing"
+        item["fail_closed"]
+        for item in result["results"][0]["decisions"]
+    )
+    assert any(
+        item["actual"] == "defer" and item["fail_closed"]
         for item in result["results"][0]["decisions"]
     )
 
