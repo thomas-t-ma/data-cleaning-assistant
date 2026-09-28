@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from .actions import ActionOrigin, CleaningAction, CleaningPlan, DeferredReview
+from .actions import ActionOrigin, ActionType, CleaningAction, CleaningPlan, DeferredReview
 from .ai_candidates import AICandidate, build_ai_candidates
 from .ai_context import build_ai_context
 from .ai_models import (
