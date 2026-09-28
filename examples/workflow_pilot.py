@@ -171,6 +171,101 @@ def start_pilot(
     return {"manifest": manifest, "trace": trace, "plan": result.plan}
 
 
+def summarize_pilot(pilot: Path) -> dict[str, Any]:
+    """Print a compact, privacy-conscious summary before manual review."""
+    pilot = pilot.expanduser().resolve()
+    profile = json.loads((pilot / PROFILE).read_text(encoding="utf-8"))
+    plan = CleaningPlan.model_validate_json((pilot / PLAN).read_text(encoding="utf-8"))
+    trace = json.loads((pilot / TRACE).read_text(encoding="utf-8"))
+
+    issue_types: dict[str, int] = {}
+    issue_targets: dict[str, int] = {}
+    for issue in profile.get("issues", []):
+        issue_type = str(issue.get("type", "unknown"))
+        issue_types[issue_type] = issue_types.get(issue_type, 0) + 1
+        target = f"{issue.get('table', '?')}.{issue.get('column') or '(table)'}"
+        issue_targets[target] = issue_targets.get(target, 0) + 1
+
+    action_types: dict[str, int] = {}
+    action_targets: dict[str, int] = {}
+    action_origins: dict[str, int] = {}
+    for action in plan.actions:
+        key = action.type.value
+        action_types[key] = action_types.get(key, 0) + 1
+        target = f"{action.table}.{action.column or '(table)'}"
+        action_targets[target] = action_targets.get(target, 0) + 1
+        origin = action.origin.value
+        action_origins[origin] = action_origins.get(origin, 0) + 1
+
+    candidate_bases: dict[str, int] = {}
+    candidate_types: dict[str, int] = {}
+    candidate_targets: dict[str, int] = {}
+    candidate_decisions: dict[str, int] = {}
+    for candidate in trace.get("candidates", []):
+        basis = str(candidate.get("basis") or "unspecified")
+        candidate_bases[basis] = candidate_bases.get(basis, 0) + 1
+        kind = str(candidate.get("type", "unknown"))
+        candidate_types[kind] = candidate_types.get(kind, 0) + 1
+        target = f"{candidate.get('table', '?')}.{candidate.get('column') or '(table)'}"
+        candidate_targets[target] = candidate_targets.get(target, 0) + 1
+        decision = str(candidate.get("decision", "missing"))
+        candidate_decisions[decision] = candidate_decisions.get(decision, 0) + 1
+
+    def top(mapping: dict[str, int], limit: int = 15) -> list[dict[str, Any]]:
+        return [
+            {"name": name, "count": count}
+            for name, count in sorted(
+                mapping.items(), key=lambda item: (-item[1], item[0])
+            )[:limit]
+        ]
+
+    payload = {
+        "version": 1,
+        "purpose": "Compact pre-review pilot triage; no edits",
+        "issue_count": len(profile.get("issues", [])),
+        "plan_action_count": len(plan.actions),
+        "deferred_review_count": len(plan.deferred_reviews),
+        "candidate_count": len(trace.get("candidates", [])),
+        "issue_types": dict(sorted(issue_types.items())),
+        "action_types": dict(sorted(action_types.items())),
+        "action_origins": dict(sorted(action_origins.items())),
+        "candidate_types": dict(sorted(candidate_types.items())),
+        "candidate_bases": dict(sorted(candidate_bases.items())),
+        "candidate_decisions": dict(sorted(candidate_decisions.items())),
+        "top_issue_targets": top(issue_targets),
+        "top_action_targets": top(action_targets),
+        "top_candidate_targets": top(candidate_targets),
+    }
+
+    print("WORKFLOW PILOT TRIAGE")
+    print(f"Issues: {payload['issue_count']}")
+    print(f"Plan actions: {payload['plan_action_count']}")
+    print(f"Deferred reviews: {payload['deferred_review_count']}")
+    print(f"AI candidates: {payload['candidate_count']}")
+    print("\nIssue types:")
+    for name, count in payload["issue_types"].items():
+        print(f"  {name}: {count}")
+    print("\nAction types:")
+    for name, count in payload["action_types"].items():
+        print(f"  {name}: {count}")
+    print("\nAction origins:")
+    for name, count in payload["action_origins"].items():
+        print(f"  {name}: {count}")
+    print("\nCandidate types:")
+    for name, count in payload["candidate_types"].items():
+        print(f"  {name}: {count}")
+    print("\nCandidate evidence bases:")
+    for name, count in payload["candidate_bases"].items():
+        print(f"  {name}: {count}")
+    print("\nCandidate decisions:")
+    for name, count in payload["candidate_decisions"].items():
+        print(f"  {name}: {count}")
+    print("\nTop candidate targets:")
+    for item in payload["top_candidate_targets"]:
+        print(f"  {item['name']}: {item['count']}")
+    return payload
+
+
 def _human_action_status(reviewed: CleaningPlan, action_ids: list[str]) -> str:
     actions = {action.id: action for action in reviewed.actions}
     matched = [actions[action_id] for action_id in action_ids if action_id in actions]
@@ -363,6 +458,13 @@ def main() -> None:
     starter.add_argument("--url", help="Ollama base URL; defaults to local")
     starter.add_argument("--think", action="store_true")
 
+    summarizer = commands.add_parser(
+        "summarize",
+        help="Print compact issue/action/candidate counts before manual review",
+    )
+    summarizer.add_argument("--pilot", type=Path, required=True)
+    summarizer.add_argument("--output", type=Path)
+
     scorer = commands.add_parser("score", help="Score AI decisions against a reviewed plan")
     scorer.add_argument("--pilot", type=Path, required=True)
     scorer.add_argument("--reviewed-plan", type=Path, required=True)
@@ -388,6 +490,16 @@ def main() -> None:
             schema=schema,
             schema_path=args.schema,
         )
+    elif args.command == "summarize":
+        payload = summarize_pilot(args.pilot)
+        if args.output is not None:
+            output = args.output.expanduser().resolve()
+            if output.exists():
+                raise FileExistsError(
+                    f"Summary output already exists: {output}. Choose a fresh path."
+                )
+            _write_json(output, payload)
+            print(f"Summary written to: {output}")
     else:
         score_pilot(
             args.pilot,
