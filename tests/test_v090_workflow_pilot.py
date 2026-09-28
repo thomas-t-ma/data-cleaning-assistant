@@ -135,6 +135,32 @@ def test_workflow_pilot_start_and_score_human_disagreement(
     assert file_sha256(source) == before
 
 
+def test_workflow_pilot_summary_groups_review_flood(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
+    from workflow_pilot import start_pilot, summarize_pilot
+
+    source = tmp_path / "research.csv"
+    _source(source)
+    pilot = tmp_path / "pilot"
+    start_pilot(
+        source,
+        pilot,
+        provider=PilotFakeProvider(),
+        model="fake-model",
+    )
+
+    summary = summarize_pilot(pilot)
+    captured = capsys.readouterr().out
+
+    assert summary["candidate_count"] == 2
+    assert summary["candidate_decisions"] == {"accept": 1, "defer": 1}
+    assert summary["candidate_types"]["normalize_categories"] == 2
+    assert "WORKFLOW PILOT TRIAGE" in captured
+    assert "Candidate decisions:" in captured
+
+
 def test_workflow_pilot_refuses_changed_source(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
     from workflow_pilot import score_pilot, start_pilot
