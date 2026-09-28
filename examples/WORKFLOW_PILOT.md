@@ -25,6 +25,34 @@ and bounded detector evidence needed for semantic review. Pilot artifacts are
 local and may therefore still contain sensitive research terminology. Do not
 publish or upload them casually.
 
+## Public starter workbook: GRAPE
+
+If you do not want to use private research data for the first workflow pilot, use
+the published GRAPE glaucoma workbook. It is a real CC0 research dataset with
+263 baseline eye records and 1115 follow-up visits in two sheets.
+
+Fetch and validate the exact public workbook:
+
+```bash
+.venv/bin/python examples/fetch_grape_workbook.py \
+  --out pilot_outputs/grape_public
+```
+
+The fetcher records the article/DOI/download provenance and SHA-256 and refuses
+unexpected sheet structure or record counts. It does not call a model.
+
+Then use:
+
+```bash
+SOURCE="pilot_outputs/grape_public/grape_vf_clinical_information.xlsx"
+OUT="pilot_outputs/workflow_grape_01"
+```
+
+For the first pass, do **not** invent a study schema. The publication documents
+several field meanings and states that `/` denotes absence of a corresponding
+CFP or OCT examination, but we want to see what the generic cleaner infers before
+adding source-specific dictionary knowledge.
+
 ## 1. Start a fresh pilot
 
 From the repository root:
