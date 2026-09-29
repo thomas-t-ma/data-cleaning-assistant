@@ -144,6 +144,7 @@ class ChangeSet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     executions: list[ActionExecution] = Field(default_factory=list)
     study_schema_sha256: str | None = None
+    review_session: ReviewSession | None = None
     result_path: str | None = None
     result_sha256: str | None = None
 
