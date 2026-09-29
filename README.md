@@ -77,6 +77,11 @@ accepted toward competing canonical targets, those conflicting AI proposals fail
 closed to human review unless deterministic/schema evidence already establishes a
 single canonical target.
 
+Free-response/comment fields are also excluded from category normalization and fuzzy
+semantic review when their response diversity/prose shape indicates narrative data.
+This prevents cosmetic edits such as `No` -> `no` inside comment fields from being
+presented as categorical cleaning.
+
 ## v0.8.0 — adaptive calibrated consensus
 
 v0.8.0 promotes the evidence-calibrated semantic-review policy into the production
