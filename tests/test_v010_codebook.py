@@ -127,7 +127,7 @@ def test_codebook_suggestion_skips_mixed_numeric_count_fields(
     source = tmp_path / "counts.csv"
     rows = ["0"] * 12 + ["1"] * 8 + ["2"] * 4 + ["Unclear"] * 6
     source.write_text(
-        "If yes, how many times? Enter number or Unclear\n"
+        '"If yes, how many times? Enter number or Unclear"\n'
         + "\n".join(rows)
         + "\n",
         encoding="utf-8",
