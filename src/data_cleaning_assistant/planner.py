@@ -58,6 +58,75 @@ def _canonical_category(frame: pd.DataFrame, column: str, variants: list[str]) -
     ).strip()
 
 
+def _canonical_multiselect_component(
+    frame: pd.DataFrame,
+    column: str,
+    variants: list[str],
+    delimiter: str,
+) -> str:
+    counts: Counter[str] = Counter()
+    for value in frame[column].tolist():
+        for component in str(value).split(delimiter):
+            component = component.strip()
+            if component:
+                counts[component] += 1
+    return max(
+        variants,
+        key=lambda value: (
+            counts[value],
+            int(value == value.strip()),
+            int(value[:1].isupper()),
+            -len(value),
+            value,
+        ),
+    ).strip()
+
+
+def _multiselect_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
+    if issue.column is None:
+        return None
+    delimiter = str(issue.evidence.get("delimiter", ";"))
+    groups = issue.evidence.get("variant_groups", [])
+    mapping: dict[str, str] = {}
+    for raw_group in groups:
+        variants = [str(value) for value in raw_group]
+        if len(variants) < 2:
+            continue
+        canonical = _canonical_multiselect_component(
+            frame,
+            issue.column,
+            variants,
+            delimiter,
+        )
+        for variant in variants:
+            if variant != canonical:
+                mapping[variant] = canonical
+    if not mapping:
+        return None
+
+    parameters = {"delimiter": delimiter, "mapping": mapping}
+    return CleaningAction(
+        id=_stable_action_id(
+            ActionType.NORMALIZE_MULTISELECT,
+            issue.table,
+            issue.column,
+            parameters,
+        ),
+        type=ActionType.NORMALIZE_MULTISELECT,
+        table=issue.table,
+        column=issue.column,
+        title="Normalize multi-select component labels",
+        description=(
+            "Normalize capitalization/whitespace variants inside structured "
+            "multi-select responses while preserving every selected component. "
+            "Review the component mapping before approval."
+        ),
+        parameters=parameters,
+        confidence=issue.confidence,
+        issue_ids=[issue.id],
+    )
+
+
 def _category_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
     if issue.column is None:
         return None
@@ -301,6 +370,8 @@ def propose_actions(
 
         if issue.type == "category_inconsistency":
             action = _category_action(issue, frame)
+        elif issue.type == "multiselect_component_inconsistency":
+            action = _multiselect_action(issue, frame)
         elif issue.type == "hidden_missing_values":
             if structural_only_column(issue, frame):
                 notes.append(
