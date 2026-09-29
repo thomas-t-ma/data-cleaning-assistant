@@ -46,6 +46,31 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
                 }
             )
 
+    deferred_bases = Counter()
+    deferred_targets = Counter()
+    deferred_examples = []
+    for item in plan.deferred_reviews:
+        evidence = item.evidence or {}
+        basis = str(evidence.get("basis") or "unspecified")
+        deferred_bases[basis] += 1
+        action = item.proposed_action
+        target = (
+            f"{action.table}.{action.column}"
+            if action.column is not None
+            else action.table
+        )
+        deferred_targets[target] += 1
+        deferred_examples.append(
+            {
+                "candidate_id": item.candidate_id,
+                "target": target,
+                "basis": basis,
+                "parameters": action.parameters,
+                "confidence": item.confidence,
+                "rationale": item.rationale,
+            }
+        )
+
     review = plan.review_session
     event_scopes = Counter()
     event_decisions = Counter()
@@ -74,6 +99,12 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
         "action_origins": dict(sorted(origin_counts.items())),
         "action_decisions": dict(sorted(decision_counts.items())),
         "deferred_ai_reviews": len(plan.deferred_reviews),
+        "deferred_ai_bases": dict(sorted(deferred_bases.items())),
+        "top_deferred_ai_targets": [
+            {"target": target, "count": count}
+            for target, count in deferred_targets.most_common(20)
+        ],
+        "deferred_ai_examples": deferred_examples[:50],
         "semantic_ai_context_candidates": candidate_count,
         "candidate_types": dict(sorted(candidate_types.items())),
         "candidate_bases": dict(sorted(candidate_bases.items())),
@@ -93,6 +124,18 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
     print("V0.9 WORKFLOW SUMMARY")
     print(f"Actions: {payload['actions']}")
     print(f"Deferred AI reviews: {payload['deferred_ai_reviews']}")
+    if payload["deferred_ai_reviews"]:
+        print("Deferred AI evidence bases:")
+        for name, count in payload["deferred_ai_bases"].items():
+            print(f"  {name}: {count}")
+        print("Deferred AI examples:")
+        for item in payload["deferred_ai_examples"][:15]:
+            print(
+                f"  {item['candidate_id']} | {item['target']} | "
+                f"{item['basis']} | {item['parameters']} | "
+                f"confidence={item['confidence']:.2f}"
+            )
+            print(f"    rationale: {item['rationale']}")
     if candidate_count is not None:
         print(f"Semantic AI context candidates: {candidate_count}")
         print("Candidate evidence bases:")
