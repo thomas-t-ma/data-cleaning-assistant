@@ -114,12 +114,13 @@ def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
         return False
 
     unique_ratio = len(set(values)) / len(values)
-    if len(set(values)) <= 10 or unique_ratio < 0.60:
-        return False
-
     word_counts = [len(value.split()) for value in values]
     long_response_ratio = sum(
         len(value) >= 40 or words >= 8
+        for value, words in zip(values, word_counts, strict=False)
+    ) / len(values)
+    prose_response_ratio = sum(
+        len(value) >= 24 or words >= 4
         for value, words in zip(values, word_counts, strict=False)
     ) / len(values)
     name_hint = re.search(
@@ -128,6 +129,19 @@ def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
         name,
         re.IGNORECASE,
     ) is not None
+
+    # A strongly prose-like field name plus prose-shaped values is enough even
+    # in a small dataset. Do not require >10 unique responses: that assumption
+    # fails on small studies and test fixtures.
+    if (
+        name_hint
+        and unique_ratio >= 0.50
+        and prose_response_ratio >= 0.25
+    ):
+        return True
+
+    if len(set(values)) <= 10 or unique_ratio < 0.60:
+        return False
 
     # High-diversity prose should not be treated as a category codebook even
     # when a few repeated short answers happen to differ only by case.
