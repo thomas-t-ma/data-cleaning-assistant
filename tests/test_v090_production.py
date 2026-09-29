@@ -81,6 +81,33 @@ def test_default_ai_routing_skips_mechanical_cleanup(tmp_path: Path) -> None:
     assert ActionType.TRIM_WHITESPACE in action_types
 
 
+def test_default_ai_routing_excludes_case_only_category_variants(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "case_variants.csv"
+    source.write_text(
+        "subject_id,archive\n"
+        "S001,Dryad\n"
+        "S002,dryad\n"
+        "S003,Dryad\n",
+        encoding="utf-8",
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=NeverCalledProvider(),
+        model="fake-model",
+    )
+
+    assert result.candidates == []
+    assert result.review_call_count == 0
+    assert result.plan.actions
+    assert any(
+        action.type == ActionType.NORMALIZE_CATEGORIES
+        for action in result.plan.actions
+    )
+
+
 def test_default_ai_routing_keeps_semantic_category_review(tmp_path: Path) -> None:
     source = tmp_path / "semantic.csv"
     source.write_text(
