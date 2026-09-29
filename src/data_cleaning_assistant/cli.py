@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from rich.console import Console
 from rich.table import Table
 
@@ -15,6 +16,7 @@ from .ai_context import build_ai_context
 from .ai_planner import build_review_contexts, propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
+from .codebook import suggest_codebooks
 from .engine import profile_dataset
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
@@ -387,6 +389,53 @@ def profile(
             encoding="utf-8",
         )
         console.print(f"\n[green]Report written to:[/green] {output}")
+
+
+@app.command("codebook-suggest")
+def codebook_suggest_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect for recurring categorical vocabularies")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write review-only codebook suggestions as YAML"),
+    ] = Path("codebook_suggestions.yaml"),
+) -> None:
+    """Suggest recurring categorical vocabularies without changing data."""
+    loaded = load_dataset(input_path)
+    report = suggest_codebooks(input_path, loaded.tables)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(
+            report.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    table = Table(title="Candidate codebooks — review required")
+    table.add_column("Table")
+    table.add_column("Column")
+    table.add_column("Core labels", justify="right")
+    table.add_column("Coverage", justify="right")
+    table.add_column("Rare write-ins", justify="right")
+    table.add_column("Exact variant mappings", justify="right")
+    for suggestion in report.suggestions:
+        table.add_row(
+            suggestion.table,
+            suggestion.column,
+            str(len(suggestion.core_values)),
+            f"{suggestion.core_coverage:.1%}",
+            str(len(suggestion.rare_values)),
+            str(len(suggestion.canonical_map)),
+        )
+    console.print(table)
+    console.print(
+        "[dim]These are observed vocabulary suggestions only. "
+        "They are not a study schema and authorize no transformations.[/dim]"
+    )
+    console.print(f"[green]Codebook suggestions written to:[/green] {output}")
 
 
 @app.command("ai-status")

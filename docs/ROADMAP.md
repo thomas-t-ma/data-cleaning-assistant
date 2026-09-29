@@ -85,8 +85,12 @@ Status: **initial normalization-equivalent QA implemented**
 
 ### 4. Schema and codebook inference
 
-Planned:
+Status: **initial read-only codebook suggestions implemented**
 
+- Suggest dominant recurring categorical vocabularies with coverage statistics,
+  rare write-ins, exact case/whitespace mappings, and unresolved ties.
+- Keep suggestions separate from StudySchema authority until explicitly reviewed
+  and promoted by the researcher.
 - Suggest candidate categorical codebooks from repeated stable labels.
 - Distinguish raw observed spellings from a true canonical vocabulary.
 - Allow users to promote reviewed codebooks into explicit study schemas.
