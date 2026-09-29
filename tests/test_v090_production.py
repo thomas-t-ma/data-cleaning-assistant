@@ -92,6 +92,47 @@ def test_default_ai_routing_skips_mechanical_cleanup(tmp_path: Path) -> None:
     assert ActionType.TRIM_WHITESPACE in action_types
 
 
+def test_sparse_free_text_does_not_become_category_normalization(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "comments.csv"
+    rows = [
+        "S001,NA",
+        "S002,NA",
+        "S003,NA",
+        "S004,NA",
+        "S005,No",
+        "S006,no",
+        "S007,first detailed comment",
+        "S008,second detailed comment",
+        "S009,third detailed comment",
+        "S010,fourth detailed comment",
+        "S011,fifth detailed comment",
+        "S012,sixth detailed comment",
+        "S013,seventh detailed comment",
+        "S014,eighth detailed comment",
+        "S015,ninth detailed comment",
+        "S016,tenth detailed comment",
+    ]
+    source.write_text(
+        "subject_id,comments\n" + "\n".join(rows) + "\n",
+        encoding="utf-8",
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=NeverCalledProvider(),
+        model="fake-model",
+    )
+
+    assert result.candidates == []
+    assert not any(
+        action.type == ActionType.NORMALIZE_CATEGORIES
+        and action.column == "comments"
+        for action in result.plan.actions
+    )
+
+
 def test_default_ai_routing_keeps_semantic_category_review(tmp_path: Path) -> None:
     source = tmp_path / "semantic.csv"
     source.write_text(
