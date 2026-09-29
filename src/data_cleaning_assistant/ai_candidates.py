@@ -442,11 +442,16 @@ def semantic_review_candidates(candidates: list[AICandidate]) -> list[AICandidat
     fuzzy category candidates where lexical similarity alone cannot establish
     whether two labels have the same scientific meaning.
     """
+    semantic_bases = {
+        "fuzzy_similarity_only",
+        "single_edit_typo_pattern",
+        "numeric_zero_padding_equivalence",
+    }
     selected = [
         candidate
         for candidate in candidates
         if candidate.action.type == ActionType.NORMALIZE_CATEGORIES
-        and candidate.context.evidence.get("basis") != "case_or_whitespace_equivalence"
+        and candidate.context.evidence.get("basis") in semantic_bases
     ]
     for index, candidate in enumerate(selected, start=1):
         session_id = f"C{index:03d}"
