@@ -20,6 +20,7 @@ from .structure import (
     infer_candidate_keys,
     infer_grain,
     infer_relationships,
+    normalization_equivalent_duplicate_issues,
     repeated_entity_issues,
 )
 
@@ -156,6 +157,7 @@ def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> D
         issues.extend(detect_multiselect_component_variants(table_name, frame))
         issues.extend(detect_conditional_consistency(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
+        issues.extend(normalization_equivalent_duplicate_issues(table_name, frame))
 
     if schema is not None:
         issues.extend(schema_issues(loaded.tables, schema))

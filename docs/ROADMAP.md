@@ -73,8 +73,11 @@ Examples:
 
 ### 3. Duplicate and entity-resolution recall
 
-Planned:
+Status: **initial normalization-equivalent QA implemented**
 
+- Flag non-identical rows that become identical only after safe text normalization
+  and structural-missing normalization.
+- Keep the finding non-executable: no automatic row deletion or merging.
 - Move beyond exact duplicate rows to bounded near-duplicate record suggestions.
 - Separate identifier disagreement from ordinary field disagreement.
 - Never delete or merge rows automatically.

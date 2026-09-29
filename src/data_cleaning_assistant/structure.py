@@ -228,6 +228,75 @@ def repeated_entity_issues(table: str, frame: pd.DataFrame) -> list[Issue]:
     ]
 
 
+def _normalized_duplicate_cell(value):
+    if is_missing_like(value):
+        return ("missing",)
+    if isinstance(value, str):
+        return ("text", normalize_text(value))
+    return ("value", type(value).__name__, repr(value))
+
+
+def normalization_equivalent_duplicate_issues(
+    table: str,
+    frame: pd.DataFrame,
+) -> list[Issue]:
+    """Flag non-identical rows that collapse under safe text normalization.
+
+    This is QA-only. It never authorizes row deletion because repeated
+    observations may be legitimate even when every field is normalization-
+    equivalent.
+    """
+    if len(frame) < 2 or len(frame.columns) == 0:
+        return []
+
+    groups: dict[tuple, list[int]] = {}
+    for row_position, row in enumerate(frame.itertuples(index=False, name=None)):
+        signature = tuple(_normalized_duplicate_cell(value) for value in row)
+        groups.setdefault(signature, []).append(row_position)
+
+    candidate_groups: list[list[int]] = []
+    for positions in groups.values():
+        if len(positions) < 2:
+            continue
+        subset = frame.iloc[positions]
+        if len(subset.drop_duplicates()) <= 1:
+            continue
+        candidate_groups.append(positions)
+
+    if not candidate_groups:
+        return []
+
+    affected = sorted({position for group in candidate_groups for position in group})
+    return [
+        Issue(
+            id=f"structure_normalized_duplicates_{table}".replace(" ", "_")[:120],
+            type="normalization_equivalent_rows",
+            severity=Severity.MEDIUM,
+            table=table,
+            title="Rows become identical after safe text normalization",
+            description=(
+                "Some rows are not exact duplicates but become identical after "
+                "collapsing structural missing sentinels and normalizing text case/"
+                "surrounding whitespace. They may be duplicate records or legitimate "
+                "repeated observations. No rows are removed automatically."
+            ),
+            confidence=0.95,
+            affected_count=len(affected),
+            row_indices_sample=affected[:10],
+            evidence={
+                "group_count": len(candidate_groups),
+                "largest_group_size": max(len(group) for group in candidate_groups),
+                "row_groups_sample": [group[:10] for group in candidate_groups[:10]],
+            },
+            suggested_action=(
+                "Review the grouped rows together. Do not delete or merge records "
+                "without study-specific evidence."
+            ),
+            auto_fix_safe=False,
+        )
+    ]
+
+
 def infer_relationships(tables: dict[str, pd.DataFrame]) -> list[CrossTableRelationship]:
     relationships: list[CrossTableRelationship] = []
     table_names = list(tables)
