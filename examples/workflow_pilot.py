@@ -1,0 +1,832 @@
+"""Local-only real-workflow pilot harness for v0.8+.
+
+This harness does not apply data edits. It captures a privacy-conscious trace of
+candidate decisions, then scores those decisions against a later human review.
+
+Typical workflow:
+    python examples/workflow_pilot.py start --source DATA.xlsx --out pilot_outputs/workflow_01 --model qwen3.5:4b
+    data-cleaner review DATA.xlsx pilot_outputs/workflow_01/ai_plan.json -o pilot_outputs/workflow_01/reviewed_plan.json
+    python examples/workflow_pilot.py score --pilot pilot_outputs/workflow_01 --reviewed-plan pilot_outputs/workflow_01/reviewed_plan.json
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+from data_cleaning_assistant.actions import ActionDecision, CleaningPlan
+from data_cleaning_assistant.ai_planner import (
+    _action_is_covered_by_existing,
+    propose_ai_plan,
+    resolve_model,
+)
+from data_cleaning_assistant.ai_provider import OllamaProvider, StructuredAIProvider
+from data_cleaning_assistant.engine import profile_dataset
+from data_cleaning_assistant.planner import file_sha256
+from data_cleaning_assistant.study_schema import StudySchema, load_study_schema
+from data_cleaning_assistant.io import load_dataset
+from data_cleaning_assistant.transforms import preview_action
+
+MANIFEST = "pilot_manifest.json"
+PROFILE = "profile.json"
+CONTEXT = "ai_context.json"
+PLAN = "ai_plan.json"
+TRACE = "decision_trace.json"
+SCORE = "workflow_score.json"
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
+
+
+def _source_descriptor(source: Path) -> dict[str, Any]:
+    return {
+        "name": source.name,
+        "suffix": source.suffix.lower(),
+        "sha256": file_sha256(source),
+    }
+
+
+def _schema_descriptor(schema_path: Path | None) -> dict[str, Any] | None:
+    if schema_path is None:
+        return None
+    schema_path = schema_path.expanduser().resolve()
+    return {
+        "name": schema_path.name,
+        "sha256": file_sha256(schema_path),
+    }
+
+
+def _selection_by_id(result) -> dict[str, Any]:
+    return {selection.candidate_id: selection for selection in result.response.selections}
+
+
+def _trace_payload(result) -> dict[str, Any]:
+    selections = _selection_by_id(result)
+    rows: list[dict[str, Any]] = []
+    for candidate in result.candidates:
+        selection = selections.get(candidate.id)
+        covering = [
+            action.id
+            for action in result.plan.actions
+            if _action_is_covered_by_existing(candidate.action, action)
+        ]
+        rows.append(
+            {
+                "candidate_id": candidate.id,
+                "type": candidate.action.type.value,
+                "table": candidate.action.table,
+                "column": candidate.action.column,
+                "parameters": candidate.action.parameters,
+                "basis": candidate.context.evidence.get("basis"),
+                "question": candidate.context.question,
+                "decision": selection.decision.value if selection else "missing",
+                "rationale": selection.rationale if selection else "No consensus selection",
+                "confidence": selection.confidence if selection else None,
+                "covered_by_plan_action_ids": covering,
+            }
+        )
+
+    return {
+        "version": 1,
+        "purpose": "Local real-workflow pilot decision trace; no data edits",
+        "provider": result.provider,
+        "model": result.model,
+        "candidate_routing": "semantic_only",
+        "review_call_count": result.review_call_count,
+        "candidate_disagreement_count": result.consensus_disagreement_count,
+        "covered_ai_action_count": result.covered_ai_action_count,
+        "model_summary": result.response.summary,
+        "candidate_count": len(result.candidates),
+        "candidates": rows,
+    }
+
+
+def start_pilot(
+    source: Path,
+    out: Path,
+    *,
+    provider: StructuredAIProvider,
+    model: str,
+    schema: StudySchema | None = None,
+    schema_path: Path | None = None,
+) -> dict[str, Any]:
+    source = source.expanduser().resolve()
+    out = out.expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    if out.exists():
+        raise FileExistsError(
+            f"Pilot output already exists: {out}. Choose a fresh directory to preserve history."
+        )
+
+    out.mkdir(parents=True, exist_ok=False)
+    report = profile_dataset(source, schema=schema)
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model=model,
+        include_rules=True,
+        schema=schema,
+        semantic_only=True,
+    )
+
+    _write_json(out / PROFILE, report.model_dump(mode="json"))
+    (out / CONTEXT).write_text(result.context.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    (out / PLAN).write_text(result.plan.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    trace = _trace_payload(result)
+    _write_json(out / TRACE, trace)
+
+    manifest = {
+        "version": 1,
+        "purpose": "Local real-workflow usefulness pilot; source is never modified",
+        "source": _source_descriptor(source),
+        # The absolute path is local-only convenience for resuming the pilot.
+        # pilot_outputs is gitignored; do not publish this manifest if the path is sensitive.
+        "source_path": str(source),
+        "schema": _schema_descriptor(schema_path),
+        "model": model,
+        "provider": provider.name,
+        "candidate_routing": "semantic_only",
+        "files": {
+            "profile": PROFILE,
+            "ai_context": CONTEXT,
+            "ai_plan": PLAN,
+            "decision_trace": TRACE,
+        },
+        "no_edits_applied": True,
+    }
+    _write_json(out / MANIFEST, manifest)
+
+    print("REAL-WORKFLOW PILOT STARTED")
+    print(f"Source hash: {manifest['source']['sha256']}")
+    print(f"Profile issues: {len(report.issues)}")
+    print(f"Plan actions: {len(result.plan.actions)}")
+    print(f"AI candidates: {trace['candidate_count']}")
+    print(
+        "Consensus: "
+        f"{result.review_call_count} model call(s), "
+        f"{result.consensus_disagreement_count} candidate disagreement(s)"
+    )
+    print(f"AI actions already covered by deterministic plan: {result.covered_ai_action_count}")
+    print(f"Deferred AI candidates: {len(result.plan.deferred_reviews)}")
+    print("No edits were applied.")
+    print(f"Pilot directory: {out}")
+    return {"manifest": manifest, "trace": trace, "plan": result.plan}
+
+
+def summarize_pilot(pilot: Path) -> dict[str, Any]:
+    """Print a compact, privacy-conscious summary before manual review."""
+    pilot = pilot.expanduser().resolve()
+    profile = json.loads((pilot / PROFILE).read_text(encoding="utf-8"))
+    plan = CleaningPlan.model_validate_json((pilot / PLAN).read_text(encoding="utf-8"))
+    trace = json.loads((pilot / TRACE).read_text(encoding="utf-8"))
+    manifest = json.loads((pilot / MANIFEST).read_text(encoding="utf-8"))
+    source = Path(manifest["source_path"])
+    if not source.is_file() or file_sha256(source) != manifest["source"]["sha256"]:
+        raise ValueError(
+            "Pilot source is missing or changed since the pilot was created. "
+            "Cannot compute reliable action preview counts."
+        )
+    tables = load_dataset(source).tables
+
+    issue_types: dict[str, int] = {}
+    issue_targets: dict[str, int] = {}
+    for issue in profile.get("issues", []):
+        issue_type = str(issue.get("type", "unknown"))
+        issue_types[issue_type] = issue_types.get(issue_type, 0) + 1
+        target = f"{issue.get('table', '?')}.{issue.get('column') or '(table)'}"
+        issue_targets[target] = issue_targets.get(target, 0) + 1
+
+    action_types: dict[str, int] = {}
+    action_targets: dict[str, int] = {}
+    action_origins: dict[str, int] = {}
+    action_families: dict[str, dict[str, Any]] = {}
+    for action in plan.actions:
+        key = action.type.value
+        action_types[key] = action_types.get(key, 0) + 1
+        target = f"{action.table}.{action.column or '(table)'}"
+        action_targets[target] = action_targets.get(target, 0) + 1
+        origin = action.origin.value
+        action_origins[origin] = action_origins.get(origin, 0) + 1
+
+        params = json.dumps(action.parameters, sort_keys=True, default=str)
+        family_key = f"{action.type.value} | {params}"
+        family = action_families.setdefault(
+            family_key,
+            {
+                "type": action.type.value,
+                "parameters": action.parameters,
+                "actions": 0,
+                "preview_affected_total": 0,
+                "targets": [],
+            },
+        )
+        family["actions"] += 1
+        if len(family["targets"]) < 10:
+            family["targets"].append(target)
+        preview = preview_action(tables, action, sample_limit=1)
+        family["preview_affected_total"] = (
+            family.get("preview_affected_total", 0) + preview.affected_count
+        )
+
+    candidate_bases: dict[str, int] = {}
+    candidate_types: dict[str, int] = {}
+    candidate_targets: dict[str, int] = {}
+    candidate_decisions: dict[str, int] = {}
+    for candidate in trace.get("candidates", []):
+        basis = str(candidate.get("basis") or "unspecified")
+        candidate_bases[basis] = candidate_bases.get(basis, 0) + 1
+        kind = str(candidate.get("type", "unknown"))
+        candidate_types[kind] = candidate_types.get(kind, 0) + 1
+        target = f"{candidate.get('table', '?')}.{candidate.get('column') or '(table)'}"
+        candidate_targets[target] = candidate_targets.get(target, 0) + 1
+        decision = str(candidate.get("decision", "missing"))
+        candidate_decisions[decision] = candidate_decisions.get(decision, 0) + 1
+
+    def top(mapping: dict[str, int], limit: int = 15) -> list[dict[str, Any]]:
+        return [
+            {"name": name, "count": count}
+            for name, count in sorted(
+                mapping.items(), key=lambda item: (-item[1], item[0])
+            )[:limit]
+        ]
+
+    payload = {
+        "version": 1,
+        "purpose": "Compact pre-review pilot triage; no edits",
+        "issue_count": len(profile.get("issues", [])),
+        "plan_action_count": len(plan.actions),
+        "deferred_review_count": len(plan.deferred_reviews),
+        "candidate_count": len(trace.get("candidates", [])),
+        "issue_types": dict(sorted(issue_types.items())),
+        "action_types": dict(sorted(action_types.items())),
+        "action_origins": dict(sorted(action_origins.items())),
+        "action_families": sorted(
+            action_families.values(),
+            key=lambda item: (-item["actions"], item["type"], str(item["parameters"])),
+        ),
+        "candidate_types": dict(sorted(candidate_types.items())),
+        "candidate_bases": dict(sorted(candidate_bases.items())),
+        "candidate_decisions": dict(sorted(candidate_decisions.items())),
+        "top_issue_targets": top(issue_targets),
+        "top_action_targets": top(action_targets),
+        "top_candidate_targets": top(candidate_targets),
+    }
+
+    print("WORKFLOW PILOT TRIAGE")
+    print(f"Issues: {payload['issue_count']}")
+    print(f"Plan actions: {payload['plan_action_count']}")
+    print(f"Deferred reviews: {payload['deferred_review_count']}")
+    print(f"AI candidates: {payload['candidate_count']}")
+    print("\nIssue types:")
+    for name, count in payload["issue_types"].items():
+        print(f"  {name}: {count}")
+    print("\nAction types:")
+    for name, count in payload["action_types"].items():
+        print(f"  {name}: {count}")
+    print("\nAction origins:")
+    for name, count in payload["action_origins"].items():
+        print(f"  {name}: {count}")
+    print("\nAction families:")
+    for family in payload["action_families"][:15]:
+        print(
+            f"  {family['type']} {family['parameters']}: "
+            f"{family['actions']} action(s), "
+            f"{family['preview_affected_total']} affected item(s) by independent preview"
+        )
+    print("\nCandidate types:")
+    for name, count in payload["candidate_types"].items():
+        print(f"  {name}: {count}")
+    print("\nCandidate evidence bases:")
+    for name, count in payload["candidate_bases"].items():
+        print(f"  {name}: {count}")
+    print("\nCandidate decisions:")
+    for name, count in payload["candidate_decisions"].items():
+        print(f"  {name}: {count}")
+    print("\nTop candidate targets:")
+    for item in payload["top_candidate_targets"]:
+        print(f"  {item['name']}: {item['count']}")
+    return payload
+
+
+def _action_target(action) -> str:
+    return (
+        f"{action.table}.{action.column}"
+        if action.column is not None
+        else action.table
+    )
+
+
+def _grouped_action_families(tables, plan: CleaningPlan) -> list[dict[str, Any]]:
+    families: dict[str, dict[str, Any]] = {}
+    for action in plan.actions:
+        params = json.dumps(action.parameters, sort_keys=True, default=str)
+        key = f"{action.origin.value}|{action.type.value}|{params}"
+        preview = preview_action(tables, action, sample_limit=3)
+        family = families.setdefault(
+            key,
+            {
+                "origin": action.origin.value,
+                "type": action.type.value,
+                "parameters": action.parameters,
+                "members": [],
+                "affected_total": 0,
+            },
+        )
+        family["members"].append((action, preview))
+        family["affected_total"] += preview.affected_count
+
+    output = list(families.values())
+    output.sort(
+        key=lambda family: (
+            -len(family["members"]),
+            family["type"],
+            str(family["parameters"]),
+        )
+    )
+    for family in output:
+        family["members"].sort(
+            key=lambda item: (-item[1].affected_count, _action_target(item[0]))
+        )
+    return output
+
+
+def _save_reviewed_plan(plan: CleaningPlan, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(plan.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
+def review_grouped(
+    pilot: Path,
+    output: Path | None = None,
+    *,
+    input_fn=input,
+) -> CleaningPlan:
+    """Review deterministic actions by family while preserving explicit approval."""
+    pilot = pilot.expanduser().resolve()
+    manifest = json.loads((pilot / MANIFEST).read_text(encoding="utf-8"))
+    source = Path(manifest["source_path"])
+    expected_hash = manifest["source"]["sha256"]
+    if not source.is_file() or file_sha256(source) != expected_hash:
+        raise ValueError(
+            "Pilot source is missing or changed since the pilot was created. "
+            "Refusing grouped review against a different dataset version."
+        )
+
+    plan = CleaningPlan.model_validate_json((pilot / PLAN).read_text(encoding="utf-8"))
+    if plan.source_sha256 != expected_hash:
+        raise ValueError("Pilot plan is not bound to the frozen source hash.")
+
+    output = (
+        output.expanduser().resolve()
+        if output is not None
+        else pilot / "reviewed_plan.json"
+    )
+    if output.exists():
+        raise FileExistsError(
+            f"Reviewed plan already exists: {output}. Choose a fresh --output."
+        )
+
+    tables = load_dataset(source).tables
+    families = _grouped_action_families(tables, plan)
+
+    print("GROUPED WORKFLOW REVIEW")
+    print(
+        f"{len(plan.actions)} action(s) grouped into {len(families)} family/families. "
+        "No edits will be applied."
+    )
+
+    for family_index, family in enumerate(families, start=1):
+        members = family["members"]
+        print(
+            f"\n=== Family {family_index}/{len(families)} ===\n"
+            f"Type: {family['type']}\n"
+            f"Origin: {family['origin']}\n"
+            f"Parameters: {family['parameters']}\n"
+            f"Actions: {len(members)}\n"
+            f"Affected items by independent preview: {family['affected_total']}"
+        )
+        print("Highest-impact targets:")
+        for action, preview in members[:12]:
+            print(f"  {_action_target(action)}: {preview.affected_count}")
+        if len(members) > 12:
+            print(f"  ... {len(members) - 12} additional target(s)")
+
+        while True:
+            decision = input_fn(
+                "Family decision: [a]pprove all, [r]eject all, "
+                "[i]nspect individually, [s]kip/defer, [q]uit: "
+            ).strip().casefold()
+
+            if decision in {"a", "approve"}:
+                if len(members) > 1:
+                    confirmation = input_fn(
+                        "Type YES to approve this entire family "
+                        f"({len(members)} actions; "
+                        f"{family['affected_total']} affected items): "
+                    ).strip()
+                    if confirmation != "YES":
+                        print("Family approval not confirmed.")
+                        continue
+                for action, _preview in members:
+                    action.decision = ActionDecision.APPROVED
+                break
+
+            if decision in {"r", "reject"}:
+                for action, _preview in members:
+                    action.decision = ActionDecision.REJECTED
+                break
+
+            if decision in {"s", "skip", "defer"}:
+                break
+
+            if decision in {"i", "inspect"}:
+                quit_requested = False
+                for member_index, (action, preview) in enumerate(members, start=1):
+                    print(
+                        f"\n  Action {member_index}/{len(members)}: "
+                        f"{_action_target(action)}\n"
+                        f"  Affected: {preview.affected_count}\n"
+                        f"  Description: {action.description}"
+                    )
+                    if preview.sample_changes:
+                        print("  Sample changes:")
+                        for change in preview.sample_changes[:3]:
+                            print(
+                                f"    row {change.row_index}: "
+                                f"{change.old_value.value!r} -> {change.new_value.value!r}"
+                            )
+                    elif preview.sample_rows:
+                        positions = [
+                            snapshot.row_position
+                            for snapshot in preview.sample_rows[:3]
+                        ]
+                        print(
+                            "  Sample duplicate row position(s): "
+                            + ", ".join(str(position) for position in positions)
+                        )
+
+                    while True:
+                        item_decision = input_fn(
+                            "  Decision: [a]pprove, [r]eject, "
+                            "[s]kip/defer, [q]uit: "
+                        ).strip().casefold()
+                        if item_decision in {"a", "approve"}:
+                            action.decision = ActionDecision.APPROVED
+                            break
+                        if item_decision in {"r", "reject"}:
+                            action.decision = ActionDecision.REJECTED
+                            break
+                        if item_decision in {"s", "skip", "defer"}:
+                            break
+                        if item_decision in {"q", "quit"}:
+                            quit_requested = True
+                            break
+                        print("  Enter a, r, s, or q.")
+                    if quit_requested:
+                        break
+
+                if quit_requested:
+                    _save_reviewed_plan(plan, output)
+                    print(f"Partial grouped review saved to: {output}")
+                    return plan
+                break
+
+            if decision in {"q", "quit"}:
+                _save_reviewed_plan(plan, output)
+                print(f"Partial grouped review saved to: {output}")
+                return plan
+
+            print("Enter a, r, i, s, or q.")
+
+    # Semantic AI deferrals remain individual decisions because their meaning
+    # is candidate-specific rather than a mechanical transformation family.
+    for deferred in plan.deferred_reviews:
+        if deferred.status != "pending":
+            continue
+        action = deferred.proposed_action
+        preview = preview_action(tables, action, sample_limit=3)
+        print(
+            f"\n=== Deferred AI candidate {deferred.candidate_id} ===\n"
+            f"Target: {_action_target(action)}\n"
+            f"Question: {deferred.question}\n"
+            f"AI rationale: {deferred.rationale}\n"
+            f"Parameters: {action.parameters}\n"
+            f"Affected items by independent preview: {preview.affected_count}"
+        )
+        while True:
+            decision = input_fn(
+                "Manual decision: [a]pprove candidate, [r]eject, "
+                "[s]kip/defer, [q]uit: "
+            ).strip().casefold()
+            if decision in {"a", "approve"}:
+                matching = next(
+                    (
+                        existing
+                        for existing in plan.actions
+                        if existing.type == action.type
+                        and existing.table == action.table
+                        and existing.column == action.column
+                        and existing.parameters == action.parameters
+                    ),
+                    None,
+                )
+                if matching is not None:
+                    matching.decision = ActionDecision.APPROVED
+                else:
+                    approved_action = action.model_copy(deep=True)
+                    approved_action.decision = ActionDecision.APPROVED
+                    approved_action.description = (
+                        "Manually approved deferred AI candidate: "
+                        + deferred.rationale
+                    )
+                    plan.actions.append(approved_action)
+                deferred.status = "approved"
+                break
+            if decision in {"r", "reject"}:
+                deferred.status = "rejected"
+                break
+            if decision in {"s", "skip", "defer"}:
+                break
+            if decision in {"q", "quit"}:
+                _save_reviewed_plan(plan, output)
+                print(f"Partial grouped review saved to: {output}")
+                return plan
+            print("Enter a, r, s, or q.")
+
+    _save_reviewed_plan(plan, output)
+    approved = sum(
+        action.decision == ActionDecision.APPROVED for action in plan.actions
+    )
+    rejected = sum(
+        action.decision == ActionDecision.REJECTED for action in plan.actions
+    )
+    unresolved = sum(
+        action.decision == ActionDecision.PROPOSED for action in plan.actions
+    )
+    print(f"\nGrouped review written to: {output}")
+    print(
+        f"Approved: {approved} · Rejected: {rejected} · "
+        f"Deferred/unresolved: {unresolved}"
+    )
+    print("No edits were applied.")
+    return plan
+
+
+def _human_action_status(reviewed: CleaningPlan, action_ids: list[str]) -> str:
+    actions = {action.id: action for action in reviewed.actions}
+    matched = [actions[action_id] for action_id in action_ids if action_id in actions]
+    if not matched:
+        return "unresolved"
+    if any(action.decision == ActionDecision.APPROVED for action in matched):
+        return "approved"
+    if all(action.decision == ActionDecision.REJECTED for action in matched):
+        return "rejected"
+    return "unresolved"
+
+
+def _human_candidate_status(
+    candidate: dict[str, Any],
+    reviewed: CleaningPlan,
+) -> str:
+    if candidate["decision"] == "defer":
+        deferred = next(
+            (
+                item
+                for item in reviewed.deferred_reviews
+                if item.candidate_id == candidate["candidate_id"]
+            ),
+            None,
+        )
+        if deferred is None:
+            return "unresolved"
+        if deferred.status == "approved":
+            return "approved"
+        if deferred.status == "rejected":
+            return "rejected"
+        return "unresolved"
+
+    if candidate["decision"] == "accept":
+        return _human_action_status(
+            reviewed,
+            list(candidate.get("covered_by_plan_action_ids", [])),
+        )
+    return "unresolved"
+
+
+def score_pilot(
+    pilot: Path,
+    reviewed_plan: Path,
+    *,
+    review_minutes: float | None = None,
+    missed_issues: list[str] | None = None,
+    output: Path | None = None,
+) -> dict[str, Any]:
+    pilot = pilot.expanduser().resolve()
+    reviewed_plan = reviewed_plan.expanduser().resolve()
+    manifest = json.loads((pilot / MANIFEST).read_text(encoding="utf-8"))
+    trace = json.loads((pilot / TRACE).read_text(encoding="utf-8"))
+    reviewed = CleaningPlan.model_validate_json(reviewed_plan.read_text(encoding="utf-8"))
+
+    source = Path(manifest["source_path"])
+    expected_hash = manifest["source"]["sha256"]
+    if not source.is_file() or file_sha256(source) != expected_hash:
+        raise ValueError(
+            "Pilot source is missing or changed since the trace was created. "
+            "Do not score against a different dataset version."
+        )
+    if reviewed.source_sha256 != expected_hash:
+        raise ValueError("Reviewed plan is not bound to the pilot source hash.")
+
+    rows: list[dict[str, Any]] = []
+    for candidate in trace["candidates"]:
+        human = _human_candidate_status(candidate, reviewed)
+        model = candidate["decision"]
+        if human == "unresolved":
+            outcome = "unresolved"
+        elif model == "accept" and human == "approved":
+            outcome = "agree_accept"
+        elif model == "accept" and human == "rejected":
+            outcome = "human_rejected_ai_accept"
+        elif model == "defer" and human == "rejected":
+            outcome = "agree_defer"
+        elif model == "defer" and human == "approved":
+            outcome = "human_approved_ai_defer"
+        else:
+            outcome = "unresolved"
+        rows.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "type": candidate["type"],
+                "table": candidate["table"],
+                "column": candidate["column"],
+                "basis": candidate.get("basis"),
+                "ai_decision": model,
+                "human_decision": human,
+                "outcome": outcome,
+            }
+        )
+
+    resolved = [row for row in rows if row["outcome"] != "unresolved"]
+    agreement = [row for row in resolved if row["outcome"] in {"agree_accept", "agree_defer"}]
+    overreach = [row for row in rows if row["outcome"] == "human_rejected_ai_accept"]
+    overcaution = [row for row in rows if row["outcome"] == "human_approved_ai_defer"]
+
+    action_counts = {
+        "approved": sum(a.decision == ActionDecision.APPROVED for a in reviewed.actions),
+        "rejected": sum(a.decision == ActionDecision.REJECTED for a in reviewed.actions),
+        "unresolved": sum(a.decision == ActionDecision.PROPOSED for a in reviewed.actions),
+        "total": len(reviewed.actions),
+    }
+    deferred_counts = {
+        "approved": sum(item.status == "approved" for item in reviewed.deferred_reviews),
+        "rejected": sum(item.status == "rejected" for item in reviewed.deferred_reviews),
+        "unresolved": sum(item.status == "pending" for item in reviewed.deferred_reviews),
+        "total": len(reviewed.deferred_reviews),
+    }
+
+    payload = {
+        "version": 1,
+        "purpose": "Human-vs-AI workflow usefulness score; human review is not ground truth",
+        "source_sha256": expected_hash,
+        "model": trace["model"],
+        "provider": trace["provider"],
+        "candidate_count": len(rows),
+        "resolved_candidate_reviews": len(resolved),
+        "unresolved_candidate_reviews": len(rows) - len(resolved),
+        "human_ai_agreement_count": len(agreement),
+        "human_ai_agreement_rate_resolved": (
+            len(agreement) / len(resolved) if resolved else None
+        ),
+        "human_rejected_ai_accept_count": len(overreach),
+        "human_approved_ai_defer_count": len(overcaution),
+        "review_call_count": trace["review_call_count"],
+        "candidate_disagreement_count": trace["candidate_disagreement_count"],
+        "covered_ai_action_count": trace["covered_ai_action_count"],
+        "plan_action_review": action_counts,
+        "deferred_candidate_review": deferred_counts,
+        "review_minutes": review_minutes,
+        "missed_issues_reported_by_reviewer": list(missed_issues or []),
+        "candidate_outcomes": rows,
+        "interpretation_note": (
+            "This report measures agreement with one human review and workflow burden. "
+            "It does not establish scientific correctness, clinical safety, or recall of "
+            "issues the current detectors never surfaced."
+        ),
+    }
+
+    output = (
+        output.expanduser().resolve()
+        if output is not None
+        else pilot / SCORE
+    )
+    if output.exists():
+        raise FileExistsError(
+            f"Workflow score already exists: {output}. Choose a fresh --output to preserve history."
+        )
+    _write_json(output, payload)
+
+    print("WORKFLOW PILOT SCORE")
+    print(
+        f"Candidate decisions resolved: {len(resolved)}/{len(rows)}; "
+        f"human/AI agreement: {len(agreement)}/{len(resolved) if resolved else 0}"
+    )
+    print(f"Human rejected AI accepts: {len(overreach)}")
+    print(f"Human approved AI deferrals: {len(overcaution)}")
+    print(
+        "Plan actions reviewed: "
+        f"{action_counts['approved']} approved, "
+        f"{action_counts['rejected']} rejected, "
+        f"{action_counts['unresolved']} unresolved"
+    )
+    print(
+        "Deferred AI reviews: "
+        f"{deferred_counts['approved']} approved, "
+        f"{deferred_counts['rejected']} rejected, "
+        f"{deferred_counts['unresolved']} unresolved"
+    )
+    if review_minutes is not None:
+        print(f"Human review time: {review_minutes:.1f} minute(s)")
+    print(f"Reviewer-reported missed issues: {len(missed_issues or [])}")
+    print("Human review is not treated as scientific ground truth.")
+    print(f"Score written to: {output}")
+    return payload
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    starter = commands.add_parser("start", help="Create a fresh read-only workflow pilot")
+    starter.add_argument("--source", type=Path, required=True)
+    starter.add_argument("--out", type=Path, required=True)
+    starter.add_argument("--schema", type=Path)
+    starter.add_argument("--model", help="Exact installed Ollama model; omit if only one")
+    starter.add_argument("--url", help="Ollama base URL; defaults to local")
+    starter.add_argument("--think", action="store_true")
+
+    summarizer = commands.add_parser(
+        "summarize",
+        help="Print compact issue/action/candidate counts before manual review",
+    )
+    summarizer.add_argument("--pilot", type=Path, required=True)
+    summarizer.add_argument("--output", type=Path)
+
+    grouped = commands.add_parser(
+        "review-grouped",
+        help="Review plan actions by transformation family without applying edits",
+    )
+    grouped.add_argument("--pilot", type=Path, required=True)
+    grouped.add_argument("--output", type=Path)
+
+    scorer = commands.add_parser("score", help="Score AI decisions against a reviewed plan")
+    scorer.add_argument("--pilot", type=Path, required=True)
+    scorer.add_argument("--reviewed-plan", type=Path, required=True)
+    scorer.add_argument("--review-minutes", type=float)
+    scorer.add_argument(
+        "--missed-issue",
+        action="append",
+        default=[],
+        help="Reviewer-observed issue the system did not surface; repeat as needed",
+    )
+    scorer.add_argument("--output", type=Path)
+
+    args = parser.parse_args()
+    if args.command == "start":
+        schema = load_study_schema(args.schema) if args.schema else None
+        provider = OllamaProvider(args.url, think=args.think)
+        model = resolve_model(provider, args.model)
+        start_pilot(
+            args.source,
+            args.out,
+            provider=provider,
+            model=model,
+            schema=schema,
+            schema_path=args.schema,
+        )
+    elif args.command == "summarize":
+        payload = summarize_pilot(args.pilot)
+        if args.output is not None:
+            output = args.output.expanduser().resolve()
+            if output.exists():
+                raise FileExistsError(
+                    f"Summary output already exists: {output}. Choose a fresh path."
+                )
+            _write_json(output, payload)
+            print(f"Summary written to: {output}")
+    elif args.command == "review-grouped":
+        review_grouped(args.pilot, args.output)
+    else:
+        score_pilot(
+            args.pilot,
+            args.reviewed_plan,
+            review_minutes=args.review_minutes,
+            missed_issues=args.missed_issue,
+            output=args.output,
+        )
+
+
+if __name__ == "__main__":
+    main()
