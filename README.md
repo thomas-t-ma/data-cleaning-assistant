@@ -69,6 +69,14 @@ AI reviews to zero while preserving all 72 deterministic proposals; those 72
 actions formed four exact review families. This demonstrates workflow behavior on
 one dataset, not generalization, scientific correctness, or clinical safety.
 
+For semantic category review, v0.9 also applies deterministic safety gates before
+and after model consensus. Semicolon-delimited multi-select responses are not
+compared with whole-string fuzzy merging. Model calls are split into focused
+batches of at most eight candidates. After consensus, if the same source label is
+accepted toward competing canonical targets, those conflicting AI proposals fail
+closed to human review unless deterministic/schema evidence already establishes a
+single canonical target.
+
 ## v0.8.0 — adaptive calibrated consensus
 
 v0.8.0 promotes the evidence-calibrated semantic-review policy into the production
