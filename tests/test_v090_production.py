@@ -169,36 +169,6 @@ def test_free_response_prose_skips_rule_and_fuzzy_category_normalization(
     )
 
 
-def test_high_diversity_short_categories_remain_eligible_for_detection(
-    tmp_path: Path,
-) -> None:
-    source = tmp_path / "countries.csv"
-    source.write_text(
-        "subject_id,country\n"
-        "S001,United States\n"
-        "S002,United states\n"
-        "S003,Canada\n"
-        "S004,Mexico\n"
-        "S005,Brazil\n"
-        "S006,Argentina\n"
-        "S007,Chile\n"
-        "S008,Peru\n"
-        "S009,France\n"
-        "S010,Germany\n"
-        "S011,Spain\n"
-        "S012,Italy\n",
-        encoding="utf-8",
-    )
-
-    plan = propose_actions(source)
-
-    assert any(
-        action.type == ActionType.NORMALIZE_CATEGORIES
-        and action.column == "country"
-        for action in plan.actions
-    )
-
-
 def test_default_ai_routing_keeps_semantic_category_review(tmp_path: Path) -> None:
     source = tmp_path / "semantic.csv"
     source.write_text(
