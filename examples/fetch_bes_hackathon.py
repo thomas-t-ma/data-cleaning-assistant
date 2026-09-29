@@ -57,8 +57,13 @@ def _download(url: str, destination: Path) -> None:
             handle.write(chunk)
 
 
-def _detect_text_encoding(path: Path) -> str:
-    """Prefer UTF-8, with an explicit Windows-1252 fallback for upstream CSVs."""
+def _csv_shape(path: Path) -> tuple[list[str], int, str, int]:
+    """Read CSV structure losslessly, even if upstream contains invalid UTF-8 bytes.
+
+    Strict UTF-8 is preferred. If it fails, surrogateescape preserves each
+    undecodable byte as a reversible surrogate code point. This is used only for
+    structural validation; the downloaded file itself is never rewritten.
+    """
     payload = path.read_bytes()
     if not payload:
         raise ValueError(f"Downloaded CSV is empty: {path.name}")
@@ -67,34 +72,40 @@ def _detect_text_encoding(path: Path) -> str:
 
     try:
         payload.decode("utf-8-sig")
-        return "utf-8-sig"
+        mode = "utf-8-sig"
+        undecodable_bytes = 0
+        errors = "strict"
     except UnicodeDecodeError:
-        pass
+        decoded = payload.decode("utf-8-sig", errors="surrogateescape")
+        undecodable_bytes = sum(
+            0xDC80 <= ord(character) <= 0xDCFF
+            for character in decoded
+        )
+        if undecodable_bytes == 0:
+            raise ValueError(
+                f"Could not account for upstream decoding failure: {path.name}"
+            )
+        mode = "utf-8-sig+surrogateescape"
+        errors = "surrogateescape"
 
-    try:
-        payload.decode("cp1252")
-        return "cp1252"
-    except UnicodeDecodeError as exc:
-        raise ValueError(
-            f"Downloaded CSV is neither valid UTF-8 nor Windows-1252: {path.name}"
-        ) from exc
-
-
-def _csv_shape(path: Path) -> tuple[list[str], int, str]:
-    encoding = _detect_text_encoding(path)
-    with path.open("r", encoding=encoding, newline="") as handle:
+    with path.open(
+        "r",
+        encoding="utf-8-sig",
+        errors=errors,
+        newline="",
+    ) as handle:
         reader = csv.reader(handle)
         try:
             header = next(reader)
         except StopIteration as exc:
             raise ValueError(f"Downloaded CSV is empty: {path.name}") from exc
         rows = sum(1 for row in reader if row)
-    return header, rows, encoding
+    return header, rows, mode, undecodable_bytes
 
 
 def validate_sources(raw_path: Path, cleaned_path: Path) -> dict[str, object]:
-    raw_header, raw_rows, raw_encoding = _csv_shape(raw_path)
-    clean_header, clean_rows, clean_encoding = _csv_shape(cleaned_path)
+    raw_header, raw_rows, raw_decoding, raw_bad_bytes = _csv_shape(raw_path)
+    clean_header, clean_rows, clean_decoding, clean_bad_bytes = _csv_shape(cleaned_path)
 
     raw_requirements = {
         "timestamp": "Timestamp" in raw_header,
@@ -135,10 +146,12 @@ def validate_sources(raw_path: Path, cleaned_path: Path) -> dict[str, object]:
     return {
         "raw_rows": raw_rows,
         "raw_columns": len(raw_header),
-        "raw_encoding": raw_encoding,
+        "raw_decoding": raw_decoding,
+        "raw_undecodable_bytes": raw_bad_bytes,
         "clean_rows": clean_rows,
         "clean_columns": len(clean_header),
-        "clean_encoding": clean_encoding,
+        "clean_decoding": clean_decoding,
+        "clean_undecodable_bytes": clean_bad_bytes,
     }
 
 
@@ -180,7 +193,8 @@ def fetch(out: Path) -> dict[str, object]:
             "bytes": raw_path.stat().st_size,
             "rows": shape["raw_rows"],
             "columns": shape["raw_columns"],
-            "encoding": shape["raw_encoding"],
+            "text_decoding": shape["raw_decoding"],
+            "undecodable_byte_count": shape["raw_undecodable_bytes"],
         },
         "cleaned_reference": {
             "filename": CLEAN_NAME,
@@ -189,7 +203,8 @@ def fetch(out: Path) -> dict[str, object]:
             "bytes": clean_path.stat().st_size,
             "rows": shape["clean_rows"],
             "columns": shape["clean_columns"],
-            "encoding": shape["clean_encoding"],
+            "text_decoding": shape["clean_decoding"],
+            "undecodable_byte_count": shape["clean_undecodable_bytes"],
         },
         "notes": (
             "Upstream describes the raw file as anonymized Google Form research "
@@ -206,12 +221,13 @@ def fetch(out: Path) -> dict[str, object]:
     print("BES public research sources downloaded and validated.")
     print(
         f"Raw: {shape['raw_rows']} rows x {shape['raw_columns']} columns "
-        f"[{shape['raw_encoding']}] ({raw_path})"
+        f"[{shape['raw_decoding']}; "
+        f"{shape['raw_undecodable_bytes']} undecodable byte(s)] ({raw_path})"
     )
     print(
         f"Cleaned reference: {shape['clean_rows']} rows x "
-        f"{shape['clean_columns']} columns [{shape['clean_encoding']}] "
-        f"({clean_path})"
+        f"{shape['clean_columns']} columns [{shape['clean_decoding']}; "
+        f"{shape['clean_undecodable_bytes']} undecodable byte(s)] ({clean_path})"
     )
     print(f"Pinned upstream commit: {PINNED_COMMIT}")
     print(f"Manifest: {out / 'source_manifest.json'}")
