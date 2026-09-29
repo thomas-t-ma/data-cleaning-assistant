@@ -5,7 +5,7 @@ import uuid
 
 import pandas as pd
 
-from ..inference import is_missing_like, normalize_text
+from ..inference import is_missing_like, normalize_text, parse_number
 from ..models import Issue, Severity
 
 
@@ -13,8 +13,11 @@ _TRIGGER_PATTERN = re.compile(
     r"^\s*(?:\d+\.\s*)?if\s+(yes|no)\b",
     re.IGNORECASE,
 )
-_YES = {"yes", "y", "true", "1"}
-_NO = {"no", "n", "false", "0"}
+_TEXT_YES = {"yes", "y", "true"}
+_TEXT_NO = {"no", "n", "false"}
+_YES = _TEXT_YES | {"1"}
+_NO = _TEXT_NO | {"0"}
+_COUNT_PATTERN = re.compile(r"\b(how many|count|number)\b", re.IGNORECASE)
 _UNCERTAIN = {
     "unclear",
     "unsure",
@@ -59,7 +62,7 @@ def _has_required_detail(value) -> bool:
     if is_missing_like(value) or not str(value).strip():
         return False
     normalized = normalize_text(value)
-    return normalized not in _YES and normalized not in _NO
+    return normalized not in _TEXT_YES and normalized not in _TEXT_NO
 
 
 def detect_conditional_consistency(
@@ -98,6 +101,7 @@ def detect_conditional_consistency(
         if parent_column is None:
             continue
 
+        count_like = _COUNT_PATTERN.search(dependent_column) is not None
         contradiction_rows: list[int] = []
         missing_detail_rows: list[int] = []
         for row_position, (parent_value, dependent_value) in enumerate(
@@ -111,16 +115,35 @@ def detect_conditional_consistency(
             if parent_state is None:
                 continue
 
+            numeric_detail = (
+                parse_number(dependent_value) if count_like else None
+            )
+
             if parent_state == trigger_state:
-                if not _has_required_detail(dependent_value):
+                if (
+                    count_like
+                    and trigger_state == "yes"
+                    and numeric_detail is not None
+                    and numeric_detail <= 0
+                ):
+                    contradiction_rows.append(row_position)
+                elif not _has_required_detail(dependent_value):
                     missing_detail_rows.append(row_position)
+                continue
+
+            if (
+                count_like
+                and trigger_state == "yes"
+                and parent_state == "no"
+                and numeric_detail == 0
+            ):
                 continue
 
             dependent_normalized = normalize_text(dependent_value)
             opposite_state_answer = (
-                dependent_normalized in _YES
+                dependent_normalized in _TEXT_YES
                 if trigger_state == "yes"
-                else dependent_normalized in _NO
+                else dependent_normalized in _TEXT_NO
             )
             if _has_required_detail(dependent_value) or opposite_state_answer:
                 contradiction_rows.append(row_position)
@@ -155,6 +178,7 @@ def detect_conditional_consistency(
                     "trigger_state": trigger_state,
                     "parent_binary_score": parent_score,
                     "column_distance": distance,
+                    "count_like_dependent": count_like,
                     "contradiction_count": len(contradiction_rows),
                     "missing_detail_count": len(missing_detail_rows),
                     "contradiction_rows_sample": contradiction_rows[:10],

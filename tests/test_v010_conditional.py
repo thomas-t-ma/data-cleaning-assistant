@@ -67,3 +67,50 @@ def test_if_yes_field_does_not_link_to_nonbinary_parent(tmp_path: Path) -> None:
     )
 
     assert _conditional_issues(source) == []
+
+
+def test_count_dependency_treats_zero_as_numeric_not_boolean(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "counts.csv"
+    source.write_text(
+        "subject_id,Has the data been cited?,If yes, how many times? Enter number or Unclear\n"
+        "S001,No,0\n"
+        "S002,Yes,1\n"
+        "S003,Yes,0\n"
+        "S004,No,Unclear\n"
+        "S005,Yes,NA\n"
+        "S006,No,No\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue.evidence["count_like_dependent"] is True
+    assert issue.evidence["contradiction_count"] == 2
+    assert issue.evidence["missing_detail_count"] == 1
+    assert issue.affected_count == 3
+
+
+def test_if_no_dependency_is_supported(tmp_path: Path) -> None:
+    source = tmp_path / "if_no.csv"
+    source.write_text(
+        "subject_id,Is the file usable?,If no, explain\n"
+        "S001,Yes,\n"
+        "S002,No,Corrupt archive\n"
+        "S003,Yes,Corrupt archive\n"
+        "S004,No,\n"
+        "S005,Unclear,Unclear\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue.evidence["trigger_state"] == "no"
+    assert issue.evidence["contradiction_count"] == 1
+    assert issue.evidence["missing_detail_count"] == 1
+    assert issue.affected_count == 2
