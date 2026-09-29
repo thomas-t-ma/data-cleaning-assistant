@@ -160,6 +160,72 @@ def test_sparse_free_text_does_not_become_category_normalization(
     )
 
 
+def test_free_response_prose_skips_rule_and_fuzzy_category_normalization(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "free_response.csv"
+    source.write_text(
+        "subject_id,Any comments about the code?\n"
+        "S001,No\n"
+        "S002,no\n"
+        "S003,The archived scripts run after several manual preprocessing steps.\n"
+        "S004,The repository contains code but the documentation is incomplete.\n"
+        "S005,Continuous integration was not described in the repository.\n"
+        "S006,The analysis uses several scripts with project-specific paths.\n"
+        "S007,The code was available but one dependency could not be installed.\n"
+        "S008,The README describes data files more clearly than the analysis code.\n"
+        "S009,Several helper functions are embedded directly in the main script.\n"
+        "S010,The repository includes tests but they do not cover the full workflow.\n"
+        "S011,The analysis code contains comments but no separate developer guide.\n"
+        "S012,The package documentation is available on a different website.\n",
+        encoding="utf-8",
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=NeverCalledProvider(),
+        model="fake-model",
+    )
+
+    assert result.candidates == []
+    assert result.review_call_count == 0
+    assert not any(
+        action.type == ActionType.NORMALIZE_CATEGORIES
+        and action.column == "Any comments about the code?"
+        for action in result.plan.actions
+    )
+
+
+def test_high_diversity_short_categories_remain_eligible_for_detection(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "countries.csv"
+    source.write_text(
+        "subject_id,country\n"
+        "S001,United States\n"
+        "S002,United states\n"
+        "S003,Canada\n"
+        "S004,Mexico\n"
+        "S005,Brazil\n"
+        "S006,Argentina\n"
+        "S007,Chile\n"
+        "S008,Peru\n"
+        "S009,France\n"
+        "S010,Germany\n"
+        "S011,Spain\n"
+        "S012,Italy\n",
+        encoding="utf-8",
+    )
+
+    plan = propose_actions(source)
+
+    assert any(
+        action.type == ActionType.NORMALIZE_CATEGORIES
+        and action.column == "country"
+        for action in plan.actions
+    )
+
+
 def test_default_ai_routing_keeps_semantic_category_review(tmp_path: Path) -> None:
     source = tmp_path / "semantic.csv"
     source.write_text(
