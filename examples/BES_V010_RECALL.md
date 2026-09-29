@@ -73,6 +73,18 @@ Examples include:
 
 These findings are QA-only and create no cleaning action.
 
+### Other / specify consistency QA
+
+- 0 explicit Other/write-in dependencies are detected in this BES export.
+- None of the 67 column headers explicitly asks respondents to specify, explain,
+  or describe an Other selection.
+- Ordinary phrases containing "other" therefore do not create inferred
+  parent/dependent relationships.
+
+This is an intentional negative result: the detector requires explicit write-in
+wording plus an observed Other category rather than treating the word "other" as
+sufficient evidence.
+
 ### Normalization-equivalent duplicate QA
 
 - 0 groups are found in this BES source.
@@ -98,7 +110,7 @@ authorize no transformations.
 
 ## Synthetic deterministic benchmark
 
-The frozen v0.10 recall suite currently contains 14 positive/negative-control
+The frozen v0.10 recall suite currently contains 16 positive/negative-control
 cases spanning:
 
 - multi-select component normalization;
@@ -112,7 +124,7 @@ cases spanning:
 - codebook positive exposure;
 - count-field codebook rejection.
 
-At the current checkpoint the suite passes 14/14 with:
+At the current checkpoint the suite passes 16/16 with:
 
 - required recall: 100%;
 - forbidden exposures: 0.
