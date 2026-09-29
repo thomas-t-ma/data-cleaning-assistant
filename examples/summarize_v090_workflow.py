@@ -16,9 +16,35 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
     decision_counts = Counter(action.decision.value for action in plan.actions)
 
     candidate_count = None
+    candidate_types = Counter()
+    candidate_bases = Counter()
+    candidate_targets = Counter()
+    candidate_rows = []
     if context_path is not None:
         context = json.loads(context_path.read_text(encoding="utf-8"))
-        candidate_count = len(context.get("candidates", []))
+        candidates = context.get("candidates", [])
+        candidate_count = len(candidates)
+        for candidate in candidates:
+            candidate_type = str(candidate.get("type", "unknown"))
+            candidate_types[candidate_type] += 1
+            evidence = candidate.get("evidence") or {}
+            basis = str(evidence.get("basis") or "unspecified")
+            candidate_bases[basis] += 1
+            target = (
+                f"{candidate.get('table', '?')}.{candidate.get('column') or '(table)'}"
+            )
+            candidate_targets[target] += 1
+            candidate_rows.append(
+                {
+                    "id": candidate.get("id"),
+                    "type": candidate_type,
+                    "target": target,
+                    "basis": basis,
+                    "proposed_change": candidate.get("proposed_change"),
+                    "evidence": evidence,
+                    "question": candidate.get("question"),
+                }
+            )
 
     review = plan.review_session
     event_scopes = Counter()
@@ -49,6 +75,13 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
         "action_decisions": dict(sorted(decision_counts.items())),
         "deferred_ai_reviews": len(plan.deferred_reviews),
         "semantic_ai_context_candidates": candidate_count,
+        "candidate_types": dict(sorted(candidate_types.items())),
+        "candidate_bases": dict(sorted(candidate_bases.items())),
+        "top_candidate_targets": [
+            {"target": target, "count": count}
+            for target, count in candidate_targets.most_common(20)
+        ],
+        "candidate_examples": candidate_rows[:50],
         "review_duration_seconds": (
             review.duration_seconds if review is not None else None
         ),
@@ -62,6 +95,18 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
     print(f"Deferred AI reviews: {payload['deferred_ai_reviews']}")
     if candidate_count is not None:
         print(f"Semantic AI context candidates: {candidate_count}")
+        print("Candidate evidence bases:")
+        for name, count in payload["candidate_bases"].items():
+            print(f"  {name}: {count}")
+        print("Top semantic candidate targets:")
+        for item in payload["top_candidate_targets"]:
+            print(f"  {item['target']}: {item['count']}")
+        print("Candidate examples:")
+        for candidate in payload["candidate_examples"][:20]:
+            print(
+                f"  {candidate['id']} | {candidate['target']} | "
+                f"{candidate['basis']} | {candidate['proposed_change']}"
+            )
     print("Action types:")
     for name, count in payload["action_types"].items():
         print(f"  {name}: {count}")
