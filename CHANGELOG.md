@@ -10,6 +10,10 @@
 - Persisted review-session provenance from the reviewed plan into the execution `ChangeSet` audit.
 - Aligned `ai-context` with the production semantic-only model surface.
 - Added direct regression coverage that malformed Ollama structured output is wrapped as a provider error and therefore fails closed.
+- Added deterministic guards against whole-string fuzzy merges of semicolon-delimited multi-select responses.
+- Added bounded semantic review batches (maximum 8 candidates) with focused per-target model context, so one oversized prompt cannot poison an entire run.
+- Distinguished Ollama inference timeouts from connection failures in provider diagnostics.
+- Added a post-consensus mapping-consistency veto: competing AI-accepted canonical targets for the same source label fail closed unless deterministic/schema evidence resolves the canonical target.
 - The routing/grouping changes were motivated by a public NHANES-derived workflow pilot in which 71 redundant AI reviews collapsed to zero while all 72 deterministic proposals remained available; grouped review reduced those 72 actions to four exact transformation families. This is product/workflow evidence, not scientific or clinical validation.
 
 
