@@ -97,6 +97,45 @@ def meaningful_values(series: pd.Series, limit: int | None = None) -> list[Any]:
     return values if limit is None else values[:limit]
 
 
+def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
+    """Conservatively identify survey/comment fields that should not be category-normalized.
+
+    Repeated prose tokens such as "No"/"no" inside an otherwise free-response
+    column are not evidence of a categorical codebook. Use both response
+    diversity and prose shape so ordinary low-cardinality categorical columns
+    remain eligible for category normalization.
+    """
+    values = [
+        str(value).strip()
+        for value in series.tolist()
+        if not is_missing_like(value) and str(value).strip()
+    ]
+    if len(values) < 3:
+        return False
+
+    unique_ratio = len(set(values)) / len(values)
+    if len(set(values)) <= 10 or unique_ratio < 0.60:
+        return False
+
+    word_counts = [len(value.split()) for value in values]
+    long_response_ratio = sum(
+        len(value) >= 40 or words >= 8
+        for value, words in zip(values, word_counts, strict=False)
+    ) / len(values)
+    name_hint = re.search(
+        r"\b(comment|comments|note|notes|description|details|explain|"
+        r"specify|please\s+paste|free[- ]?text)\b",
+        name,
+        re.IGNORECASE,
+    ) is not None
+
+    # High-diversity prose should not be treated as a category codebook even
+    # when a few repeated short answers happen to differ only by case.
+    if unique_ratio >= 0.75 and long_response_ratio >= 0.20:
+        return True
+    return name_hint and unique_ratio >= 0.60
+
+
 def parse_number(value: Any) -> float | None:
     if is_null(value) or isinstance(value, bool):
         return None
