@@ -1,59 +1,117 @@
 # Roadmap
 
-## v0.7.2 — forty-case independent semantic stress test (current)
+## Current production: v0.9.0
 
-- Fixed synthetic cleaning corpus with hidden answer keys.
-- AI-only scoring so deterministic rules do not inflate model performance.
-- Required-action recall.
-- Accepted-action precision.
-- Forbidden-action acceptance counts.
-- Deterministic validator catch-rate measurement.
-- Semantically distinct fuzzy-category safety stress tests.
-- Repeatable local-model latency measurement.
-- Detailed JSON benchmark artifacts for model comparisons.
-- Soft issue-ID provenance backed by independent local evidence matching.
-- No AI row-deletion authority.
-- Exact rejected-proposal diagnostics and validator catch accounting.
-- Non-thinking Ollama mode by default for structured planning, with opt-in `--think`.
-- Deterministic construction of bounded candidate actions.
-- Short session-local candidate IDs for small-model reliability.
-- AI limited to semantic accept/defer decisions rather than action authoring.
-- Unsafe capabilities such as row deletion and identifier coercion removed from the AI candidate surface.
-- Skip the model entirely when no AI-review candidates exist.
-- Preserve the original core suite as a fixed regression benchmark.
-- Add a harder research suite with realistic semantic ambiguity and meaningful missing-like categories.
-- Support `core`, `research`, and combined benchmark execution.
-- Distinguish structural null sentinels from contextual missingness labels.
-- Remove contextual null-collapse actions from both deterministic and AI candidate surfaces by default.
-- Add explicit unsafe-candidate-exposure metrics.
-- Add numeric zero-padding equivalence evidence for research category labels.
-- Add conservative single-edit typo-shape evidence while excluding numeric and short-token semantic distinctions.
-- Add opt-in study dictionaries and read-only longitudinal/cross-table QA.
-- Persist non-executable AI deferrals for explicit researcher review.
-- Acquire and audit open CoMMpass clinical metadata before real-data modeling.
-- Summarize complete-coverage findings without dropping them from JSON.
-- Prefer declared foreign-key relationships and grain over inferred shared identifiers.
-- Scope outlier QA to declared assay/unit groups.
-- Show overlap warnings for independently previewed actions.
-- Warn when unscoped generic numeric measurements mix multiple assay/unit categories.
-- Suppress routine actions for entirely structural-only columns, retaining non-executable issue-linked planning notes.
-- Treat exact blank CSV/Excel cells as existing missingness coverage, not proposed null conversions.
-- Seed four bounded test defects in an isolated public-data workbook and score deterministic proposals against a private answer key.
-- Exercise fixture-only transformations, persistence, and undo; protect original and challenge input hashes.
-- Score local model accept/defer decisions on two isolated synthetic-label pairs, with per-run latency and protocol failures.
+v0.9.0 established the conservative execution and review boundary for the
+project:
 
-### v0.4.x evaluation and provider hardening
+- deterministic preprocessing remains the default source of executable proposals;
+- local AI is reserved for bounded semantic category-equivalence decisions;
+- semantic review is split into focused batches of at most four candidates;
+- multi-select whole-value fuzzy merges are blocked;
+- free-response/comment fields are excluded from category normalization and fuzzy
+  semantic review;
+- conflicting AI-accepted canonical mappings fail closed to human review;
+- mechanical actions can be reviewed in exact transformation families;
+- review-session provenance is retained in the eventual audit log;
+- source datasets are never edited in place;
+- human approval remains mandatory before execution.
 
-- Run the research benchmark repeatedly on qwen3.5:4b and at least one larger local model.
-- Add multi-table benchmark fixtures and longitudinal temporal-consistency scenarios.
-- Add prompt/provider regression fixtures.
-- Add explicit context-size/token budgeting for very wide workbooks.
-- Expand study-schema rules with typed field/unit validation and exportable data dictionaries.
-- Add user-configurable redaction policies for category/evidence values.
-- Add provider metadata and model/version information to plan/audit provenance.
-- Add optional hosted-provider adapters without changing execution semantics.
+Public NHANES-derived and BES workflow pilots were used to expose review-burden
+and failure modes. They are workflow validation, not evidence of complete issue
+recall, scientific correctness, clinical safety, or generalization.
 
-## v0.5 — local visual review UI
+## v0.10 — recall without relaxing safety
+
+The primary v0.10 objective is to identify more of the cleaning work a real
+researcher would need while preserving the v0.9 execution boundary.
+
+### 1. Structured multi-select cleaning
+
+Status: **in progress**
+
+- Detect semicolon-delimited categorical fields separately from ordinary scalar
+  categories.
+- Normalize exact case/whitespace component variants without comparing the whole
+  cell as one category.
+- Preserve every selected option and its order.
+- Keep fuzzy component merging disabled until it has its own evidence and
+  validation strategy.
+- Support preview, audit, recipe replay, and undo through a dedicated reversible
+  action type.
+
+Initial safety invariant:
+
+> Cleaning one component must never remove, add, or infer another selected
+> component.
+
+### 2. Conditional and cross-column consistency QA
+
+Planned:
+
+- Detect repeated conditional structures such as a parent yes/no field followed
+  by a dependent detail field.
+- Flag contradictions and suspicious populated/empty dependent fields without
+  auto-editing them.
+- Prefer explicit study-schema relationships when available.
+- Keep inferred conditional relationships non-executable until separately
+  validated.
+
+Examples:
+
+- “Has README?” versus “README usefulness”.
+- “Has license?” versus “license type”.
+- “Was cited?” versus “citation count”.
+
+### 3. Duplicate and entity-resolution recall
+
+Planned:
+
+- Move beyond exact duplicate rows to bounded near-duplicate record suggestions.
+- Separate identifier disagreement from ordinary field disagreement.
+- Never delete or merge rows automatically.
+- Provide row-pair evidence and explicit human review.
+
+### 4. Schema and codebook inference
+
+Planned:
+
+- Suggest candidate categorical codebooks from repeated stable labels.
+- Distinguish raw observed spellings from a true canonical vocabulary.
+- Allow users to promote reviewed codebooks into explicit study schemas.
+- Use schema-defined canonical labels to resolve otherwise ambiguous pairwise
+  normalization.
+
+This directly addresses the v0.9 BES finding where an AI merge could be
+semantically reasonable while still choosing another noisy raw spelling as the
+target.
+
+### 5. Cleaning-pattern and recoding suggestions
+
+Planned:
+
+- Surface repeated transformation patterns that are not safely expressible as
+  lexical normalization.
+- Keep study-specific recoding suggestions separate from generic cleaning.
+- Require explicit user-authored or schema-backed rules before execution.
+- Preserve raw values and transformation provenance.
+
+### 6. Recall-oriented evaluation
+
+Before claiming a v0.10 improvement:
+
+- build synthetic fixtures for each new detector family with hidden negative
+  controls;
+- measure candidate exposure/recall separately from acceptance precision;
+- retain unsafe-exposure and fail-closed metrics;
+- rerun at least one untouched public research workflow;
+- compare surfaced work with the public study workflow qualitatively rather than
+  treating its cleaned output as a universal answer key;
+- report what the assistant still misses.
+
+## Later product work
+
+### Local visual review UI
 
 - Drag/drop dataset loading.
 - Dataset quality dashboard.
@@ -62,9 +120,9 @@
 - Accept/reject/modify controls.
 - Schema-drift views.
 - Benchmark/model settings.
-- Audit and recipe export from the UI.
+- Audit and recipe export.
 
-## Research-mode expansion
+### Research-mode expansion
 
 - Temporal consistency rules.
 - Unit inference and harmonization suggestions.
