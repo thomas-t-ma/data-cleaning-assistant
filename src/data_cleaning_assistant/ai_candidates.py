@@ -190,6 +190,16 @@ def _canonical_pair(left: str, right: str, counts: Counter[str]) -> tuple[str, s
     return variant, canonical
 
 
+def _is_composite_multiselect_label(value: str) -> bool:
+    """Return True for delimiter-composed multi-select responses.
+
+    Whole-string fuzzy similarity is unsafe for these values: a response that
+    contains an additional real option can look nearly identical to its subset.
+    Composite labels need component-aware cleaning rather than whole-value merges.
+    """
+    return ";" in value
+
+
 def _category_candidates(
     issue: Issue,
     frame: pd.DataFrame,
@@ -248,6 +258,11 @@ def _category_candidates(
             left = str(item.get("left", ""))
             right = str(item.get("right", ""))
             if not left or not right:
+                continue
+            if (
+                _is_composite_multiselect_label(left)
+                or _is_composite_multiselect_label(right)
+            ):
                 continue
             variant, canonical = _canonical_pair(left, right, counts)
             zero_padding = _zero_padding_equivalent(left, right)
@@ -432,3 +447,29 @@ def build_ai_candidates(
         candidate.id = session_id
         candidate.context.id = session_id
     return deduped
+
+
+def semantic_review_candidates(candidates: list[AICandidate]) -> list[AICandidate]:
+    """Keep only candidates whose decision actually requires semantic judgment.
+
+    Mechanical transformations and deterministic case/whitespace category
+    equivalences remain local rule/human-review work. The model is reserved for
+    fuzzy category candidates where lexical similarity alone cannot establish
+    whether two labels have the same scientific meaning.
+    """
+    semantic_bases = {
+        "fuzzy_similarity_only",
+        "single_edit_typo_pattern",
+        "numeric_zero_padding_equivalence",
+    }
+    selected = [
+        candidate
+        for candidate in candidates
+        if candidate.action.type == ActionType.NORMALIZE_CATEGORIES
+        and candidate.context.evidence.get("basis") in semantic_bases
+    ]
+    for index, candidate in enumerate(selected, start=1):
+        session_id = f"C{index:03d}"
+        candidate.id = session_id
+        candidate.context.id = session_id
+    return selected

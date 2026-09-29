@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .actions import ActionOrigin, ActionType, CleaningAction, CleaningPlan, DeferredReview
-from .ai_candidates import AICandidate, build_ai_candidates
+from .ai_candidates import AICandidate, build_ai_candidates, semantic_review_candidates
 from .ai_context import build_ai_context
 from .ai_models import (
     AICandidateSelection,
@@ -76,12 +76,14 @@ Return the supplied candidate ID with accept or defer; never invent a mapping.
 # two independent calibrated reviews, with a third identical review only when
 # the first two disagree. Any malformed/model-error response fails closed.
 SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + "\n" + EVIDENCE_CALIBRATED_ADDENDUM
+SEMANTIC_REVIEW_BATCH_SIZE = 4
 
 
 @dataclass(slots=True)
 class AIPlanResult:
     plan: CleaningPlan
     context: AIPlannerContext
+    review_contexts: list[AIPlannerContext]
     response: AIPlannerResponse
     rejected: list[AIRejectedProposal]
     candidates: list[AICandidate]
@@ -103,6 +105,139 @@ def _effect_key(action: CleaningAction) -> str:
         sort_keys=True,
         default=str,
     )
+
+
+def _category_mapping_entries(
+    action: CleaningAction,
+) -> list[tuple[tuple[str, str | None, str], str]]:
+    if action.type != ActionType.NORMALIZE_CATEGORIES:
+        return []
+    mapping = action.parameters.get("mapping")
+    if not isinstance(mapping, dict):
+        return []
+    return [
+        ((action.table, action.column, str(source)), str(target))
+        for source, target in mapping.items()
+    ]
+
+
+def _resolve_ai_mapping_conflicts(
+    accepted: list[CleaningAction],
+    *,
+    candidate_by_action_id: dict[str, AICandidate],
+    deterministic_actions: list[CleaningAction],
+) -> tuple[
+    list[CleaningAction],
+    list[DeferredReview],
+    list[AIRejectedProposal],
+]:
+    """Fail closed when accepted AI mappings disagree on one source label.
+
+    A deterministic/schema-derived mapping may resolve the canonical target. If
+    it does not, every competing AI alternative is deferred rather than picking
+    a winner based on review order or model confidence.
+    """
+    deterministic_targets: dict[tuple[str, str | None, str], set[str]] = {}
+    for action in deterministic_actions:
+        for key, target in _category_mapping_entries(action):
+            deterministic_targets.setdefault(key, set()).add(target)
+
+    ai_by_key: dict[
+        tuple[str, str | None, str],
+        list[tuple[CleaningAction, str]],
+    ] = {}
+    for action in accepted:
+        for key, target in _category_mapping_entries(action):
+            ai_by_key.setdefault(key, []).append((action, target))
+
+    reasons: dict[str, str] = {}
+    for key, items in ai_by_key.items():
+        table, column, source = key
+        ai_targets = {target for _action, target in items}
+        rule_targets = deterministic_targets.get(key, set())
+
+        if len(rule_targets) == 1:
+            canonical = next(iter(rule_targets))
+            for action, target in items:
+                if target != canonical:
+                    reasons[action.id] = (
+                        "Post-review safety veto: accepted AI mapping "
+                        f"{source!r} -> {target!r} conflicts with deterministic "
+                        f"canonical target {canonical!r} for {table}.{column}."
+                    )
+            continue
+
+        if len(rule_targets) > 1:
+            targets = ", ".join(sorted(repr(target) for target in rule_targets))
+            for action, _target in items:
+                reasons[action.id] = (
+                    "Post-review safety veto: deterministic planning produced "
+                    f"multiple canonical targets for {source!r} in {table}.{column}: "
+                    f"{targets}. AI mapping deferred pending human review."
+                )
+            continue
+
+        if len(ai_targets) > 1:
+            targets = ", ".join(sorted(repr(target) for target in ai_targets))
+            for action, _target in items:
+                reasons[action.id] = (
+                    "Post-review safety veto: multiple AI-accepted candidates map "
+                    f"{source!r} to competing targets in {table}.{column}: {targets}. "
+                    "No deterministic/schema canonical target resolves the conflict."
+                )
+
+    if not reasons:
+        return accepted, [], []
+
+    kept: list[CleaningAction] = []
+    deferred: list[DeferredReview] = []
+    rejected: list[AIRejectedProposal] = []
+    for action in accepted:
+        reason = reasons.get(action.id)
+        if reason is None:
+            kept.append(action)
+            continue
+
+        candidate = candidate_by_action_id.get(action.id)
+        if candidate is None:
+            rejected.append(
+                AIRejectedProposal(
+                    candidate_id=action.id,
+                    type=action.type,
+                    table=action.table,
+                    column=action.column,
+                    parameters=action.parameters,
+                    rationale=action.description,
+                    reason=reason,
+                )
+            )
+            continue
+
+        deferred.append(
+            DeferredReview(
+                candidate_id=candidate.id,
+                proposed_action=candidate.action.model_copy(deep=True),
+                question=candidate.context.question,
+                rationale=reason + " Model rationale: " + action.description,
+                confidence=0.0,
+                evidence={
+                    **candidate.context.evidence,
+                    "post_review_safety_veto": "conflicting_canonical_mapping",
+                },
+            )
+        )
+        rejected.append(
+            AIRejectedProposal(
+                candidate_id=candidate.id,
+                type=action.type,
+                table=action.table,
+                column=action.column,
+                parameters=action.parameters,
+                rationale=action.description,
+                reason=reason,
+            )
+        )
+    return kept, deferred, rejected
 
 
 def _action_is_covered_by_existing(
@@ -144,6 +279,72 @@ def _build_user_prompt(context: AIPlannerContext) -> str:
         "Do not create any action yourself.\n\n"
         + context.model_dump_json(indent=2)
     )
+
+
+def _focused_review_context(
+    base_context: AIPlannerContext,
+    candidates: list[AICandidate],
+) -> AIPlannerContext:
+    """Return the minimum context needed for one semantic-review batch."""
+    targets = {
+        (candidate.action.table, candidate.action.column)
+        for candidate in candidates
+    }
+    target_tables = {table for table, _column in targets}
+
+    tables = []
+    for table in base_context.tables:
+        if table.name not in target_tables:
+            continue
+        target_columns = {
+            column
+            for target_table, column in targets
+            if target_table == table.name and column is not None
+        }
+        tables.append(
+            table.model_copy(
+                update={
+                    "columns": [
+                        column
+                        for column in table.columns
+                        if column.name in target_columns
+                    ]
+                }
+            )
+        )
+
+    issues = [
+        issue
+        for issue in base_context.issues
+        if (issue.table, issue.column) in targets
+    ]
+
+    return base_context.model_copy(
+        update={
+            "tables": tables,
+            "issues": issues,
+            "relationships": [],
+            "candidates": [candidate.context for candidate in candidates],
+        }
+    )
+
+
+def build_review_contexts(
+    base_context: AIPlannerContext,
+    candidates: list[AICandidate],
+    *,
+    batch_size: int = SEMANTIC_REVIEW_BATCH_SIZE,
+) -> list[AIPlannerContext]:
+    """Build bounded, focused contexts for actual model calls."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1.")
+    return [
+        _focused_review_context(
+            base_context,
+            candidates[start : start + batch_size],
+        )
+        for start in range(0, len(candidates), batch_size)
+    ]
 
 
 def resolve_model(
@@ -410,6 +611,84 @@ def _adaptive_consensus_review(
     return response, rejected, review_call_count, len(disagreements)
 
 
+def _batched_adaptive_consensus_review(
+    provider: StructuredAIProvider,
+    *,
+    model: str,
+    context: AIPlannerContext,
+    candidates: list[AICandidate],
+) -> tuple[
+    AIPlannerResponse,
+    list[AIRejectedProposal],
+    int,
+    int,
+    list[AIPlannerContext],
+]:
+    """Review bounded candidate batches so one large prompt cannot poison a run."""
+    if not candidates:
+        response, rejected, calls, disagreements = _adaptive_consensus_review(
+            provider,
+            model=model,
+            context=context,
+            candidates=candidates,
+        )
+        return response, rejected, calls, disagreements, []
+
+    review_contexts = build_review_contexts(context, candidates)
+    selections: list[AICandidateSelection] = []
+    rejected: list[AIRejectedProposal] = []
+    review_call_count = 0
+    disagreement_count = 0
+    failed_closed_batches = 0
+
+    for index, review_context in enumerate(review_contexts):
+        start = index * SEMANTIC_REVIEW_BATCH_SIZE
+        batch = candidates[start : start + SEMANTIC_REVIEW_BATCH_SIZE]
+        response, batch_rejected, calls, disagreements = (
+            _adaptive_consensus_review(
+                provider,
+                model=model,
+                context=review_context,
+                candidates=batch,
+            )
+        )
+        selections.extend(response.selections)
+        rejected.extend(batch_rejected)
+        review_call_count += calls
+        disagreement_count += disagreements
+        if "model calls failed" in response.summary:
+            failed_closed_batches += 1
+
+    accepted = sum(
+        selection.decision == CandidateDecision.ACCEPT for selection in selections
+    )
+    deferred = len(selections) - accepted
+    failure_note = (
+        f" {failed_closed_batches} batch(es) had model calls failed and "
+        "failed closed to human review."
+        if failed_closed_batches
+        else ""
+    )
+    response = AIPlannerResponse(
+        summary=(
+            f"Adaptive calibrated consensus reviewed {len(selections)} candidate(s) "
+            f"in {len(review_contexts)} focused batch(es): "
+            f"{accepted} accepted, {deferred} deferred; "
+            f"{review_call_count} model call(s), "
+            f"{disagreement_count} disagreement(s)."
+            + failure_note
+        ),
+        selections=selections,
+    )
+    return (
+        response,
+        rejected,
+        review_call_count,
+        disagreement_count,
+        review_contexts,
+    )
+
+
 def propose_ai_plan(
     path: str | Path,
     *,
@@ -417,23 +696,33 @@ def propose_ai_plan(
     model: str,
     include_rules: bool = True,
     schema: StudySchema | None = None,
+    semantic_only: bool = True,
 ) -> AIPlanResult:
     resolved = Path(path).expanduser().resolve()
     loaded = load_dataset(resolved)
     report = profile_dataset(resolved, schema=schema)
     candidates = build_ai_candidates(report, loaded.tables, schema=schema)
+    if semantic_only:
+        candidates = semantic_review_candidates(candidates)
     context = build_ai_context(report, candidates)
 
-    response, rejected, review_call_count, disagreement_count = (
-        _adaptive_consensus_review(
-            provider,
-            model=model,
-            context=context,
-            candidates=candidates,
-        )
+    (
+        response,
+        rejected,
+        review_call_count,
+        disagreement_count,
+        review_contexts,
+    ) = _batched_adaptive_consensus_review(
+        provider,
+        model=model,
+        context=context,
+        candidates=candidates,
     )
 
     candidate_by_id = {candidate.id: candidate for candidate in candidates}
+    candidate_by_action_id = {
+        candidate.action.id: candidate for candidate in candidates
+    }
     seen: set[str] = set()
     accepted: list[CleaningAction] = []
     deferred: list[DeferredReview] = []
@@ -500,6 +789,18 @@ def propose_ai_plan(
     # Planning notes must survive hybrid and AI-only modes: omitted
     # structural-only fields remain visible as non-executable coverage QA.
     rule_plan = propose_actions(resolved, schema=schema)
+    (
+        accepted,
+        consistency_deferred,
+        consistency_rejected,
+    ) = _resolve_ai_mapping_conflicts(
+        accepted,
+        candidate_by_action_id=candidate_by_action_id,
+        deterministic_actions=rule_plan.actions,
+    )
+    deferred.extend(consistency_deferred)
+    rejected.extend(consistency_rejected)
+
     actions: list[CleaningAction] = []
     if include_rules:
         actions.extend(rule_plan.actions)
@@ -526,6 +827,7 @@ def propose_ai_plan(
             model=model,
         ),
         context=context,
+        review_contexts=review_contexts,
         response=response,
         rejected=rejected,
         candidates=candidates,

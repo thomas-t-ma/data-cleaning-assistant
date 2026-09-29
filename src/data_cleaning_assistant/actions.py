@@ -64,6 +64,31 @@ class PlanningNote(BaseModel):
     reason: str
 
 
+class ReviewEvent(BaseModel):
+    """One explicit human-review decision or deferral."""
+
+    scope: str
+    action_ids: list[str] = Field(default_factory=list)
+    action_type: ActionType | None = None
+    origin: ActionOrigin | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    member_count: int = Field(ge=0)
+    affected_count: int = Field(ge=0)
+    decision: str
+    bulk_confirmed: bool = False
+    duration_seconds: float = Field(ge=0.0)
+    targets_preview: list[str] = Field(default_factory=list)
+
+
+class ReviewSession(BaseModel):
+    """Provenance for an interactive human review session."""
+
+    started_at: datetime
+    completed_at: datetime | None = None
+    duration_seconds: float | None = Field(default=None, ge=0.0)
+    events: list[ReviewEvent] = Field(default_factory=list)
+
+
 class CleaningPlan(BaseModel):
     source_path: str
     source_sha256: str
@@ -74,6 +99,7 @@ class CleaningPlan(BaseModel):
     study_schema_sha256: str | None = None
     planner: str = "deterministic"
     model: str | None = None
+    review_session: ReviewSession | None = None
 
 
 class ValueSnapshot(BaseModel):
@@ -118,6 +144,7 @@ class ChangeSet(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     executions: list[ActionExecution] = Field(default_factory=list)
     study_schema_sha256: str | None = None
+    review_session: ReviewSession | None = None
     result_path: str | None = None
     result_sha256: str | None = None
 

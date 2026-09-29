@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0
+
+- Restricted normal local-AI planning to bounded semantic category-equivalence candidates; mechanical missing-token, whitespace, date, and numeric cleanup remains deterministic human-review work.
+- Kept the historical synthetic benchmark on the broader candidate surface so v0.8 regression results remain comparable.
+- Added `review-grouped` to review exact transformation families by origin, type, and parameters instead of forcing repetitive action-by-action approval.
+- Multi-action family approval requires an explicit second `YES` confirmation; grouped review never applies edits.
+- Added typed review-session provenance with per-family/per-action decisions, affected counts, bulk-confirmation state, and automatic elapsed time.
+- Persisted review-session provenance from the reviewed plan into the execution `ChangeSet` audit.
+- Aligned `ai-context` with the production semantic-only model surface.
+- Added direct regression coverage that malformed Ollama structured output is wrapped as a provider error and therefore fails closed.
+- Added deterministic guards against whole-string fuzzy merges of semicolon-delimited multi-select responses.
+- Added bounded semantic review batches (maximum 4 candidates) with focused per-target model context, so one oversized prompt cannot poison an entire run.
+- Distinguished Ollama inference timeouts from connection failures in provider diagnostics.
+- Added a post-consensus mapping-consistency veto: competing AI-accepted canonical targets for the same source label fail closed unless deterministic/schema evidence resolves the canonical target.
+- Added explicit free-response detection so comment/narrative survey fields are excluded from both deterministic category normalization and fuzzy semantic review, even when repeated short responses create superficial case variants.
+- The routing/grouping changes were motivated by a public NHANES-derived workflow pilot in which 71 redundant AI reviews collapsed to zero while all 72 deterministic proposals remained available; grouped review reduced those 72 actions to four exact transformation families. This is product/workflow evidence, not scientific or clinical validation.
+
+
 ## 0.8.0
 
 - Promoted the evidence-calibrated semantic-review prompt from benchmark-only testing into the production local AI planner.

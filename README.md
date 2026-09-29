@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.8.0**.
+Current version: **v0.9.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -31,7 +31,56 @@ Examples of enforced restrictions:
 - zero-padding variants such as `Visit 01` vs `Visit 1` receive deterministic numeric-equivalence evidence rather than relying on string similarity alone
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
-The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. If deterministic profiling produces no AI-review candidates, the Ollama call is skipped entirely.
+The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.9.0 — semantic AI routing and grouped human review
+
+A real public-data workflow pilot exposed a routing problem rather than a prompt
+problem: 69 missing-token candidates and two whitespace candidates duplicated
+deterministic actions, producing 71 model deferrals without adding any cleaning
+coverage. v0.9.0 reserves local AI review for category-equivalence decisions and
+keeps mechanical transformations in deterministic code.
+
+The same pilot exposed repetitive human review. `review-grouped` groups actions
+only when their origin, action type, and exact parameters match. It shows the
+family size, independent-preview affected count, and highest-impact targets, then
+allows explicit family approval/rejection/deferral or individual drill-down.
+
+Bulk family approval never applies data and requires typing `YES` for any
+multi-action family. The reviewed plan records a typed review session with
+automatic elapsed time and per-family/per-action events, including affected
+counts and whether bulk confirmation occurred. If the plan is later applied,
+that review provenance is copied into the `ChangeSet` audit.
+
+```bash
+.venv/bin/data-cleaner ai-plan data.xlsx --model qwen3.5:4b -o plan.json
+
+.venv/bin/data-cleaner review-grouped \
+  data.xlsx plan.json \
+  -o reviewed_plan.json
+
+.venv/bin/data-cleaner apply \
+  data.xlsx reviewed_plan.json \
+  -o cleaned.xlsx
+```
+
+The public NHANES-derived pilot that motivated these changes reduced 71 redundant
+AI reviews to zero while preserving all 72 deterministic proposals; those 72
+actions formed four exact review families. This demonstrates workflow behavior on
+one dataset, not generalization, scientific correctness, or clinical safety.
+
+For semantic category review, v0.9 also applies deterministic safety gates before
+and after model consensus. Semicolon-delimited multi-select responses are not
+compared with whole-string fuzzy merging. Model calls are split into focused
+batches of at most four candidates. After consensus, if the same source label is
+accepted toward competing canonical targets, those conflicting AI proposals fail
+closed to human review unless deterministic/schema evidence already establishes a
+single canonical target.
+
+Free-response/comment fields are also excluded from category normalization and fuzzy
+semantic review when their response diversity/prose shape indicates narrative data.
+This prevents cosmetic edits such as `No` -> `no` inside comment fields from being
+presented as categorical cleaning.
 
 ## v0.8.0 — adaptive calibrated consensus
 
@@ -532,14 +581,17 @@ Generate a hybrid deterministic + local-AI plan:
 
 AI suggestions that fail deterministic safety validation are displayed as rejected and are not placed in the plan.
 
-Review the resulting plan exactly like a normal plan:
+Review the resulting plan. For compact family-level review with audit timing:
 
 ```bash
-.venv/bin/data-cleaner review \
+.venv/bin/data-cleaner review-grouped \
   examples/messy_research_example.xlsx \
   ai_cleaning_plan.json \
   -o reviewed_plan.json
 ```
+
+The original action-by-action `review` command remains available when that is
+preferable.
 
 Then apply only approved actions:
 

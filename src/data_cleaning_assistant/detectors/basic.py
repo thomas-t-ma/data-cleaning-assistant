@@ -17,6 +17,7 @@ from ..inference import (
     is_empty_cell,
     is_missing_like,
     is_null,
+    looks_like_free_text_response,
     looks_like_identifier_name,
     normalize_text,
     parse_date,
@@ -158,11 +159,23 @@ def _surrounding_whitespace(table: str, column: str, series: pd.Series) -> list[
 
 
 def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue]:
+    if looks_like_free_text_response(column, series):
+        return []
+
     non_null = [value for value in series.tolist() if not is_missing_like(value)]
     if not non_null:
         return []
     raw_unique = {str(value) for value in non_null}
     if len(raw_unique) > 200:
+        return []
+
+    # Sparse free-text fields can look categorical when most rows are missing.
+    # Suppress cosmetic case/whitespace normalization when almost every
+    # meaningful response is unique; those values are prose, not a codebook.
+    if (
+        len(raw_unique) > 10
+        and len(raw_unique) / len(non_null) > 0.50
+    ):
         return []
 
     groups: dict[str, set[str]] = defaultdict(set)

@@ -642,6 +642,7 @@ def run_ai_benchmark(
                         provider=provider,
                         model=model,
                         include_rules=False,
+                        semantic_only=False,
                     )
                 except (AIProviderError, ValueError) as exc:
                     latency = time.perf_counter() - started
