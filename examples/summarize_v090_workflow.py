@@ -16,12 +16,19 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
     decision_counts = Counter(action.decision.value for action in plan.actions)
 
     candidate_count = None
+    review_batch_count = None
     candidate_types = Counter()
     candidate_bases = Counter()
     candidate_targets = Counter()
     candidate_rows = []
     if context_path is not None:
-        context = json.loads(context_path.read_text(encoding="utf-8"))
+        context_payload = json.loads(context_path.read_text(encoding="utf-8"))
+        if "aggregate_context" in context_payload:
+            context = context_payload["aggregate_context"]
+            review_batch_count = len(context_payload.get("review_batches", []))
+        else:
+            context = context_payload
+            review_batch_count = 1 if context.get("candidates") else 0
         candidates = context.get("candidates", [])
         candidate_count = len(candidates)
         for candidate in candidates:
@@ -106,6 +113,7 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
         ],
         "deferred_ai_examples": deferred_examples[:50],
         "semantic_ai_context_candidates": candidate_count,
+        "semantic_review_batches": review_batch_count,
         "candidate_types": dict(sorted(candidate_types.items())),
         "candidate_bases": dict(sorted(candidate_bases.items())),
         "top_candidate_targets": [
@@ -138,6 +146,7 @@ def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
             print(f"    rationale: {item['rationale']}")
     if candidate_count is not None:
         print(f"Semantic AI context candidates: {candidate_count}")
+        print(f"Semantic review batches: {review_batch_count}")
         print("Candidate evidence bases:")
         for name, count in payload["candidate_bases"].items():
             print(f"  {name}: {count}")
