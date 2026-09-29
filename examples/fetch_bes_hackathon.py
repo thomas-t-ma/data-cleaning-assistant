@@ -57,20 +57,44 @@ def _download(url: str, destination: Path) -> None:
             handle.write(chunk)
 
 
-def _csv_shape(path: Path) -> tuple[list[str], int]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+def _detect_text_encoding(path: Path) -> str:
+    """Prefer UTF-8, with an explicit Windows-1252 fallback for upstream CSVs."""
+    payload = path.read_bytes()
+    if not payload:
+        raise ValueError(f"Downloaded CSV is empty: {path.name}")
+    if b"\x00" in payload[:8192]:
+        raise ValueError(f"Downloaded file does not look like text CSV: {path.name}")
+
+    try:
+        payload.decode("utf-8-sig")
+        return "utf-8-sig"
+    except UnicodeDecodeError:
+        pass
+
+    try:
+        payload.decode("cp1252")
+        return "cp1252"
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Downloaded CSV is neither valid UTF-8 nor Windows-1252: {path.name}"
+        ) from exc
+
+
+def _csv_shape(path: Path) -> tuple[list[str], int, str]:
+    encoding = _detect_text_encoding(path)
+    with path.open("r", encoding=encoding, newline="") as handle:
         reader = csv.reader(handle)
         try:
             header = next(reader)
         except StopIteration as exc:
             raise ValueError(f"Downloaded CSV is empty: {path.name}") from exc
         rows = sum(1 for row in reader if row)
-    return header, rows
+    return header, rows, encoding
 
 
 def validate_sources(raw_path: Path, cleaned_path: Path) -> dict[str, object]:
-    raw_header, raw_rows = _csv_shape(raw_path)
-    clean_header, clean_rows = _csv_shape(cleaned_path)
+    raw_header, raw_rows, raw_encoding = _csv_shape(raw_path)
+    clean_header, clean_rows, clean_encoding = _csv_shape(cleaned_path)
 
     raw_requirements = {
         "timestamp": "Timestamp" in raw_header,
@@ -111,8 +135,10 @@ def validate_sources(raw_path: Path, cleaned_path: Path) -> dict[str, object]:
     return {
         "raw_rows": raw_rows,
         "raw_columns": len(raw_header),
+        "raw_encoding": raw_encoding,
         "clean_rows": clean_rows,
         "clean_columns": len(clean_header),
+        "clean_encoding": clean_encoding,
     }
 
 
@@ -154,6 +180,7 @@ def fetch(out: Path) -> dict[str, object]:
             "bytes": raw_path.stat().st_size,
             "rows": shape["raw_rows"],
             "columns": shape["raw_columns"],
+            "encoding": shape["raw_encoding"],
         },
         "cleaned_reference": {
             "filename": CLEAN_NAME,
@@ -162,6 +189,7 @@ def fetch(out: Path) -> dict[str, object]:
             "bytes": clean_path.stat().st_size,
             "rows": shape["clean_rows"],
             "columns": shape["clean_columns"],
+            "encoding": shape["clean_encoding"],
         },
         "notes": (
             "Upstream describes the raw file as anonymized Google Form research "
@@ -178,11 +206,12 @@ def fetch(out: Path) -> dict[str, object]:
     print("BES public research sources downloaded and validated.")
     print(
         f"Raw: {shape['raw_rows']} rows x {shape['raw_columns']} columns "
-        f"({raw_path})"
+        f"[{shape['raw_encoding']}] ({raw_path})"
     )
     print(
         f"Cleaned reference: {shape['clean_rows']} rows x "
-        f"{shape['clean_columns']} columns ({clean_path})"
+        f"{shape['clean_columns']} columns [{shape['clean_encoding']}] "
+        f"({clean_path})"
     )
     print(f"Pinned upstream commit: {PINNED_COMMIT}")
     print(f"Manifest: {out / 'source_manifest.json'}")
