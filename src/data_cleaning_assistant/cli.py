@@ -12,7 +12,7 @@ from rich.table import Table
 from .actions import ActionDecision, ChangeSet, CleaningPlan
 from .ai_candidates import build_ai_candidates, semantic_review_candidates
 from .ai_context import build_ai_context
-from .ai_planner import propose_ai_plan, resolve_model
+from .ai_planner import build_review_contexts, propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
@@ -304,6 +304,26 @@ def _load_plan(path: Path) -> CleaningPlan:
     return CleaningPlan.model_validate_json(path.read_text(encoding="utf-8"))
 
 
+def _review_context_payload(context, review_contexts) -> str:
+    return json.dumps(
+        {
+            "format_version": 1,
+            "note": (
+                "aggregate_context is the privacy-minimized superset. "
+                "review_batches are the exact focused contexts sent independently "
+                "to the model; adaptive consensus reuses each batch context."
+            ),
+            "aggregate_context": context.model_dump(mode="json"),
+            "review_batches": [
+                item.model_dump(mode="json")
+                for item in review_contexts
+            ],
+        },
+        indent=2,
+        default=str,
+    )
+
+
 def _write_cleaning_outputs(
     output: Path,
     plan: CleaningPlan,
@@ -419,7 +439,8 @@ def ai_context_command(
         build_ai_candidates(report, loaded.tables, schema=schema)
     )
     context = build_ai_context(report, candidates)
-    payload = context.model_dump_json(indent=2)
+    review_contexts = build_review_contexts(context, candidates)
+    payload = _review_context_payload(context, review_contexts)
 
     if output:
         output = output.expanduser().resolve()
@@ -528,7 +549,10 @@ def ai_plan_command(
     if context_out:
         context_out = context_out.expanduser().resolve()
         context_out.parent.mkdir(parents=True, exist_ok=True)
-        context_out.write_text(result.context.model_dump_json(indent=2), encoding="utf-8")
+        context_out.write_text(
+            _review_context_payload(result.context, result.review_contexts),
+            encoding="utf-8",
+        )
         console.print(f"[green]AI context written to:[/green] {context_out}")
 
 
