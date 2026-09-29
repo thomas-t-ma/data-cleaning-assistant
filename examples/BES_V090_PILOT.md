@@ -54,7 +54,8 @@ Do not edit the source and do not create a study schema for the first pass.
 ```
 
 Normal v0.9 routing sends only bounded semantic category-equivalence candidates
-to Ollama. Mechanical cleanup stays deterministic.
+to Ollama in focused batches of at most four candidates. Mechanical cleanup stays
+deterministic.
 
 Summarize the untouched plan:
 
