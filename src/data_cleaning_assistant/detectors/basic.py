@@ -165,6 +165,13 @@ def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue
     non_null = [value for value in series.tolist() if not is_missing_like(value)]
     if not non_null:
         return []
+
+    # Structured multi-select columns are normalized at component level. Whole-
+    # value case normalization can be correct only accidentally and cannot reuse
+    # a component mapping across different option combinations.
+    if sum(";" in str(value) for value in non_null) >= 2:
+        return []
+
     raw_unique = {str(value) for value in non_null}
     if len(raw_unique) > 200:
         return []
