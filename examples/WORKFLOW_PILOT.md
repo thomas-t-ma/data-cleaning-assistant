@@ -112,29 +112,44 @@ Look for obviously duplicated proposals, scientifically questionable changes,
 large affected-cell counts, or proposals whose meaning cannot be judged from the
 available study context.
 
-## 4. Review every item
+## 4. Review by transformation family
 
-Do **not** use `--approve-all` for the pilot. Review each action individually:
+Do **not** use `--approve-all`. Instead use the pilot's grouped reviewer:
 
 ```bash
-.venv/bin/data-cleaner review \
-  /path/to/research_workbook.xlsx \
-  pilot_outputs/workflow_real_01/ai_plan.json \
-  --sample 8 \
+.venv/bin/python examples/workflow_pilot.py review-grouped \
+  --pilot pilot_outputs/workflow_real_01 \
   --output pilot_outputs/workflow_real_01/reviewed_plan.json
 ```
 
-For ordinary proposed actions:
+Actions with the same origin, type, and exact parameters are grouped into a
+family. For each family the reviewer shows:
 
-- **approve** when you would genuinely want that exact transformation;
-- **reject** when it is wrong, misleading, or unnecessary;
-- **skip/defer** only when you genuinely cannot decide.
+- action count;
+- total affected items from independent previews;
+- the highest-impact table/column targets;
+- the exact transformation parameters.
 
-For AI-deferred candidates, use the same standard. Approving one indicates that
-the model was too conservative; rejecting one indicates the deferral protected
-you from an undesirable merge/change.
+You may:
 
-Human review is treated as workflow feedback, **not scientific ground truth**.
+- **approve all** — requires a second explicit `YES` confirmation for a
+  multi-action family;
+- **reject all**;
+- **inspect individually** — review each target separately with compact previews;
+- **skip/defer** the family;
+- **quit** and save partial progress.
+
+Grouped approval changes only the reviewed-plan JSON. It does **not** apply edits.
+
+Semantic AI deferrals, when present, are still reviewed individually because
+their meaning is candidate-specific rather than a mechanical transformation
+family.
+
+Approve only when you would genuinely want the exact transformation across the
+displayed family. Reject when the transformation is wrong, misleading, or
+unnecessary. Defer when you genuinely cannot decide.
+
+Human review is workflow feedback, **not scientific ground truth**.
 
 ## 5. Record obvious misses
 
