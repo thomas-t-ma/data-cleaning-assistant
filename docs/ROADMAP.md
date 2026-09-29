@@ -113,6 +113,13 @@ Planned:
 
 ### 6. Recall-oriented evaluation
 
+Status: **deterministic recall-surface report implemented**
+
+- `data-cleaner recall-report` summarizes new v0.10 review surfaces without
+  Ollama calls or dataset edits.
+- The report separates detector/action exposure from scientific correctness and
+  complete issue recall.
+
 Before claiming a v0.10 improvement:
 
 - build synthetic fixtures for each new detector family with hidden negative

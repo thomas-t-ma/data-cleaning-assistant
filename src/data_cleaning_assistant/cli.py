@@ -23,6 +23,7 @@ from .issue_summary import summarize_issues, visible_issues
 from .planner import file_sha256, propose_actions
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
+from .recall_eval import build_recall_surface_report
 from .review import (
     action_target,
     begin_review_session,
@@ -436,6 +437,51 @@ def codebook_suggest_command(
         "They are not a study schema and authorize no transformations.[/dim]"
     )
     console.print(f"[green]Codebook suggestions written to:[/green] {output}")
+
+
+@app.command("recall-report")
+def recall_report_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect with deterministic v0.10 recall checks")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the recall-surface JSON report"),
+    ] = Path("recall_report.json"),
+) -> None:
+    """Summarize the deterministic v0.10 review surface without AI or edits."""
+    report = build_recall_surface_report(input_path)
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+    table = Table(title="v0.10 deterministic recall surface")
+    table.add_column("Signal")
+    table.add_column("Count", justify="right")
+    table.add_column("Affected", justify="right")
+    table.add_row(
+        "Multi-select normalization actions",
+        str(report.multiselect_action_count),
+        str(report.multiselect_action_affected_count),
+    )
+    table.add_row(
+        "Conditional QA pairs",
+        str(report.conditional_pair_count),
+        str(report.conditional_affected_count),
+    )
+    table.add_row(
+        "Normalization-equivalent duplicate QA",
+        str(report.normalized_duplicate_group_issue_count),
+        str(report.normalized_duplicate_affected_count),
+    )
+    table.add_row(
+        "Read-only codebook suggestions",
+        str(report.codebook_suggestion_count),
+        "—",
+    )
+    console.print(table)
+    console.print(
+        "[dim]Read-only evaluation: no Ollama calls and no dataset edits.[/dim]"
+    )
+    console.print(f"[green]Recall report written to:[/green] {output}")
 
 
 @app.command("ai-status")
