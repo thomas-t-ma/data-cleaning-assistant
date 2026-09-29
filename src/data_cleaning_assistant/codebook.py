@@ -100,13 +100,10 @@ def suggest_codebooks(
             if looks_like_free_text_response(column, series):
                 continue
 
-            inferred_type, _confidence, ratios = infer_semantic_type(column, series)
+            inferred_type, _confidence, _ratios = infer_semantic_type(column, series)
             if inferred_type in {"identifier", "numeric", "date"}:
                 continue
-            if (
-                _COUNT_NAME_PATTERN.search(column)
-                and ratios["numeric_ratio"] >= 0.50
-            ):
+            if _COUNT_NAME_PATTERN.search(column):
                 continue
 
             values = [
