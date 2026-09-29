@@ -76,12 +76,14 @@ Return the supplied candidate ID with accept or defer; never invent a mapping.
 # two independent calibrated reviews, with a third identical review only when
 # the first two disagree. Any malformed/model-error response fails closed.
 SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + "\n" + EVIDENCE_CALIBRATED_ADDENDUM
+SEMANTIC_REVIEW_BATCH_SIZE = 8
 
 
 @dataclass(slots=True)
 class AIPlanResult:
     plan: CleaningPlan
     context: AIPlannerContext
+    review_contexts: list[AIPlannerContext]
     response: AIPlannerResponse
     rejected: list[AIRejectedProposal]
     candidates: list[AICandidate]
@@ -144,6 +146,72 @@ def _build_user_prompt(context: AIPlannerContext) -> str:
         "Do not create any action yourself.\n\n"
         + context.model_dump_json(indent=2)
     )
+
+
+def _focused_review_context(
+    base_context: AIPlannerContext,
+    candidates: list[AICandidate],
+) -> AIPlannerContext:
+    """Return the minimum context needed for one semantic-review batch."""
+    targets = {
+        (candidate.action.table, candidate.action.column)
+        for candidate in candidates
+    }
+    target_tables = {table for table, _column in targets}
+
+    tables = []
+    for table in base_context.tables:
+        if table.name not in target_tables:
+            continue
+        target_columns = {
+            column
+            for target_table, column in targets
+            if target_table == table.name and column is not None
+        }
+        tables.append(
+            table.model_copy(
+                update={
+                    "columns": [
+                        column
+                        for column in table.columns
+                        if column.name in target_columns
+                    ]
+                }
+            )
+        )
+
+    issues = [
+        issue
+        for issue in base_context.issues
+        if (issue.table, issue.column) in targets
+    ]
+
+    return base_context.model_copy(
+        update={
+            "tables": tables,
+            "issues": issues,
+            "relationships": [],
+            "candidates": [candidate.context for candidate in candidates],
+        }
+    )
+
+
+def build_review_contexts(
+    base_context: AIPlannerContext,
+    candidates: list[AICandidate],
+    *,
+    batch_size: int = SEMANTIC_REVIEW_BATCH_SIZE,
+) -> list[AIPlannerContext]:
+    """Build bounded, focused contexts for actual model calls."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be at least 1.")
+    return [
+        _focused_review_context(
+            base_context,
+            candidates[start : start + batch_size],
+        )
+        for start in range(0, len(candidates), batch_size)
+    ]
 
 
 def resolve_model(
@@ -410,6 +478,84 @@ def _adaptive_consensus_review(
     return response, rejected, review_call_count, len(disagreements)
 
 
+def _batched_adaptive_consensus_review(
+    provider: StructuredAIProvider,
+    *,
+    model: str,
+    context: AIPlannerContext,
+    candidates: list[AICandidate],
+) -> tuple[
+    AIPlannerResponse,
+    list[AIRejectedProposal],
+    int,
+    int,
+    list[AIPlannerContext],
+]:
+    """Review bounded candidate batches so one large prompt cannot poison a run."""
+    if not candidates:
+        response, rejected, calls, disagreements = _adaptive_consensus_review(
+            provider,
+            model=model,
+            context=context,
+            candidates=candidates,
+        )
+        return response, rejected, calls, disagreements, []
+
+    review_contexts = build_review_contexts(context, candidates)
+    selections: list[AICandidateSelection] = []
+    rejected: list[AIRejectedProposal] = []
+    review_call_count = 0
+    disagreement_count = 0
+    failed_closed_batches = 0
+
+    for index, review_context in enumerate(review_contexts):
+        start = index * SEMANTIC_REVIEW_BATCH_SIZE
+        batch = candidates[start : start + SEMANTIC_REVIEW_BATCH_SIZE]
+        response, batch_rejected, calls, disagreements = (
+            _adaptive_consensus_review(
+                provider,
+                model=model,
+                context=review_context,
+                candidates=batch,
+            )
+        )
+        selections.extend(response.selections)
+        rejected.extend(batch_rejected)
+        review_call_count += calls
+        disagreement_count += disagreements
+        if "model calls failed" in response.summary:
+            failed_closed_batches += 1
+
+    accepted = sum(
+        selection.decision == CandidateDecision.ACCEPT for selection in selections
+    )
+    deferred = len(selections) - accepted
+    failure_note = (
+        f" {failed_closed_batches} batch(es) had model-call failures and "
+        "failed closed to human review."
+        if failed_closed_batches
+        else ""
+    )
+    response = AIPlannerResponse(
+        summary=(
+            f"Adaptive calibrated consensus reviewed {len(selections)} candidate(s) "
+            f"in {len(review_contexts)} focused batch(es): "
+            f"{accepted} accepted, {deferred} deferred; "
+            f"{review_call_count} model call(s), "
+            f"{disagreement_count} disagreement(s)."
+            + failure_note
+        ),
+        selections=selections,
+    )
+    return (
+        response,
+        rejected,
+        review_call_count,
+        disagreement_count,
+        review_contexts,
+    )
+
+
 def propose_ai_plan(
     path: str | Path,
     *,
@@ -427,13 +573,17 @@ def propose_ai_plan(
         candidates = semantic_review_candidates(candidates)
     context = build_ai_context(report, candidates)
 
-    response, rejected, review_call_count, disagreement_count = (
-        _adaptive_consensus_review(
-            provider,
-            model=model,
-            context=context,
-            candidates=candidates,
-        )
+    (
+        response,
+        rejected,
+        review_call_count,
+        disagreement_count,
+        review_contexts,
+    ) = _batched_adaptive_consensus_review(
+        provider,
+        model=model,
+        context=context,
+        candidates=candidates,
     )
 
     candidate_by_id = {candidate.id: candidate for candidate in candidates}
@@ -529,6 +679,7 @@ def propose_ai_plan(
             model=model,
         ),
         context=context,
+        review_contexts=review_contexts,
         response=response,
         rejected=rejected,
         candidates=candidates,
