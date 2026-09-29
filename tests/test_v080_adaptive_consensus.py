@@ -249,6 +249,7 @@ def test_hybrid_plan_suppresses_ai_category_mapping_already_covered_by_rule(
         provider=provider,
         model="fake-model",
         include_rules=True,
+        semantic_only=False,
     )
 
     category_actions = [
