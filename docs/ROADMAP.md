@@ -95,7 +95,10 @@ Status: **initial read-only codebook suggestions implemented**
   and promoted by the researcher.
 - Suggest candidate categorical codebooks from repeated stable labels.
 - Distinguish raw observed spellings from a true canonical vocabulary.
-- Allow users to promote reviewed codebooks into explicit study schemas.
+- Allow users to promote reviewed exact case/whitespace codebook mappings into
+  explicit study schemas with per-field approval and source-hash verification.
+- Do not infer allowed-value restrictions from frequency-derived core values;
+  rare/write-in labels remain valid unless the researcher declares otherwise.
 - Use schema-defined canonical labels to resolve otherwise ambiguous pairwise
   normalization.
 

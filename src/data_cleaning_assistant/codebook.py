@@ -16,6 +16,7 @@ from .inference import (
     looks_like_identifier_name,
     normalize_text,
 )
+from .study_schema import ColumnSpec, StudySchema, TableSpec
 
 
 _COUNT_NAME_PATTERN = re.compile(r"\b(how many|count|number)\b", re.IGNORECASE)
@@ -204,3 +205,61 @@ def suggest_codebooks(
         source_sha256=_sha256(resolved),
         suggestions=suggestions,
     )
+
+
+
+def load_codebook_suggestion_report(path: str | Path) -> CodebookSuggestionReport:
+    """Load a previously generated read-only codebook suggestion report."""
+    resolved = Path(path).expanduser().resolve()
+    import yaml
+
+    payload = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError("Codebook suggestion report must contain a YAML mapping.")
+    return CodebookSuggestionReport.model_validate(payload)
+
+
+def promote_codebook_mappings(
+    report: CodebookSuggestionReport,
+    tables: dict[str, pd.DataFrame],
+    approved_targets: set[tuple[str, str]],
+) -> StudySchema:
+    """Promote explicitly approved canonical maps into a StudySchema.
+
+    Promotion deliberately does not infer allowed_values from frequency-derived
+    core values. Rare/write-in values may be scientifically valid. Only exact
+    case/whitespace canonical mappings already present in reviewed suggestions
+    become schema authority.
+    """
+    suggestions = {
+        (suggestion.table, suggestion.column): suggestion
+        for suggestion in report.suggestions
+    }
+    unknown = approved_targets - set(suggestions)
+    if unknown:
+        formatted = ", ".join(
+            f"{table}::{column}" for table, column in sorted(unknown)
+        )
+        raise ValueError(f"Unknown codebook suggestion target(s): {formatted}")
+
+    if not approved_targets:
+        raise ValueError(
+            "No codebook targets were approved. "
+            "Select at least one reviewed TABLE::COLUMN target."
+        )
+
+    table_specs: dict[str, TableSpec] = {}
+    for table, column in sorted(approved_targets):
+        suggestion = suggestions[(table, column)]
+        if not suggestion.canonical_map:
+            raise ValueError(
+                f"{table}::{column} has no unambiguous canonical mapping to promote."
+            )
+        table_spec = table_specs.setdefault(table, TableSpec())
+        table_spec.columns[column] = ColumnSpec(
+            canonical_map=dict(suggestion.canonical_map)
+        )
+
+    schema = StudySchema(version=1, tables=table_specs)
+    schema.validate_dataset(tables)
+    return schema

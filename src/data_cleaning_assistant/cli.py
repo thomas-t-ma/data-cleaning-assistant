@@ -16,7 +16,11 @@ from .ai_context import build_ai_context
 from .ai_planner import build_review_contexts, propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
-from .codebook import suggest_codebooks
+from .codebook import (
+    load_codebook_suggestion_report,
+    promote_codebook_mappings,
+    suggest_codebooks,
+)
 from .engine import profile_dataset
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
@@ -438,6 +442,90 @@ def codebook_suggest_command(
         "They are not a study schema and authorize no transformations.[/dim]"
     )
     console.print(f"[green]Codebook suggestions written to:[/green] {output}")
+
+
+@app.command("codebook-promote")
+def codebook_promote_command(
+    input_path: Annotated[
+        Path,
+        typer.Argument(help="Dataset the codebook suggestions were generated from"),
+    ],
+    suggestions_path: Annotated[
+        Path,
+        typer.Argument(help="YAML codebook suggestion report to review/promote"),
+    ],
+    approve: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--approve",
+            help="Promote one reviewed TABLE::COLUMN canonical map; repeat as needed",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the promoted StudySchema YAML"),
+    ] = Path("study_schema.yaml"),
+) -> None:
+    """Promote explicitly reviewed codebook mappings into StudySchema authority."""
+    loaded = load_dataset(input_path)
+    report = load_codebook_suggestion_report(suggestions_path)
+    actual_hash = file_sha256(input_path)
+    if report.source_sha256 != actual_hash:
+        raise typer.BadParameter(
+            "The dataset no longer matches this codebook suggestion report. "
+            "Generate fresh suggestions before promotion."
+        )
+
+    approved_targets: set[tuple[str, str]] = set()
+    for raw_target in approve or []:
+        if "::" not in raw_target:
+            raise typer.BadParameter(
+                "--approve must use TABLE::COLUMN so long survey column names "
+                "remain unambiguous."
+            )
+        table_name, column_name = raw_target.split("::", 1)
+        table_name = table_name.strip()
+        column_name = column_name.strip()
+        if not table_name or not column_name:
+            raise typer.BadParameter(
+                "--approve must contain both TABLE and COLUMN."
+            )
+        approved_targets.add((table_name, column_name))
+
+    try:
+        schema = promote_codebook_mappings(
+            report,
+            loaded.tables,
+            approved_targets,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(
+            schema.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    mapping_count = sum(
+        len(spec.canonical_map)
+        for table in schema.tables.values()
+        for spec in table.columns.values()
+    )
+    console.print(
+        f"[green]StudySchema written to:[/green] {output} · "
+        f"[bold]{len(approved_targets)}[/bold] approved field(s), "
+        f"[bold]{mapping_count}[/bold] canonical mapping(s)"
+    )
+    console.print(
+        "[dim]Only reviewed exact case/whitespace mappings were promoted. "
+        "Observed core/rare values were not converted into allowed-value rules. "
+        "No dataset edits were applied.[/dim]"
+    )
 
 
 @app.command("recall-benchmark")
