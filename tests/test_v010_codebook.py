@@ -32,6 +32,8 @@ def test_codebook_suggestion_separates_core_labels_from_rare_writeins(
     suggestion = report.suggestions[0]
     assert suggestion.core_values == ["Active", "Inactive"]
     assert suggestion.canonical_map == {"active": "Active"}
+    assert suggestion.core_counts["Active"] == 33
+    assert suggestion.core_counts["Inactive"] == 6
     assert suggestion.rare_values == ["reviewer-specific note"]
     assert suggestion.core_coverage >= 0.95
     assert suggestion.review_required is True

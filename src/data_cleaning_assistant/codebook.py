@@ -164,6 +164,12 @@ def suggest_codebooks(
                 if value not in core_set and value not in canonical_map
             ][:rare_preview_limit]
 
+            canonical_core_counts: Counter[str] = Counter()
+            for value, count in counts.items():
+                canonical = canonical_map.get(value, value)
+                if canonical in canonical_core:
+                    canonical_core_counts[canonical] += count
+
             suggestions.append(
                 CodebookSuggestion(
                     table=table,
@@ -172,10 +178,7 @@ def suggest_codebooks(
                     observed_unique_count=len(counts),
                     core_coverage=coverage,
                     core_values=canonical_core,
-                    core_counts={
-                        value: counts[value]
-                        for value in core
-                    },
+                    core_counts=dict(canonical_core_counts),
                     canonical_map=canonical_map,
                     unresolved_variant_groups=unresolved,
                     rare_values=rare,
