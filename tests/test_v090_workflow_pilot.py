@@ -159,6 +159,14 @@ def test_workflow_pilot_summary_groups_review_flood(
     assert summary["candidate_types"]["normalize_categories"] == 2
     assert summary["action_families"]
     assert all("actions" in family for family in summary["action_families"])
+    assert all(
+        "preview_affected_total" in family
+        for family in summary["action_families"]
+    )
+    assert sum(
+        family["preview_affected_total"]
+        for family in summary["action_families"]
+    ) > 0
     assert "WORKFLOW PILOT TRIAGE" in captured
     assert "Candidate decisions:" in captured
 
