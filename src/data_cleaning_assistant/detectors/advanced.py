@@ -26,6 +26,8 @@ def detect_fuzzy_categories(table: str, frame: pd.DataFrame) -> list[Issue]:
         unique = sorted(set(values))
         if len(unique) < 2 or len(unique) > 80:
             continue
+        if len(unique) > 10 and len(unique) / len(values) > 0.50:
+            continue
 
         pairs: list[dict[str, object]] = []
         for i, left in enumerate(unique):
