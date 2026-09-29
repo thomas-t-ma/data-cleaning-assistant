@@ -168,6 +168,58 @@ def test_semantic_reviews_are_batched_and_focused(tmp_path: Path) -> None:
     assert [len(context.tables[0].columns) for context in result.review_contexts] == [8, 1]
 
 
+def test_conflicting_ai_canonicals_fail_closed(tmp_path: Path) -> None:
+    source = tmp_path / "conflicting_canonicals.csv"
+    source.write_text(
+        "subject_id,count_status\n"
+        "S001,Unclear\n"
+        "S002,Unclear\n"
+        "S003,Unclear\n"
+        "S004,Unclear\n"
+        "S005,unclear\n"
+        "S006,unclear\n"
+        "S007,Uclear\n",
+        encoding="utf-8",
+    )
+    provider = AcceptAllSemanticProvider()
+
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model="fake-model",
+    )
+
+    conflicting_ai_actions = [
+        action
+        for action in result.plan.actions
+        if action.origin.value == "ai"
+        and action.type == ActionType.NORMALIZE_CATEGORIES
+        and "Uclear" in action.parameters.get("mapping", {})
+    ]
+    assert conflicting_ai_actions == []
+
+    conflict_deferrals = [
+        item
+        for item in result.plan.deferred_reviews
+        if "Uclear" in item.proposed_action.parameters.get("mapping", {})
+    ]
+    assert len(conflict_deferrals) >= 2
+    assert all(item.confidence == 0.0 for item in conflict_deferrals)
+    assert all(
+        item.evidence.get("post_review_safety_veto")
+        == "conflicting_canonical_mapping"
+        for item in conflict_deferrals
+    )
+    assert any(
+        "competing targets" in item.rationale
+        for item in conflict_deferrals
+    )
+    assert any(
+        "Post-review safety veto" in item.reason
+        for item in result.rejected
+    )
+
+
 def test_semantic_routing_blocks_composite_multiselect_subset_merges(
     tmp_path: Path,
 ) -> None:
