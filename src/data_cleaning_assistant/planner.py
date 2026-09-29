@@ -399,9 +399,24 @@ def propose_actions(
         # same target and action type; never mix incompatible category mappings.
         declared = _schema_actions(loaded.tables, schema)
         controlled = {(a.type, a.table, a.column) for a in declared}
+        category_controlled = {
+            (table, column)
+            for table, table_spec in schema.tables.items()
+            for column, column_spec in table_spec.columns.items()
+            if column_spec.allowed_values is not None or column_spec.canonical_map
+        }
         actions = [
-            action for action in actions
+            action
+            for action in actions
             if (action.type, action.table, action.column) not in controlled
+            and not (
+                action.type
+                in {
+                    ActionType.NORMALIZE_CATEGORIES,
+                    ActionType.NORMALIZE_MULTISELECT,
+                }
+                and (action.table, action.column) in category_controlled
+            )
         ]
         actions.extend(declared)
         # A study-dictionary declaration explicitly authorizes an otherwise
