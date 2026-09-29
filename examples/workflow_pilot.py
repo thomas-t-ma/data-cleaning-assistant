@@ -311,6 +311,270 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
     return payload
 
 
+def _action_target(action) -> str:
+    return (
+        f"{action.table}.{action.column}"
+        if action.column is not None
+        else action.table
+    )
+
+
+def _grouped_action_families(tables, plan: CleaningPlan) -> list[dict[str, Any]]:
+    families: dict[str, dict[str, Any]] = {}
+    for action in plan.actions:
+        params = json.dumps(action.parameters, sort_keys=True, default=str)
+        key = f"{action.origin.value}|{action.type.value}|{params}"
+        preview = preview_action(tables, action, sample_limit=3)
+        family = families.setdefault(
+            key,
+            {
+                "origin": action.origin.value,
+                "type": action.type.value,
+                "parameters": action.parameters,
+                "members": [],
+                "affected_total": 0,
+            },
+        )
+        family["members"].append((action, preview))
+        family["affected_total"] += preview.affected_count
+
+    output = list(families.values())
+    output.sort(
+        key=lambda family: (
+            -len(family["members"]),
+            family["type"],
+            str(family["parameters"]),
+        )
+    )
+    for family in output:
+        family["members"].sort(
+            key=lambda item: (-item[1].affected_count, _action_target(item[0]))
+        )
+    return output
+
+
+def _save_reviewed_plan(plan: CleaningPlan, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(plan.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
+def review_grouped(
+    pilot: Path,
+    output: Path | None = None,
+    *,
+    input_fn=input,
+) -> CleaningPlan:
+    """Review deterministic actions by family while preserving explicit approval."""
+    pilot = pilot.expanduser().resolve()
+    manifest = json.loads((pilot / MANIFEST).read_text(encoding="utf-8"))
+    source = Path(manifest["source_path"])
+    expected_hash = manifest["source"]["sha256"]
+    if not source.is_file() or file_sha256(source) != expected_hash:
+        raise ValueError(
+            "Pilot source is missing or changed since the pilot was created. "
+            "Refusing grouped review against a different dataset version."
+        )
+
+    plan = CleaningPlan.model_validate_json((pilot / PLAN).read_text(encoding="utf-8"))
+    if plan.source_sha256 != expected_hash:
+        raise ValueError("Pilot plan is not bound to the frozen source hash.")
+
+    output = (
+        output.expanduser().resolve()
+        if output is not None
+        else pilot / "reviewed_plan.json"
+    )
+    if output.exists():
+        raise FileExistsError(
+            f"Reviewed plan already exists: {output}. Choose a fresh --output."
+        )
+
+    tables = load_dataset(source).tables
+    families = _grouped_action_families(tables, plan)
+
+    print("GROUPED WORKFLOW REVIEW")
+    print(
+        f"{len(plan.actions)} action(s) grouped into {len(families)} family/families. "
+        "No edits will be applied."
+    )
+
+    for family_index, family in enumerate(families, start=1):
+        members = family["members"]
+        print(
+            f"\n=== Family {family_index}/{len(families)} ===\n"
+            f"Type: {family['type']}\n"
+            f"Origin: {family['origin']}\n"
+            f"Parameters: {family['parameters']}\n"
+            f"Actions: {len(members)}\n"
+            f"Affected items by independent preview: {family['affected_total']}"
+        )
+        print("Highest-impact targets:")
+        for action, preview in members[:12]:
+            print(f"  {_action_target(action)}: {preview.affected_count}")
+        if len(members) > 12:
+            print(f"  ... {len(members) - 12} additional target(s)")
+
+        while True:
+            decision = input_fn(
+                "Family decision: [a]pprove all, [r]eject all, "
+                "[i]nspect individually, [s]kip/defer, [q]uit: "
+            ).strip().casefold()
+
+            if decision in {"a", "approve"}:
+                if len(members) > 1:
+                    confirmation = input_fn(
+                        "Type YES to approve this entire family "
+                        f"({len(members)} actions; "
+                        f"{family['affected_total']} affected items): "
+                    ).strip()
+                    if confirmation != "YES":
+                        print("Family approval not confirmed.")
+                        continue
+                for action, _preview in members:
+                    action.decision = ActionDecision.APPROVED
+                break
+
+            if decision in {"r", "reject"}:
+                for action, _preview in members:
+                    action.decision = ActionDecision.REJECTED
+                break
+
+            if decision in {"s", "skip", "defer"}:
+                break
+
+            if decision in {"i", "inspect"}:
+                quit_requested = False
+                for member_index, (action, preview) in enumerate(members, start=1):
+                    print(
+                        f"\n  Action {member_index}/{len(members)}: "
+                        f"{_action_target(action)}\n"
+                        f"  Affected: {preview.affected_count}\n"
+                        f"  Description: {action.description}"
+                    )
+                    if preview.sample_changes:
+                        print("  Sample changes:")
+                        for change in preview.sample_changes[:3]:
+                            print(
+                                f"    row {change.row_index}: "
+                                f"{change.old_value.value!r} -> {change.new_value.value!r}"
+                            )
+                    elif preview.sample_rows:
+                        positions = [
+                            snapshot.row_position
+                            for snapshot in preview.sample_rows[:3]
+                        ]
+                        print(
+                            "  Sample duplicate row position(s): "
+                            + ", ".join(str(position) for position in positions)
+                        )
+
+                    while True:
+                        item_decision = input_fn(
+                            "  Decision: [a]pprove, [r]eject, "
+                            "[s]kip/defer, [q]uit: "
+                        ).strip().casefold()
+                        if item_decision in {"a", "approve"}:
+                            action.decision = ActionDecision.APPROVED
+                            break
+                        if item_decision in {"r", "reject"}:
+                            action.decision = ActionDecision.REJECTED
+                            break
+                        if item_decision in {"s", "skip", "defer"}:
+                            break
+                        if item_decision in {"q", "quit"}:
+                            quit_requested = True
+                            break
+                        print("  Enter a, r, s, or q.")
+                    if quit_requested:
+                        break
+
+                if quit_requested:
+                    _save_reviewed_plan(plan, output)
+                    print(f"Partial grouped review saved to: {output}")
+                    return plan
+                break
+
+            if decision in {"q", "quit"}:
+                _save_reviewed_plan(plan, output)
+                print(f"Partial grouped review saved to: {output}")
+                return plan
+
+            print("Enter a, r, i, s, or q.")
+
+    # Semantic AI deferrals remain individual decisions because their meaning
+    # is candidate-specific rather than a mechanical transformation family.
+    for deferred in plan.deferred_reviews:
+        if deferred.status != "pending":
+            continue
+        action = deferred.proposed_action
+        preview = preview_action(tables, action, sample_limit=3)
+        print(
+            f"\n=== Deferred AI candidate {deferred.candidate_id} ===\n"
+            f"Target: {_action_target(action)}\n"
+            f"Question: {deferred.question}\n"
+            f"AI rationale: {deferred.rationale}\n"
+            f"Parameters: {action.parameters}\n"
+            f"Affected items by independent preview: {preview.affected_count}"
+        )
+        while True:
+            decision = input_fn(
+                "Manual decision: [a]pprove candidate, [r]eject, "
+                "[s]kip/defer, [q]uit: "
+            ).strip().casefold()
+            if decision in {"a", "approve"}:
+                matching = next(
+                    (
+                        existing
+                        for existing in plan.actions
+                        if existing.type == action.type
+                        and existing.table == action.table
+                        and existing.column == action.column
+                        and existing.parameters == action.parameters
+                    ),
+                    None,
+                )
+                if matching is not None:
+                    matching.decision = ActionDecision.APPROVED
+                else:
+                    approved_action = action.model_copy(deep=True)
+                    approved_action.decision = ActionDecision.APPROVED
+                    approved_action.description = (
+                        "Manually approved deferred AI candidate: "
+                        + deferred.rationale
+                    )
+                    plan.actions.append(approved_action)
+                deferred.status = "approved"
+                break
+            if decision in {"r", "reject"}:
+                deferred.status = "rejected"
+                break
+            if decision in {"s", "skip", "defer"}:
+                break
+            if decision in {"q", "quit"}:
+                _save_reviewed_plan(plan, output)
+                print(f"Partial grouped review saved to: {output}")
+                return plan
+            print("Enter a, r, s, or q.")
+
+    _save_reviewed_plan(plan, output)
+    approved = sum(
+        action.decision == ActionDecision.APPROVED for action in plan.actions
+    )
+    rejected = sum(
+        action.decision == ActionDecision.REJECTED for action in plan.actions
+    )
+    unresolved = sum(
+        action.decision == ActionDecision.PROPOSED for action in plan.actions
+    )
+    print(f"\nGrouped review written to: {output}")
+    print(
+        f"Approved: {approved} · Rejected: {rejected} · "
+        f"Deferred/unresolved: {unresolved}"
+    )
+    print("No edits were applied.")
+    return plan
+
+
 def _human_action_status(reviewed: CleaningPlan, action_ids: list[str]) -> str:
     actions = {action.id: action for action in reviewed.actions}
     matched = [actions[action_id] for action_id in action_ids if action_id in actions]
@@ -510,6 +774,13 @@ def main() -> None:
     summarizer.add_argument("--pilot", type=Path, required=True)
     summarizer.add_argument("--output", type=Path)
 
+    grouped = commands.add_parser(
+        "review-grouped",
+        help="Review plan actions by transformation family without applying edits",
+    )
+    grouped.add_argument("--pilot", type=Path, required=True)
+    grouped.add_argument("--output", type=Path)
+
     scorer = commands.add_parser("score", help="Score AI decisions against a reviewed plan")
     scorer.add_argument("--pilot", type=Path, required=True)
     scorer.add_argument("--reviewed-plan", type=Path, required=True)
@@ -545,6 +816,8 @@ def main() -> None:
                 )
             _write_json(output, payload)
             print(f"Summary written to: {output}")
+    elif args.command == "review-grouped":
+        review_grouped(args.pilot, args.output)
     else:
         score_pilot(
             args.pilot,
