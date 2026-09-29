@@ -437,14 +437,16 @@ def build_ai_candidates(
 def semantic_review_candidates(candidates: list[AICandidate]) -> list[AICandidate]:
     """Keep only candidates whose decision actually requires semantic judgment.
 
-    Mechanical transformations such as null-sentinel normalization, whitespace
-    trimming, date formatting, and numeric coercion remain deterministic human-
-    review actions. The local model is reserved for category-equivalence decisions.
+    Mechanical transformations and deterministic case/whitespace category
+    equivalences remain local rule/human-review work. The model is reserved for
+    fuzzy category candidates where lexical similarity alone cannot establish
+    whether two labels have the same scientific meaning.
     """
     selected = [
         candidate
         for candidate in candidates
         if candidate.action.type == ActionType.NORMALIZE_CATEGORIES
+        and candidate.context.evidence.get("basis") != "case_or_whitespace_equivalence"
     ]
     for index, candidate in enumerate(selected, start=1):
         session_id = f"C{index:03d}"
