@@ -76,7 +76,7 @@ Return the supplied candidate ID with accept or defer; never invent a mapping.
 # two independent calibrated reviews, with a third identical review only when
 # the first two disagree. Any malformed/model-error response fails closed.
 SYSTEM_PROMPT = BASE_SYSTEM_PROMPT + "\n" + EVIDENCE_CALIBRATED_ADDENDUM
-SEMANTIC_REVIEW_BATCH_SIZE = 8
+SEMANTIC_REVIEW_BATCH_SIZE = 4
 
 
 @dataclass(slots=True)
