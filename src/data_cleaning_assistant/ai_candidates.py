@@ -441,10 +441,16 @@ def semantic_review_candidates(candidates: list[AICandidate]) -> list[AICandidat
     trimming, date formatting, and numeric coercion remain deterministic human-
     review actions. The local model is reserved for category-equivalence decisions.
     """
+    semantic_bases = {
+        "fuzzy_similarity_only",
+        "single_edit_typo_pattern",
+        "numeric_zero_padding_equivalence",
+    }
     selected = [
         candidate
         for candidate in candidates
         if candidate.action.type == ActionType.NORMALIZE_CATEGORIES
+        and candidate.context.evidence.get("basis") in semantic_bases
     ]
     for index, candidate in enumerate(selected, start=1):
         session_id = f"C{index:03d}"
