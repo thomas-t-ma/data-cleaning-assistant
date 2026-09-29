@@ -123,6 +123,38 @@ def parse_date(value: Any) -> datetime | None:
     text = str(value).strip()
     if not text or not DATE_SHAPE_PATTERN.search(text):
         return None
+
+    numeric = re.fullmatch(
+        r"(\\d{1,4})[-/](\\d{1,2})[-/](\\d{1,4})",
+        text,
+    )
+    if numeric:
+        first_text, second_text, third_text = numeric.groups()
+        first = int(first_text)
+        second = int(second_text)
+
+        # Year-first numeric dates are unambiguous.
+        if len(first_text) == 4:
+            try:
+                return date_parser.parse(text, fuzzy=False, yearfirst=True)
+            except (ValueError, OverflowError, TypeError):
+                return None
+
+        # For day/month/year or month/day/year forms, refuse to guess when
+        # both leading fields could be months. This prevents silent swaps such
+        # as 06/08/2025 -> 2025-06-08 on data entered as DD/MM/YYYY.
+        if len(third_text) in {2, 4}:
+            if first <= 12 and second <= 12:
+                return None
+            try:
+                return date_parser.parse(
+                    text,
+                    fuzzy=False,
+                    dayfirst=first > 12,
+                )
+            except (ValueError, OverflowError, TypeError):
+                return None
+
     try:
         return date_parser.parse(text, fuzzy=False)
     except (ValueError, OverflowError, TypeError):
