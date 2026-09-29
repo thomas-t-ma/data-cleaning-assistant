@@ -59,6 +59,9 @@ Across those 8 pairs:
   Boolean spellings.
 - Nearby numeric count columns are not eligible as inferred Boolean parents
   unless the column name itself is Boolean-like.
+- Non-adjacent conditional parents require lexical evidence; an adjacent
+  semantically matching binary parent takes precedence over older incidental
+  lexical matches.
 
 Examples include:
 
@@ -94,7 +97,7 @@ authorize no transformations.
 
 ## Synthetic deterministic benchmark
 
-The frozen v0.10 recall suite currently contains 11 positive/negative-control
+The frozen v0.10 recall suite currently contains 14 positive/negative-control
 cases spanning:
 
 - multi-select component normalization;
@@ -108,7 +111,7 @@ cases spanning:
 - codebook positive exposure;
 - count-field codebook rejection.
 
-At the current checkpoint the suite passes 11/11 with:
+At the current checkpoint the suite passes 14/14 with:
 
 - required recall: 100%;
 - forbidden exposures: 0.

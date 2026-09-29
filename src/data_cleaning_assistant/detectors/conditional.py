@@ -139,7 +139,7 @@ def detect_conditional_consistency(
         parent_match_basis = ""
         dependent_tokens = _semantic_tokens(dependent_column)
         parent_candidates: list[
-            tuple[tuple[int, int, int, float, int], str, float, int, str]
+            tuple[tuple[int, int, int, int, float, int], str, float, int, str]
         ] = []
         lower_bound = max(-1, dependent_index - search_previous_columns - 1)
         for parent_index in range(dependent_index - 1, lower_bound, -1):
@@ -167,9 +167,10 @@ def detect_conditional_consistency(
                 else "adjacent_binary"
             )
             rank = (
+                int(adjacent and lexical_overlap > 0),
                 int(lexical_overlap > 0),
-                lexical_overlap,
                 int(adjacent),
+                lexical_overlap,
                 score,
                 -candidate_distance,
             )

@@ -215,3 +215,27 @@ def test_nonadjacent_semantic_overlap_can_identify_parent(
     assert issues[0].evidence["parent_column"] == "has_license"
     assert issues[0].evidence["parent_match_basis"] == "lexical_overlap"
     assert issues[0].evidence["contradiction_count"] == 1
+
+
+def test_adjacent_semantic_parent_beats_older_lexical_overlap(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "adjacent_parent.csv"
+    source.write_text(
+        'subject_id,has_archived_paper_cited,has_data_cited_by_other_authors,"If yes, how many times? (excluding the original paper it was archived for)"\n'
+        "S001,Yes,Yes,1\n"
+        "S002,Yes,No,2\n"
+        "S003,Yes,Yes,1\n"
+        "S004,Yes,No,\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    assert (
+        issues[0].evidence["parent_column"]
+        == "has_data_cited_by_other_authors"
+    )
+    assert issues[0].evidence["parent_match_basis"] == "adjacent_lexical_overlap"
+    assert issues[0].evidence["contradiction_count"] == 1

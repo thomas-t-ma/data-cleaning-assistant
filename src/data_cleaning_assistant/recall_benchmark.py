@@ -267,6 +267,30 @@ def v010_recall_benchmark_cases() -> list[RecallBenchmarkCase]:
             ],
         ),
         RecallBenchmarkCase(
+            id="conditional_adjacent_parent_priority",
+            description=(
+                "An adjacent semantically matching binary parent must win over "
+                "an older field with more incidental lexical overlap."
+            ),
+            csv_text=(
+                'subject_id,has_archived_paper_cited,has_data_cited_by_other_authors,"If yes, how many times? (excluding the original paper it was archived for)"\n'
+                "S001,Yes,Yes,1\n"
+                "S002,Yes,No,2\n"
+                "S003,Yes,Yes,1\n"
+                "S004,Yes,No,\n"
+            ),
+            required=[
+                RecallSignal(
+                    kind="issue",
+                    name="conditional_dependency_inconsistency",
+                    column=(
+                        "If yes, how many times? "
+                        "(excluding the original paper it was archived for)"
+                    ),
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
             id="conditional_count_zero",
             description="Zero in a count field is numeric, not a Boolean spelling.",
             csv_text=(
