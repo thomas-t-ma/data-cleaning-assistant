@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Annotated
 
@@ -9,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .actions import ActionDecision, ChangeSet, CleaningPlan
-from .ai_candidates import build_ai_candidates
+from .ai_candidates import build_ai_candidates, semantic_review_candidates
 from .ai_context import build_ai_context
 from .ai_planner import propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
@@ -20,6 +21,13 @@ from .issue_summary import summarize_issues, visible_issues
 from .planner import file_sha256, propose_actions
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
+from .review import (
+    action_target,
+    begin_review_session,
+    finish_review_session,
+    group_actions,
+    record_review_event,
+)
 from .study_schema import load_study_schema
 from .transforms import (
     apply_plan,
@@ -407,7 +415,9 @@ def ai_context_command(
     schema = load_study_schema(schema_path) if schema_path else None
     loaded = load_dataset(input_path)
     report = profile_dataset(input_path, schema=schema)
-    candidates = build_ai_candidates(report, loaded.tables, schema=schema)
+    candidates = semantic_review_candidates(
+        build_ai_candidates(report, loaded.tables, schema=schema)
+    )
     context = build_ai_context(report, candidates)
     payload = context.model_dump_json(indent=2)
 
