@@ -432,3 +432,22 @@ def build_ai_candidates(
         candidate.id = session_id
         candidate.context.id = session_id
     return deduped
+
+
+def semantic_review_candidates(candidates: list[AICandidate]) -> list[AICandidate]:
+    """Keep only candidates whose decision actually requires semantic judgment.
+
+    Mechanical transformations such as null-sentinel normalization, whitespace
+    trimming, date formatting, and numeric coercion remain deterministic human-
+    review actions. The local model is reserved for category-equivalence decisions.
+    """
+    selected = [
+        candidate
+        for candidate in candidates
+        if candidate.action.type == ActionType.NORMALIZE_CATEGORIES
+    ]
+    for index, candidate in enumerate(selected, start=1):
+        session_id = f"C{index:03d}"
+        candidate.id = session_id
+        candidate.context.id = session_id
+    return selected
