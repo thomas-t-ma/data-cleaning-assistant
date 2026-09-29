@@ -14,6 +14,7 @@
 - Added bounded semantic review batches (maximum 4 candidates) with focused per-target model context, so one oversized prompt cannot poison an entire run.
 - Distinguished Ollama inference timeouts from connection failures in provider diagnostics.
 - Added a post-consensus mapping-consistency veto: competing AI-accepted canonical targets for the same source label fail closed unless deterministic/schema evidence resolves the canonical target.
+- Added explicit free-response detection so comment/narrative survey fields are excluded from both deterministic category normalization and fuzzy semantic review, even when repeated short responses create superficial case variants.
 - The routing/grouping changes were motivated by a public NHANES-derived workflow pilot in which 71 redundant AI reviews collapsed to zero while all 72 deterministic proposals remained available; grouped review reduced those 72 actions to four exact transformation families. This is product/workflow evidence, not scientific or clinical validation.
 
 
