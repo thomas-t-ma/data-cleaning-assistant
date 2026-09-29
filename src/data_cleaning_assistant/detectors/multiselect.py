@@ -24,7 +24,7 @@ def detect_multiselect_component_variants(
     *,
     delimiter: str = ";",
 ) -> list[Issue]:
-    """Detect exact case/whitespace variants inside structured multi-select cells.
+    """Detect exact capitalization variants inside structured multi-select cells.
 
     This intentionally does not perform fuzzy component matching. v0.9 showed
     that whole-value fuzzy similarity can erase legitimate selected options.

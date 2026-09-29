@@ -34,7 +34,7 @@ Status: **implemented; validation in progress**
   so occasional semicolons in scalar prose do not activate this path.
 - Detect semicolon-delimited categorical fields separately from ordinary scalar
   categories.
-- Normalize exact case/whitespace component variants without comparing the whole
+- Normalize exact capitalization component variants without comparing the whole
   cell as one category.
 - Preserve every selected option and its order.
 - Do not choose a canonical component casing when observed variants are tied;

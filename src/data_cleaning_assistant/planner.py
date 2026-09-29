@@ -115,7 +115,7 @@ def _multiselect_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
         column=issue.column,
         title="Normalize multi-select component labels",
         description=(
-            "Normalize capitalization/whitespace variants inside structured "
+            "Normalize capitalization variants inside structured "
             "multi-select responses while preserving every selected component. "
             "Review the component mapping before approval."
         ),
