@@ -531,7 +531,7 @@ def _batched_adaptive_consensus_review(
     )
     deferred = len(selections) - accepted
     failure_note = (
-        f" {failed_closed_batches} batch(es) had model-call failures and "
+        f" {failed_closed_batches} batch(es) had model calls failed and "
         "failed closed to human review."
         if failed_closed_batches
         else ""
