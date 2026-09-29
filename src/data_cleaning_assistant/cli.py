@@ -420,7 +420,7 @@ def codebook_suggest_command(
     table.add_column("Column")
     table.add_column("Core labels", justify="right")
     table.add_column("Coverage", justify="right")
-    table.add_column("Rare write-ins", justify="right")
+    table.add_column("Rare/other values", justify="right")
     table.add_column("Exact variant mappings", justify="right")
     for suggestion in report.suggestions:
         table.add_row(

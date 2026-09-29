@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -15,6 +16,9 @@ from .inference import (
     looks_like_identifier_name,
     normalize_text,
 )
+
+
+_COUNT_NAME_PATTERN = re.compile(r"\b(how many|count|number)\b", re.IGNORECASE)
 
 
 class CodebookSuggestion(BaseModel):
@@ -96,8 +100,13 @@ def suggest_codebooks(
             if looks_like_free_text_response(column, series):
                 continue
 
-            inferred_type, _confidence, _ratios = infer_semantic_type(column, series)
+            inferred_type, _confidence, ratios = infer_semantic_type(column, series)
             if inferred_type in {"identifier", "numeric", "date"}:
+                continue
+            if (
+                _COUNT_NAME_PATTERN.search(column)
+                and ratios["numeric_ratio"] >= 0.50
+            ):
                 continue
 
             values = [

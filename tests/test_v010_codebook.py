@@ -119,3 +119,21 @@ def test_codebook_suggestion_skips_structured_multiselect_fields(
     report = suggest_codebooks(source, loaded.tables)
 
     assert report.suggestions == []
+
+
+def test_codebook_suggestion_skips_mixed_numeric_count_fields(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "counts.csv"
+    rows = ["0"] * 12 + ["1"] * 8 + ["2"] * 4 + ["Unclear"] * 6
+    source.write_text(
+        "If yes, how many times? Enter number or Unclear\n"
+        + "\n".join(rows)
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_dataset(source)
+    report = suggest_codebooks(source, loaded.tables)
+
+    assert report.suggestions == []
