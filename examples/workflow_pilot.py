@@ -25,6 +25,8 @@ from data_cleaning_assistant.ai_provider import OllamaProvider, StructuredAIProv
 from data_cleaning_assistant.engine import profile_dataset
 from data_cleaning_assistant.planner import file_sha256
 from data_cleaning_assistant.study_schema import StudySchema, load_study_schema
+from data_cleaning_assistant.io import load_dataset
+from data_cleaning_assistant.transforms import preview_action
 
 MANIFEST = "pilot_manifest.json"
 PROFILE = "profile.json"
@@ -180,6 +182,14 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
     profile = json.loads((pilot / PROFILE).read_text(encoding="utf-8"))
     plan = CleaningPlan.model_validate_json((pilot / PLAN).read_text(encoding="utf-8"))
     trace = json.loads((pilot / TRACE).read_text(encoding="utf-8"))
+    manifest = json.loads((pilot / MANIFEST).read_text(encoding="utf-8"))
+    source = Path(manifest["source_path"])
+    if not source.is_file() or file_sha256(source) != manifest["source"]["sha256"]:
+        raise ValueError(
+            "Pilot source is missing or changed since the pilot was created. "
+            "Cannot compute reliable action preview counts."
+        )
+    tables = load_dataset(source).tables
 
     issue_types: dict[str, int] = {}
     issue_targets: dict[str, int] = {}
@@ -189,11 +199,6 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
         target = f"{issue.get('table', '?')}.{issue.get('column') or '(table)'}"
         issue_targets[target] = issue_targets.get(target, 0) + 1
 
-    issue_by_id = {
-        str(issue.get("id")): issue
-        for issue in profile.get("issues", [])
-        if issue.get("id") is not None
-    }
     action_types: dict[str, int] = {}
     action_targets: dict[str, int] = {}
     action_origins: dict[str, int] = {}
@@ -214,17 +219,16 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
                 "type": action.type.value,
                 "parameters": action.parameters,
                 "actions": 0,
-                "issue_affected_total": 0,
+                "preview_affected_total": 0,
                 "targets": [],
             },
         )
         family["actions"] += 1
         if len(family["targets"]) < 10:
             family["targets"].append(target)
-        family["issue_affected_total"] += sum(
-            int(issue_by_id[issue_id].get("affected_count", 0))
-            for issue_id in action.issue_ids
-            if issue_id in issue_by_id
+        preview = preview_action(tables, action, sample_limit=1)
+        family["preview_affected_total"] = (
+            family.get("preview_affected_total", 0) + preview.affected_count
         )
 
     candidate_bases: dict[str, int] = {}
@@ -290,7 +294,7 @@ def summarize_pilot(pilot: Path) -> dict[str, Any]:
         print(
             f"  {family['type']} {family['parameters']}: "
             f"{family['actions']} action(s), "
-            f"{family['issue_affected_total']} detector-affected row(s)"
+            f"{family['preview_affected_total']} affected item(s) by independent preview"
         )
     print("\nCandidate types:")
     for name, count in payload["candidate_types"].items():
