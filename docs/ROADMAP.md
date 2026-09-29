@@ -53,7 +53,8 @@ Initial safety invariant:
 
 Status: **initial non-executable detector implemented**
 
-- Detect explicit If yes / If no dependent fields and link them only to a nearby
+- Detect explicit If yes / If no dependent fields and explicit skip instructions
+  such as "SKIP THIS Q IF NO README EXISTS", linking them only to a nearby
   yes/no-like parent field.
 - Flag contradictions and trigger-state missing detail as QA findings only.
 - Detect repeated conditional structures such as a parent yes/no field followed

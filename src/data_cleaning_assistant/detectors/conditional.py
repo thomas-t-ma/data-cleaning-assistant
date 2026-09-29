@@ -13,6 +13,10 @@ _TRIGGER_PATTERN = re.compile(
     r"^\s*(?:\d+\.\s*)?if\s+(yes|no)\b",
     re.IGNORECASE,
 )
+_SKIP_PATTERN = re.compile(
+    r"\bskip\b.*\bif\s+(yes|no)\b",
+    re.IGNORECASE,
+)
 _TEXT_YES = {"yes", "y", "true"}
 _TEXT_NO = {"no", "n", "false"}
 _YES = _TEXT_YES | {"1"}
@@ -65,6 +69,19 @@ def _has_required_detail(value) -> bool:
     return normalized not in _TEXT_YES and normalized not in _TEXT_NO
 
 
+def _trigger_from_column(column: str) -> tuple[str, str] | None:
+    direct = _TRIGGER_PATTERN.match(column)
+    if direct is not None:
+        return direct.group(1).casefold(), "explicit_if_prefix"
+
+    skip = _SKIP_PATTERN.search(column)
+    if skip is None:
+        return None
+    skipped_state = skip.group(1).casefold()
+    trigger_state = "no" if skipped_state == "yes" else "yes"
+    return trigger_state, "explicit_skip_instruction"
+
+
 def detect_conditional_consistency(
     table: str,
     frame: pd.DataFrame,
@@ -81,10 +98,10 @@ def detect_conditional_consistency(
     issues: list[Issue] = []
 
     for dependent_index, dependent_column in enumerate(columns):
-        match = _TRIGGER_PATTERN.match(dependent_column)
-        if match is None:
+        trigger = _trigger_from_column(dependent_column)
+        if trigger is None:
             continue
-        trigger_state = match.group(1).casefold()
+        trigger_state, relationship_basis = trigger
 
         parent_column: str | None = None
         parent_score = 0.0
@@ -176,6 +193,7 @@ def detect_conditional_consistency(
                     "parent_column": parent_column,
                     "dependent_column": dependent_column,
                     "trigger_state": trigger_state,
+                    "relationship_basis": relationship_basis,
                     "parent_binary_score": parent_score,
                     "column_distance": distance,
                     "count_like_dependent": count_like,

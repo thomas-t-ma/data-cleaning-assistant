@@ -114,3 +114,27 @@ def test_if_no_dependency_is_supported(tmp_path: Path) -> None:
     assert issue.evidence["contradiction_count"] == 1
     assert issue.evidence["missing_detail_count"] == 1
     assert issue.affected_count == 2
+
+
+def test_skip_if_no_instruction_links_to_binary_parent(tmp_path: Path) -> None:
+    source = tmp_path / "readme.csv"
+    source.write_text(
+        "subject_id,Does the code have a README?,How useful is the README? SKIP THIS Q IF NO README EXISTS.\n"
+        "S001,Yes,5\n"
+        "S002,No,\n"
+        "S003,No,2\n"
+        "S004,Yes,NA\n"
+        "S005,Unsure,NA\n"
+        "S006,No,No\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue.evidence["trigger_state"] == "yes"
+    assert issue.evidence["relationship_basis"] == "explicit_skip_instruction"
+    assert issue.evidence["contradiction_count"] == 1
+    assert issue.evidence["missing_detail_count"] == 1
+    assert issue.affected_count == 2
