@@ -12,7 +12,7 @@ from data_cleaning_assistant.recall_eval import build_recall_surface_report
 def test_recall_report_summarizes_new_review_surfaces(tmp_path: Path) -> None:
     source = tmp_path / "recall.csv"
     source.write_text(
-        "subject_id,language,has_license,If yes, what license?\n"
+        'subject_id,language,has_license,"If yes, what license?"\n'
         'S001,"R;BUGS",Yes,MIT\n'
         'S002,"R;Bugs",No,\n'
         'S003,"Python;BUGS",No,CC BY\n'

@@ -18,7 +18,7 @@ def test_if_yes_dependency_flags_contradiction_and_missing_detail(
 ) -> None:
     source = tmp_path / "conditional.csv"
     source.write_text(
-        "subject_id,11. Does the data have a license?,12. If yes, what license?\n"
+        'subject_id,11. Does the data have a license?,"12. If yes, what license?"\n'
         "S001,Yes,MIT\n"
         "S002,No,\n"
         "S003,No,CC BY\n"
@@ -43,7 +43,7 @@ def test_if_yes_dependency_flags_contradiction_and_missing_detail(
 def test_consistent_if_yes_dependency_has_no_issue(tmp_path: Path) -> None:
     source = tmp_path / "consistent.csv"
     source.write_text(
-        "subject_id,has_license,If yes, what license?\n"
+        'subject_id,has_license,"If yes, what license?"\n'
         "S001,Yes,MIT\n"
         "S002,No,\n"
         "S003,No,No\n"
@@ -58,7 +58,7 @@ def test_consistent_if_yes_dependency_has_no_issue(tmp_path: Path) -> None:
 def test_if_yes_field_does_not_link_to_nonbinary_parent(tmp_path: Path) -> None:
     source = tmp_path / "nonbinary.csv"
     source.write_text(
-        "subject_id,status,If yes, explain\n"
+        'subject_id,status,"If yes, explain"\n'
         "S001,Alpha,detail one\n"
         "S002,Beta,detail two\n"
         "S003,Gamma,detail three\n"
@@ -74,7 +74,7 @@ def test_count_dependency_treats_zero_as_numeric_not_boolean(
 ) -> None:
     source = tmp_path / "counts.csv"
     source.write_text(
-        "subject_id,Has the data been cited?,If yes, how many times? Enter number or Unclear\n"
+        'subject_id,Has the data been cited?,"If yes, how many times? Enter number or Unclear"\n'
         "S001,No,0\n"
         "S002,Yes,1\n"
         "S003,Yes,0\n"
@@ -97,7 +97,7 @@ def test_count_dependency_treats_zero_as_numeric_not_boolean(
 def test_if_no_dependency_is_supported(tmp_path: Path) -> None:
     source = tmp_path / "if_no.csv"
     source.write_text(
-        "subject_id,Is the file usable?,If no, explain\n"
+        'subject_id,Is the file usable?,"If no, explain"\n'
         "S001,Yes,\n"
         "S002,No,Corrupt archive\n"
         "S003,Yes,Corrupt archive\n"
