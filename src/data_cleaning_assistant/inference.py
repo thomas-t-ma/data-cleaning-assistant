@@ -125,7 +125,7 @@ def parse_date(value: Any) -> datetime | None:
         return None
 
     numeric = re.fullmatch(
-        r"(\\d{1,4})[-/](\\d{1,2})[-/](\\d{1,4})",
+        r"(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})",
         text,
     )
     if numeric:
