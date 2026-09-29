@@ -6,7 +6,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from data_cleaning_assistant.actions import ActionDecision, CleaningPlan
+from data_cleaning_assistant.actions import CleaningPlan
 
 
 def summarize(plan_path: Path, context_path: Path | None = None) -> dict:
