@@ -10,6 +10,7 @@ from .codebook import CodebookSuggestion, suggest_codebooks
 from .engine import profile_dataset
 from .io import load_dataset
 from .planner import propose_actions
+from .transforms import preview_action
 
 
 V010_RECALL_ISSUE_TYPES = {
@@ -62,15 +63,11 @@ def build_recall_surface_report(path: str | Path) -> RecallSurfaceReport:
         if action.type == ActionType.NORMALIZE_MULTISELECT
     ]
 
-    # Action affected counts are intentionally approximated from the linked
-    # detector findings rather than by applying edits. This report stays read-only.
-    issue_by_id = {issue.id: issue for issue in profile.issues}
+    # Preview against the original tables rather than joining random issue IDs
+    # across separate profiling passes. Preview is read-only and uses the same
+    # transformation semantics shown during human review.
     multiselect_affected = sum(
-        sum(
-            issue_by_id[issue_id].affected_count
-            for issue_id in action.issue_ids
-            if issue_id in issue_by_id
-        )
+        preview_action(loaded.tables, action, sample_limit=0).affected_count
         for action in multiselect_actions
     )
 
