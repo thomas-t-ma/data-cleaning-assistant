@@ -72,7 +72,7 @@ one dataset, not generalization, scientific correctness, or clinical safety.
 For semantic category review, v0.9 also applies deterministic safety gates before
 and after model consensus. Semicolon-delimited multi-select responses are not
 compared with whole-string fuzzy merging. Model calls are split into focused
-batches of at most eight candidates. After consensus, if the same source label is
+batches of at most four candidates. After consensus, if the same source label is
 accepted toward competing canonical targets, those conflicting AI proposals fail
 closed to human review unless deterministic/schema evidence already establishes a
 single canonical target.
