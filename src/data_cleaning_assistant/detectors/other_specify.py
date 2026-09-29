@@ -37,12 +37,8 @@ def _semantic_tokens(column: str) -> set[str]:
 
 def _is_other_label(value: str) -> bool:
     normalized = normalize_text(value)
-    return (
-        normalized == "other"
-        or normalized.startswith("other ")
-        or normalized.startswith("other(")
-        or normalized.startswith("other:")
-        or normalized.startswith("other-")
+    return normalized == "other" or normalized.startswith(
+        ("other ", "other(", "other:", "other-")
     )
 
 
