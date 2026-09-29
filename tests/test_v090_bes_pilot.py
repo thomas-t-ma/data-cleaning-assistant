@@ -66,10 +66,12 @@ def test_bes_fetcher_validates_expected_raw_and_cleaned_shapes(
     result = validate_sources(raw, cleaned)
     assert result["raw_rows"] == 1862
     assert result["raw_columns"] == 20
-    assert result["raw_encoding"] == "utf-8-sig"
+    assert result["raw_decoding"] == "utf-8-sig"
+    assert result["raw_undecodable_bytes"] == 0
     assert result["clean_rows"] == 1861
     assert result["clean_columns"] == 7
-    assert result["clean_encoding"] == "utf-8-sig"
+    assert result["clean_decoding"] == "utf-8-sig"
+    assert result["clean_undecodable_bytes"] == 0
 
 
 def test_bes_fetcher_rejects_wrong_cleaned_row_count(
@@ -91,7 +93,7 @@ def test_bes_fetcher_rejects_wrong_cleaned_row_count(
         raise AssertionError("Expected invalid cleaned row count to fail.")
 
 
-def test_bes_fetcher_accepts_explicit_cp1252_reference(
+def test_bes_fetcher_preserves_mixed_upstream_bytes_with_surrogateescape(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
@@ -102,12 +104,17 @@ def test_bes_fetcher_accepts_explicit_cp1252_reference(
     _write_raw(raw)
     _write_clean(cleaned)
 
-    text = cleaned.read_text(encoding="utf-8")
-    # Insert a CP1252-only byte (Œ = 0x8C) into a non-key free-text field.
-    text = text.replace("Journal of Ecology", "Journal Œcology", 1)
-    cleaned.write_bytes(text.encode("cp1252"))
+    payload = cleaned.read_bytes()
+    marker = b"Journal of Ecology"
+    assert marker in payload
+    # 0x8D is invalid UTF-8 and is undefined in Windows-1252. This reproduces
+    # a mixed/nonconforming upstream byte without guessing an alternate codec.
+    payload = payload.replace(marker, b"Journal \x8dEcology", 1)
+    cleaned.write_bytes(payload)
 
     result = validate_sources(raw, cleaned)
-    assert result["raw_encoding"] == "utf-8-sig"
-    assert result["clean_encoding"] == "cp1252"
+    assert result["raw_decoding"] == "utf-8-sig"
+    assert result["clean_decoding"] == "utf-8-sig+surrogateescape"
+    assert result["clean_undecodable_bytes"] == 1
     assert result["clean_rows"] == 1861
+
