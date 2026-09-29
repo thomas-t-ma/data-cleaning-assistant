@@ -96,3 +96,24 @@ def test_codebook_cli_is_read_only_and_writes_review_report(
     assert payload["source_sha256"]
     assert payload["suggestions"]
     assert "authorize no transformations" in result.output
+
+
+def test_codebook_suggestion_skips_structured_multiselect_fields(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "multiselect.csv"
+    rows = (
+        ["R;BUGS"] * 12
+        + ["R;Python"] * 10
+        + ["R;Bugs"] * 4
+        + ["Python;BUGS"] * 4
+    )
+    source.write_text(
+        "language\n" + "\n".join(rows) + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_dataset(source)
+    report = suggest_codebooks(source, loaded.tables)
+
+    assert report.suggestions == []

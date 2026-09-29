@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -107,6 +108,10 @@ def suggest_codebooks(
             if len(values) < 20:
                 continue
 
+            delimited_count = sum(";" in value for value in values)
+            if delimited_count >= max(5, math.ceil(len(values) * 0.01)):
+                continue
+
             counts: Counter[str] = Counter(values)
             if not 2 <= len(counts) <= max_observed_values:
                 continue
@@ -156,7 +161,7 @@ def suggest_codebooks(
                     counts.items(),
                     key=lambda item: (-item[1], item[0]),
                 )
-                if value not in core_set
+                if value not in core_set and value not in canonical_map
             ][:rare_preview_limit]
 
             suggestions.append(
