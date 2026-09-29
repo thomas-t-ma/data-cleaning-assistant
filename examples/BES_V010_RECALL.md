@@ -59,9 +59,10 @@ Across those 8 pairs:
   Boolean spellings.
 - Nearby numeric count columns are not eligible as inferred Boolean parents
   unless the column name itself is Boolean-like.
-- Non-adjacent conditional parents require lexical evidence; an adjacent
-  semantically matching binary parent takes precedence over older incidental
-  lexical matches.
+- Non-adjacent conditional parents require lexical evidence. Generic survey
+  wording such as "paper", "archived", and "excluding" is not treated as a
+  semantic anchor; meaningful terms such as "license" or "README" can disambiguate
+  a non-adjacent parent.
 
 Examples include:
 

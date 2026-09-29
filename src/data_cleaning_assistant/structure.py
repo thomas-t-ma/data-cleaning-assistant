@@ -338,11 +338,14 @@ def infer_relationships(tables: dict[str, pd.DataFrame]) -> list[CrossTableRelat
             ):
                 continue
 
+            # Relationship candidates are identifier-like by construction.
+            # Preserve their exact string representation: case/whitespace may be
+            # meaningful, and inferred joins must not manufacture identity.
             left_values = [
-                normalize_text(v) for v in left[left_col].tolist() if not is_missing_like(v)
+                str(v) for v in left[left_col].tolist() if not is_missing_like(v)
             ]
             right_values = [
-                normalize_text(v) for v in right[right_col].tolist() if not is_missing_like(v)
+                str(v) for v in right[right_col].tolist() if not is_missing_like(v)
             ]
             if not left_values or not right_values:
                 continue

@@ -237,5 +237,5 @@ def test_adjacent_semantic_parent_beats_older_lexical_overlap(
         issues[0].evidence["parent_column"]
         == "has_data_cited_by_other_authors"
     )
-    assert issues[0].evidence["parent_match_basis"] == "adjacent_lexical_overlap"
+    assert issues[0].evidence["parent_match_basis"] == "adjacent_binary"
     assert issues[0].evidence["contradiction_count"] == 1

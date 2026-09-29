@@ -33,7 +33,11 @@ _CONDITIONAL_STOPWORDS = {
     "enter", "number", "or", "unclear", "explain", "please", "skip", "this",
     "that", "the", "a", "an", "of", "to", "for", "when", "does", "do",
     "did", "has", "have", "had", "is", "are", "was", "were", "can",
-    "could", "q", "exists",
+    "could", "q", "exists", "data", "code", "paper", "papers",
+    "original", "archived", "archive", "author", "authors", "other",
+    "someone", "used", "using", "excluding", "it", "its", "from", "with",
+    "in", "on", "at", "by", "and", "but", "than", "been", "being", "you",
+    "your", "we", "our", "they", "their",
 }
 _UNCERTAIN = {
     "unclear",
