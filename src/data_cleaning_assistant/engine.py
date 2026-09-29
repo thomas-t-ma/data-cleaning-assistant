@@ -7,6 +7,7 @@ from .detectors import (
     detect_conditional_consistency,
     detect_fuzzy_categories,
     detect_multiselect_component_variants,
+    detect_other_specify_consistency,
 )
 from .detectors.basic import _iqr_outliers
 from .io import load_dataset
@@ -156,6 +157,7 @@ def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> D
         issues.extend(detect_fuzzy_categories(table_name, frame))
         issues.extend(detect_multiselect_component_variants(table_name, frame))
         issues.extend(detect_conditional_consistency(table_name, frame))
+        issues.extend(detect_other_specify_consistency(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
         issues.extend(normalization_equivalent_duplicate_issues(table_name, frame))
 

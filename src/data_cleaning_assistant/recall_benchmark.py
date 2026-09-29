@@ -311,6 +311,48 @@ def v010_recall_benchmark_cases() -> list[RecallBenchmarkCase]:
             ],
         ),
         RecallBenchmarkCase(
+            id="other_specify_consistency",
+            description=(
+                "Other selections and their explicit write-in field should be "
+                "checked without authorizing recoding."
+            ),
+            csv_text=(
+                'subject_id,repository,"If other repository, specify"\n'
+                "S001,Dryad,\n"
+                "S002,Other,Institutional archive\n"
+                "S003,Other,\n"
+                "S004,Zenodo,manual archive\n"
+                "S005,Figshare,\n"
+            ),
+            required=[
+                RecallSignal(
+                    kind="issue",
+                    name="other_specify_inconsistency",
+                    column="If other repository, specify",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
+            id="other_specify_nonadjacent_negative",
+            description=(
+                "Generic non-adjacent If other fields must not guess a parent."
+            ),
+            csv_text=(
+                'subject_id,repository,reviewer_note,"If other, specify"\n'
+                "S001,Other,checked,Institutional archive\n"
+                "S002,Dryad,checked,unexpected detail\n"
+                "S003,Zenodo,checked,\n"
+                "S004,Other,checked,\n"
+            ),
+            forbidden=[
+                RecallSignal(
+                    kind="issue",
+                    name="other_specify_inconsistency",
+                    column="If other, specify",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
             id="normalization_equivalent_duplicate",
             description="Rows equal after safe normalization should be QA-only near duplicates.",
             csv_text=(

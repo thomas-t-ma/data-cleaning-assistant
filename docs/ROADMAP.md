@@ -64,6 +64,8 @@ Status: **initial non-executable detector implemented**
 - Prefer explicit study-schema relationships when available.
 - Keep inferred conditional relationships non-executable until separately
   validated.
+- Detect explicit Other / specify write-in dependencies and flag both missing
+  write-ins and populated write-ins when Other is not selected.
 
 Examples:
 

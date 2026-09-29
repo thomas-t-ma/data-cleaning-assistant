@@ -495,6 +495,11 @@ def recall_report_command(
         str(report.conditional_affected_count),
     )
     table.add_row(
+        "Other/specify QA pairs",
+        str(report.other_specify_pair_count),
+        str(report.other_specify_affected_count),
+    )
+    table.add_row(
         "Normalization-equivalent duplicate QA",
         str(report.normalized_duplicate_group_issue_count),
         str(report.normalized_duplicate_affected_count),

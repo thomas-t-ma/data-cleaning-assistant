@@ -17,6 +17,7 @@ V010_RECALL_ISSUE_TYPES = {
     "multiselect_component_inconsistency",
     "conditional_dependency_inconsistency",
     "normalization_equivalent_rows",
+    "other_specify_inconsistency",
 }
 
 
@@ -31,6 +32,8 @@ class RecallSurfaceReport(BaseModel):
     multiselect_action_affected_count: int = 0
     conditional_pair_count: int = 0
     conditional_affected_count: int = 0
+    other_specify_pair_count: int = 0
+    other_specify_affected_count: int = 0
     normalized_duplicate_group_issue_count: int = 0
     normalized_duplicate_affected_count: int = 0
     codebook_suggestion_count: int = 0
@@ -88,6 +91,8 @@ def build_recall_surface_report(path: str | Path) -> RecallSurfaceReport:
         multiselect_action_affected_count=multiselect_affected,
         conditional_pair_count=issue_counts["conditional_dependency_inconsistency"],
         conditional_affected_count=affected_counts["conditional_dependency_inconsistency"],
+        other_specify_pair_count=issue_counts["other_specify_inconsistency"],
+        other_specify_affected_count=affected_counts["other_specify_inconsistency"],
         normalized_duplicate_group_issue_count=issue_counts["normalization_equivalent_rows"],
         normalized_duplicate_affected_count=affected_counts["normalization_equivalent_rows"],
         codebook_suggestion_count=len(codebooks.suggestions),

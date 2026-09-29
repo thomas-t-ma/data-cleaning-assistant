@@ -69,3 +69,20 @@ def test_recall_report_cli_is_read_only(tmp_path: Path) -> None:
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["source_sha256"]
     assert "no Ollama calls" in result.output
+
+
+def test_recall_surface_report_exposes_other_specify_counts(tmp_path: Path) -> None:
+    source = tmp_path / "other.csv"
+    source.write_text(
+        'subject_id,repository,"If other repository, specify"\n'
+        "S001,Dryad,\n"
+        "S002,Other,Institutional archive\n"
+        "S003,Other,\n"
+        "S004,Zenodo,manual archive\n",
+        encoding="utf-8",
+    )
+
+    report = build_recall_surface_report(source)
+
+    assert report.other_specify_pair_count == 1
+    assert report.other_specify_affected_count == 2

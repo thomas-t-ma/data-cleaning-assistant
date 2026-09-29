@@ -46,6 +46,11 @@ def test_v010_recall_benchmark_has_positive_and_negative_controls() -> None:
         for case in cases
         for signal in [*case.required, *case.forbidden]
     )
+    assert any(
+        signal.name == "other_specify_inconsistency"
+        for case in cases
+        for signal in [*case.required, *case.forbidden]
+    )
 
 
 def test_recall_benchmark_cli_writes_json(tmp_path: Path) -> None:
