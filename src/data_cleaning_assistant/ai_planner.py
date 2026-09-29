@@ -107,6 +107,139 @@ def _effect_key(action: CleaningAction) -> str:
     )
 
 
+def _category_mapping_entries(
+    action: CleaningAction,
+) -> list[tuple[tuple[str, str | None, str], str]]:
+    if action.type != ActionType.NORMALIZE_CATEGORIES:
+        return []
+    mapping = action.parameters.get("mapping")
+    if not isinstance(mapping, dict):
+        return []
+    return [
+        ((action.table, action.column, str(source)), str(target))
+        for source, target in mapping.items()
+    ]
+
+
+def _resolve_ai_mapping_conflicts(
+    accepted: list[CleaningAction],
+    *,
+    candidate_by_action_id: dict[str, AICandidate],
+    deterministic_actions: list[CleaningAction],
+) -> tuple[
+    list[CleaningAction],
+    list[DeferredReview],
+    list[AIRejectedProposal],
+]:
+    """Fail closed when accepted AI mappings disagree on one source label.
+
+    A deterministic/schema-derived mapping may resolve the canonical target. If
+    it does not, every competing AI alternative is deferred rather than picking
+    a winner based on review order or model confidence.
+    """
+    deterministic_targets: dict[tuple[str, str | None, str], set[str]] = {}
+    for action in deterministic_actions:
+        for key, target in _category_mapping_entries(action):
+            deterministic_targets.setdefault(key, set()).add(target)
+
+    ai_by_key: dict[
+        tuple[str, str | None, str],
+        list[tuple[CleaningAction, str]],
+    ] = {}
+    for action in accepted:
+        for key, target in _category_mapping_entries(action):
+            ai_by_key.setdefault(key, []).append((action, target))
+
+    reasons: dict[str, str] = {}
+    for key, items in ai_by_key.items():
+        table, column, source = key
+        ai_targets = {target for _action, target in items}
+        rule_targets = deterministic_targets.get(key, set())
+
+        if len(rule_targets) == 1:
+            canonical = next(iter(rule_targets))
+            for action, target in items:
+                if target != canonical:
+                    reasons[action.id] = (
+                        "Post-review safety veto: accepted AI mapping "
+                        f"{source!r} -> {target!r} conflicts with deterministic "
+                        f"canonical target {canonical!r} for {table}.{column}."
+                    )
+            continue
+
+        if len(rule_targets) > 1:
+            targets = ", ".join(sorted(repr(target) for target in rule_targets))
+            for action, _target in items:
+                reasons[action.id] = (
+                    "Post-review safety veto: deterministic planning produced "
+                    f"multiple canonical targets for {source!r} in {table}.{column}: "
+                    f"{targets}. AI mapping deferred pending human review."
+                )
+            continue
+
+        if len(ai_targets) > 1:
+            targets = ", ".join(sorted(repr(target) for target in ai_targets))
+            for action, _target in items:
+                reasons[action.id] = (
+                    "Post-review safety veto: multiple AI-accepted candidates map "
+                    f"{source!r} to competing targets in {table}.{column}: {targets}. "
+                    "No deterministic/schema canonical target resolves the conflict."
+                )
+
+    if not reasons:
+        return accepted, [], []
+
+    kept: list[CleaningAction] = []
+    deferred: list[DeferredReview] = []
+    rejected: list[AIRejectedProposal] = []
+    for action in accepted:
+        reason = reasons.get(action.id)
+        if reason is None:
+            kept.append(action)
+            continue
+
+        candidate = candidate_by_action_id.get(action.id)
+        if candidate is None:
+            rejected.append(
+                AIRejectedProposal(
+                    candidate_id=action.id,
+                    type=action.type,
+                    table=action.table,
+                    column=action.column,
+                    parameters=action.parameters,
+                    rationale=action.description,
+                    reason=reason,
+                )
+            )
+            continue
+
+        deferred.append(
+            DeferredReview(
+                candidate_id=candidate.id,
+                proposed_action=candidate.action.model_copy(deep=True),
+                question=candidate.context.question,
+                rationale=reason + " Model rationale: " + action.description,
+                confidence=0.0,
+                evidence={
+                    **candidate.context.evidence,
+                    "post_review_safety_veto": "conflicting_canonical_mapping",
+                },
+            )
+        )
+        rejected.append(
+            AIRejectedProposal(
+                candidate_id=candidate.id,
+                type=action.type,
+                table=action.table,
+                column=action.column,
+                parameters=action.parameters,
+                rationale=action.description,
+                reason=reason,
+            )
+        )
+    return kept, deferred, rejected
+
+
 def _action_is_covered_by_existing(
     proposed: CleaningAction,
     existing: CleaningAction,
@@ -587,6 +720,9 @@ def propose_ai_plan(
     )
 
     candidate_by_id = {candidate.id: candidate for candidate in candidates}
+    candidate_by_action_id = {
+        candidate.action.id: candidate for candidate in candidates
+    }
     seen: set[str] = set()
     accepted: list[CleaningAction] = []
     deferred: list[DeferredReview] = []
@@ -653,6 +789,18 @@ def propose_ai_plan(
     # Planning notes must survive hybrid and AI-only modes: omitted
     # structural-only fields remain visible as non-executable coverage QA.
     rule_plan = propose_actions(resolved, schema=schema)
+    (
+        accepted,
+        consistency_deferred,
+        consistency_rejected,
+    ) = _resolve_ai_mapping_conflicts(
+        accepted,
+        candidate_by_action_id=candidate_by_action_id,
+        deterministic_actions=rule_plan.actions,
+    )
+    deferred.extend(consistency_deferred)
+    rejected.extend(consistency_rejected)
+
     actions: list[CleaningAction] = []
     if include_rules:
         actions.extend(rule_plan.actions)
