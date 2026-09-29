@@ -828,6 +828,310 @@ def review_command(
     )
 
 
+@app.command("review-grouped")
+def review_grouped_command(
+    input_path: Annotated[Path, typer.Argument(help="Original dataset")],
+    plan_path: Annotated[Path, typer.Argument(help="Cleaning plan JSON")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the reviewed plan JSON here"),
+    ] = Path("reviewed_plan.json"),
+    sample: Annotated[
+        int,
+        typer.Option("--sample", min=1, max=50, help="Maximum changes shown when drilling down"),
+    ] = 5,
+) -> None:
+    """Review exact transformation families with explicit human approval."""
+    plan = _load_plan(plan_path)
+    if file_sha256(input_path) != plan.source_sha256:
+        raise typer.BadParameter(
+            "The input file changed after the plan was created. Generate a new plan."
+        )
+
+    tables = load_dataset(input_path).tables
+    families = group_actions(tables, plan)
+    session_started = begin_review_session(plan)
+
+    def save_and_report(*, partial: bool) -> None:
+        finish_review_session(plan, session_started)
+        resolved_output = output.expanduser().resolve()
+        resolved_output.parent.mkdir(parents=True, exist_ok=True)
+        resolved_output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+        approved = sum(a.decision == ActionDecision.APPROVED for a in plan.actions)
+        rejected = sum(a.decision == ActionDecision.REJECTED for a in plan.actions)
+        unresolved = sum(a.decision == ActionDecision.PROPOSED for a in plan.actions)
+        label = "Partial grouped review saved to" if partial else "Reviewed plan written to"
+        console.print(f"[green]{label}:[/green] {resolved_output}")
+        console.print(
+            f"Approved: [bold]{approved}[/bold] · "
+            f"Rejected: [bold]{rejected}[/bold] · "
+            f"Deferred: [bold]{unresolved}[/bold]"
+        )
+        if plan.review_session and plan.review_session.duration_seconds is not None:
+            console.print(
+                "Review time: "
+                f"[bold]{plan.review_session.duration_seconds:.1f}s[/bold] · "
+                f"Decision events: [bold]{len(plan.review_session.events)}[/bold]"
+            )
+        console.print("[dim]No edits were applied.[/dim]")
+
+    console.print(
+        f"[bold]Grouped review:[/bold] {len(plan.actions)} action(s) in "
+        f"{len(families)} exact transformation family/families."
+    )
+    console.print(
+        "[dim]Bulk approval changes only the reviewed plan. "
+        "Multi-action approval requires typing YES exactly.[/dim]"
+    )
+
+    for family_index, family in enumerate(families, start=1):
+        family_started = time.perf_counter()
+        console.rule(f"Family {family_index}/{len(families)}")
+        console.print(f"[bold]Type:[/bold] {family.action_type}")
+        console.print(f"[bold]Origin:[/bold] {family.origin}")
+        console.print(f"[bold]Parameters:[/bold] {family.parameters!r}")
+        console.print(
+            f"[bold]Actions:[/bold] {len(family.members)} · "
+            f"[bold]Affected by independent previews:[/bold] {family.affected_count:,}"
+        )
+
+        impact = Table(title="Highest-impact targets")
+        impact.add_column("Target")
+        impact.add_column("Affected", justify="right")
+        for member in family.members[:12]:
+            impact.add_row(action_target(member.action), f"{member.affected_count:,}")
+        console.print(impact)
+        if len(family.members) > 12:
+            console.print(
+                f"[dim]{len(family.members) - 12} additional target(s) in this family.[/dim]"
+            )
+
+        while True:
+            decision = typer.prompt(
+                "Family decision: [a]pprove all, [r]eject all, "
+                "[i]nspect individually, [s]kip/defer, [q]uit",
+                default="s",
+            ).strip().casefold()
+
+            if decision in {"a", "approve"}:
+                bulk_confirmed = False
+                if len(family.members) > 1:
+                    confirmation = typer.prompt(
+                        "Type YES to approve the entire family "
+                        f"({len(family.members)} actions; "
+                        f"{family.affected_count:,} affected items)",
+                        default="",
+                        show_default=False,
+                    ).strip()
+                    if confirmation != "YES":
+                        console.print("[yellow]Family approval not confirmed.[/yellow]")
+                        continue
+                    bulk_confirmed = True
+                actions = [member.action for member in family.members]
+                for action in actions:
+                    action.decision = ActionDecision.APPROVED
+                record_review_event(
+                    plan,
+                    scope="family",
+                    actions=actions,
+                    affected_count=family.affected_count,
+                    decision="approved",
+                    duration_seconds=time.perf_counter() - family_started,
+                    bulk_confirmed=bulk_confirmed,
+                    targets_preview=family.targets,
+                )
+                break
+
+            if decision in {"r", "reject"}:
+                actions = [member.action for member in family.members]
+                for action in actions:
+                    action.decision = ActionDecision.REJECTED
+                record_review_event(
+                    plan,
+                    scope="family",
+                    actions=actions,
+                    affected_count=family.affected_count,
+                    decision="rejected",
+                    duration_seconds=time.perf_counter() - family_started,
+                    targets_preview=family.targets,
+                )
+                break
+
+            if decision in {"s", "skip", "defer"}:
+                actions = [member.action for member in family.members]
+                for action in actions:
+                    action.decision = ActionDecision.PROPOSED
+                record_review_event(
+                    plan,
+                    scope="family",
+                    actions=actions,
+                    affected_count=family.affected_count,
+                    decision="deferred",
+                    duration_seconds=time.perf_counter() - family_started,
+                    targets_preview=family.targets,
+                )
+                break
+
+            if decision in {"i", "inspect"}:
+                actions = [member.action for member in family.members]
+                record_review_event(
+                    plan,
+                    scope="family",
+                    actions=actions,
+                    affected_count=family.affected_count,
+                    decision="inspect_individually",
+                    duration_seconds=time.perf_counter() - family_started,
+                    targets_preview=family.targets,
+                )
+                for member_index, member in enumerate(family.members, start=1):
+                    action = member.action
+                    console.rule(
+                        f"Family {family_index} · action "
+                        f"{member_index}/{len(family.members)}"
+                    )
+                    console.print(
+                        f"[bold]{action_target(action)}[/bold] · "
+                        f"{member.affected_count:,} affected"
+                    )
+                    console.print(action.description)
+                    _print_action_preview(tables, action, sample_limit=sample)
+                    item_started = time.perf_counter()
+                    while True:
+                        item_decision = typer.prompt(
+                            "Decision: [a]pprove, [r]eject, [s]kip/defer, [q]uit",
+                            default="s",
+                        ).strip().casefold()
+                        if item_decision in {"a", "approve"}:
+                            action.decision = ActionDecision.APPROVED
+                            event_decision = "approved"
+                            break
+                        if item_decision in {"r", "reject"}:
+                            action.decision = ActionDecision.REJECTED
+                            event_decision = "rejected"
+                            break
+                        if item_decision in {"s", "skip", "defer"}:
+                            action.decision = ActionDecision.PROPOSED
+                            event_decision = "deferred"
+                            break
+                        if item_decision in {"q", "quit"}:
+                            record_review_event(
+                                plan,
+                                scope="individual",
+                                actions=[action],
+                                affected_count=member.affected_count,
+                                decision="quit",
+                                duration_seconds=time.perf_counter() - item_started,
+                                targets_preview=[action_target(action)],
+                            )
+                            save_and_report(partial=True)
+                            return
+                        console.print("[red]Enter a, r, s, or q.[/red]")
+                    record_review_event(
+                        plan,
+                        scope="individual",
+                        actions=[action],
+                        affected_count=member.affected_count,
+                        decision=event_decision,
+                        duration_seconds=time.perf_counter() - item_started,
+                        targets_preview=[action_target(action)],
+                    )
+                break
+
+            if decision in {"q", "quit"}:
+                actions = [member.action for member in family.members]
+                record_review_event(
+                    plan,
+                    scope="family",
+                    actions=actions,
+                    affected_count=family.affected_count,
+                    decision="quit",
+                    duration_seconds=time.perf_counter() - family_started,
+                    targets_preview=family.targets,
+                )
+                save_and_report(partial=True)
+                return
+
+            console.print("[red]Enter a, r, i, s, or q.[/red]")
+
+    for deferred in plan.deferred_reviews:
+        if deferred.status != "pending":
+            continue
+        action = deferred.proposed_action
+        preview = preview_action(tables, action, sample_limit=sample)
+        console.rule(f"Deferred AI review {deferred.candidate_id}")
+        console.print(f"[bold]{action_target(action)}[/bold]")
+        console.print(deferred.question)
+        console.print(f"[yellow]AI deferred:[/yellow] {deferred.rationale}")
+        console.print(f"Proposed parameters: {action.parameters!r}")
+        _print_action_preview(tables, action, sample_limit=sample)
+        item_started = time.perf_counter()
+        while True:
+            decision = typer.prompt(
+                "Manual decision: [a]pprove candidate, [r]eject, "
+                "[s]kip/defer, [q]uit",
+                default="s",
+            ).strip().casefold()
+            if decision in {"a", "approve"}:
+                matching = next(
+                    (
+                        existing
+                        for existing in plan.actions
+                        if existing.type == action.type
+                        and existing.table == action.table
+                        and existing.column == action.column
+                        and existing.parameters == action.parameters
+                    ),
+                    None,
+                )
+                if matching is not None:
+                    matching.decision = ActionDecision.APPROVED
+                    recorded_action = matching
+                else:
+                    approved_action = action.model_copy(deep=True)
+                    approved_action.decision = ActionDecision.APPROVED
+                    approved_action.description = (
+                        "Manually approved deferred AI candidate: " + deferred.rationale
+                    )
+                    plan.actions.append(approved_action)
+                    recorded_action = approved_action
+                deferred.status = "approved"
+                event_decision = "approved"
+                break
+            if decision in {"r", "reject"}:
+                deferred.status = "rejected"
+                recorded_action = action
+                event_decision = "rejected"
+                break
+            if decision in {"s", "skip", "defer"}:
+                recorded_action = action
+                event_decision = "deferred"
+                break
+            if decision in {"q", "quit"}:
+                record_review_event(
+                    plan,
+                    scope="deferred_ai",
+                    actions=[action],
+                    affected_count=preview.affected_count,
+                    decision="quit",
+                    duration_seconds=time.perf_counter() - item_started,
+                    targets_preview=[action_target(action)],
+                )
+                save_and_report(partial=True)
+                return
+            console.print("[red]Enter a, r, s, or q.[/red]")
+        record_review_event(
+            plan,
+            scope="deferred_ai",
+            actions=[recorded_action],
+            affected_count=preview.affected_count,
+            decision=event_decision,
+            duration_seconds=time.perf_counter() - item_started,
+            targets_preview=[action_target(action)],
+        )
+
+    save_and_report(partial=False)
+
+
 @app.command("apply")
 def apply_command(
     input_path: Annotated[Path, typer.Argument(help="Original dataset")],
