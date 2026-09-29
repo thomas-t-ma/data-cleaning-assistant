@@ -17,6 +17,7 @@ from ..inference import (
     is_empty_cell,
     is_missing_like,
     is_null,
+    looks_like_free_text_response,
     looks_like_identifier_name,
     normalize_text,
     parse_date,
@@ -158,6 +159,9 @@ def _surrounding_whitespace(table: str, column: str, series: pd.Series) -> list[
 
 
 def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue]:
+    if looks_like_free_text_response(column, series):
+        return []
+
     non_null = [value for value in series.tolist() if not is_missing_like(value)]
     if not non_null:
         return []
