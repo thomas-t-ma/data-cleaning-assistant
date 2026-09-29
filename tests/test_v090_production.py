@@ -133,6 +133,31 @@ def test_default_ai_routing_keeps_semantic_category_review(tmp_path: Path) -> No
     assert len(result.plan.actions) == 1
 
 
+def test_semantic_routing_blocks_composite_multiselect_subset_merges(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "multiselect.csv"
+    source.write_text(
+        "subject_id,language\n"
+        'S001,"R (including Rmarkdown, Quarto)"\n'
+        'S002,"R (including Rmarkdown, Quarto)"\n'
+        'S003,"R (including Rmarkdown, Quarto);BUGS"\n'
+        'S004,"R (including Rmarkdown, Quarto)"\n',
+        encoding="utf-8",
+    )
+
+    result = propose_ai_plan(
+        source,
+        provider=NeverCalledProvider(),
+        model="fake-model",
+        include_rules=False,
+    )
+
+    assert result.candidates == []
+    assert result.review_call_count == 0
+    assert result.plan.actions == []
+
+
 def test_grouped_review_records_bulk_provenance_and_audit(tmp_path: Path) -> None:
     source = tmp_path / "study.csv"
     source.write_text(
