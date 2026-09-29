@@ -27,6 +27,14 @@ _BOOLEAN_NAME_PATTERN = re.compile(
     r"yes|no|flag|indicator)\b|^(has|is|was|can|did|does)[_-]",
     re.IGNORECASE,
 )
+_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+_CONDITIONAL_STOPWORDS = {
+    "if", "yes", "no", "what", "which", "how", "many", "much", "times",
+    "enter", "number", "or", "unclear", "explain", "please", "skip", "this",
+    "that", "the", "a", "an", "of", "to", "for", "when", "does", "do",
+    "did", "has", "have", "had", "is", "are", "was", "were", "can",
+    "could", "q", "exists",
+}
 _UNCERTAIN = {
     "unclear",
     "unsure",
@@ -82,6 +90,15 @@ def _has_required_detail(value) -> bool:
     return normalized not in _TEXT_YES and normalized not in _TEXT_NO
 
 
+def _semantic_tokens(column: str) -> set[str]:
+    return {
+        token.casefold()
+        for token in _TOKEN_PATTERN.findall(column)
+        if token.casefold() not in _CONDITIONAL_STOPWORDS
+        and not token.isdigit()
+    }
+
+
 def _trigger_from_column(column: str) -> tuple[str, str] | None:
     direct = _TRIGGER_PATTERN.match(column)
     if direct is not None:
@@ -119,17 +136,63 @@ def detect_conditional_consistency(
         parent_column: str | None = None
         parent_score = 0.0
         distance = 0
+        parent_match_basis = ""
+        dependent_tokens = _semantic_tokens(dependent_column)
+        parent_candidates: list[
+            tuple[tuple[int, int, int, float, int], str, float, int, str]
+        ] = []
         lower_bound = max(-1, dependent_index - search_previous_columns - 1)
         for parent_index in range(dependent_index - 1, lower_bound, -1):
             candidate = columns[parent_index]
             score = _binary_parent_score(candidate, frame[candidate])
-            if score >= 0.80:
-                parent_column = candidate
-                parent_score = score
-                distance = dependent_index - parent_index
-                break
-        if parent_column is None:
+            if score < 0.80:
+                continue
+
+            candidate_distance = dependent_index - parent_index
+            lexical_overlap = len(
+                dependent_tokens & _semantic_tokens(candidate)
+            )
+            adjacent = candidate_distance == 1
+
+            # A non-adjacent binary field is too easy to mis-link unless the
+            # question text supplies an explicit semantic anchor. Generic
+            # "If yes, explain" fields therefore attach only to an adjacent
+            # binary parent.
+            if not adjacent and lexical_overlap == 0:
+                continue
+
+            match_basis = (
+                "lexical_overlap"
+                if lexical_overlap > 0
+                else "adjacent_binary"
+            )
+            rank = (
+                int(lexical_overlap > 0),
+                lexical_overlap,
+                int(adjacent),
+                score,
+                -candidate_distance,
+            )
+            parent_candidates.append(
+                (
+                    rank,
+                    candidate,
+                    score,
+                    candidate_distance,
+                    match_basis,
+                )
+            )
+
+        if not parent_candidates:
             continue
+
+        (
+            _rank,
+            parent_column,
+            parent_score,
+            distance,
+            parent_match_basis,
+        ) = max(parent_candidates, key=lambda item: item[0])
 
         count_like = _COUNT_PATTERN.search(dependent_column) is not None
         contradiction_rows: list[int] = []
@@ -209,6 +272,7 @@ def detect_conditional_consistency(
                     "relationship_basis": relationship_basis,
                     "parent_binary_score": parent_score,
                     "column_distance": distance,
+                    "parent_match_basis": parent_match_basis,
                     "count_like_dependent": count_like,
                     "contradiction_count": len(contradiction_rows),
                     "missing_detail_count": len(missing_detail_rows),

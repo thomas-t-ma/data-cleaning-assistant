@@ -178,3 +178,40 @@ def test_numeric_coded_boolean_parent_is_supported_when_name_is_boolean(
     assert len(issues) == 1
     assert issues[0].evidence["parent_column"] == "has_license"
     assert issues[0].evidence["contradiction_count"] == 1
+
+
+def test_nonadjacent_generic_dependency_does_not_guess_parent(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "nonadjacent_generic.csv"
+    source.write_text(
+        'subject_id,has_license,reviewer_note,"If yes, explain"\n'
+        "S001,Yes,checked,detail one\n"
+        "S002,No,checked,unexpected detail\n"
+        "S003,Yes,checked,detail three\n"
+        "S004,No,checked,\n",
+        encoding="utf-8",
+    )
+
+    assert _conditional_issues(source) == []
+
+
+def test_nonadjacent_semantic_overlap_can_identify_parent(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "nonadjacent_overlap.csv"
+    source.write_text(
+        'subject_id,has_license,has_code,"If yes, what license?"\n'
+        "S001,Yes,Yes,MIT\n"
+        "S002,No,Yes,CC BY\n"
+        "S003,Yes,No,GPL v3\n"
+        "S004,No,No,\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    assert issues[0].evidence["parent_column"] == "has_license"
+    assert issues[0].evidence["parent_match_basis"] == "lexical_overlap"
+    assert issues[0].evidence["contradiction_count"] == 1

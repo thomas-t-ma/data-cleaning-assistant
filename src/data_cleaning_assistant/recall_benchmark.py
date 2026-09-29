@@ -246,6 +246,27 @@ def v010_recall_benchmark_cases() -> list[RecallBenchmarkCase]:
             ],
         ),
         RecallBenchmarkCase(
+            id="conditional_nonadjacent_generic",
+            description=(
+                "A non-adjacent generic If yes field must not guess an unrelated "
+                "binary parent without lexical evidence."
+            ),
+            csv_text=(
+                'subject_id,has_license,reviewer_note,"If yes, explain"\n'
+                "S001,Yes,checked,detail one\n"
+                "S002,No,checked,unexpected detail\n"
+                "S003,Yes,checked,detail three\n"
+                "S004,No,checked,\n"
+            ),
+            forbidden=[
+                RecallSignal(
+                    kind="issue",
+                    name="conditional_dependency_inconsistency",
+                    column="If yes, explain",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
             id="conditional_count_zero",
             description="Zero in a count field is numeric, not a Boolean spelling.",
             csv_text=(
@@ -275,6 +296,25 @@ def v010_recall_benchmark_cases() -> list[RecallBenchmarkCase]:
                 "S002,Beta,Active\n"
             ),
             required=[
+                RecallSignal(
+                    kind="issue",
+                    name="normalization_equivalent_rows",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
+            id="identifier_case_not_duplicate",
+            description=(
+                "Identifier case differences must not be normalized into a "
+                "near-duplicate record."
+            ),
+            csv_text=(
+                "subject_id,label,status\n"
+                "ABC123,Alpha,Active\n"
+                "abc123, alpha ,active\n"
+                "XYZ999,Beta,Active\n"
+            ),
+            forbidden=[
                 RecallSignal(
                     kind="issue",
                     name="normalization_equivalent_rows",

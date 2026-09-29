@@ -228,10 +228,15 @@ def repeated_entity_issues(table: str, frame: pd.DataFrame) -> list[Issue]:
     ]
 
 
-def _normalized_duplicate_cell(value):
+def _normalized_duplicate_cell(column: str, value):
     if is_missing_like(value):
         return ("missing",)
     if isinstance(value, str):
+        if looks_like_identifier_name(column):
+            # Identifier spelling/case may be semantically meaningful. A
+            # near-duplicate hint must not manufacture identity by normalizing
+            # identifiers that are not already exact matches.
+            return ("identifier", value)
         return ("text", normalize_text(value))
     return ("value", type(value).__name__, repr(value))
 
@@ -249,9 +254,13 @@ def normalization_equivalent_duplicate_issues(
     if len(frame) < 2 or len(frame.columns) == 0:
         return []
 
+    columns = [str(column) for column in frame.columns]
     groups: dict[tuple, list[int]] = {}
     for row_position, row in enumerate(frame.itertuples(index=False, name=None)):
-        signature = tuple(_normalized_duplicate_cell(value) for value in row)
+        signature = tuple(
+            _normalized_duplicate_cell(column, value)
+            for column, value in zip(columns, row, strict=True)
+        )
         groups.setdefault(signature, []).append(row_position)
 
     candidate_groups: list[list[int]] = []
@@ -277,7 +286,8 @@ def normalization_equivalent_duplicate_issues(
             description=(
                 "Some rows are not exact duplicates but become identical after "
                 "collapsing structural missing sentinels and normalizing text case/"
-                "surrounding whitespace. They may be duplicate records or legitimate "
+                "surrounding whitespace in non-identifier fields. Identifier-like "
+                "values must already match exactly. They may be duplicate records or legitimate "
                 "repeated observations. No rows are removed automatically."
             ),
             confidence=0.95,

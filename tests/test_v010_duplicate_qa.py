@@ -80,3 +80,18 @@ def test_structural_missing_sentinels_can_reveal_duplicate_equivalence(
 
     assert len(issues) == 1
     assert issues[0].affected_count == 2
+
+
+def test_identifier_case_difference_is_not_normalized_into_duplicate(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "case_sensitive_ids.csv"
+    source.write_text(
+        "subject_id,label,status\n"
+        "ABC123,Alpha,Active\n"
+        "abc123, alpha ,active\n"
+        "XYZ999,Beta,Active\n",
+        encoding="utf-8",
+    )
+
+    assert _duplicate_qa(source) == []
