@@ -133,6 +133,41 @@ def test_default_ai_routing_keeps_semantic_category_review(tmp_path: Path) -> No
     assert len(result.plan.actions) == 1
 
 
+def test_semantic_reviews_are_batched_and_focused(tmp_path: Path) -> None:
+    source = tmp_path / "many_semantic.csv"
+    columns = [f"label_{index}" for index in range(9)]
+    header = "subject_id," + ",".join(columns) + "\n"
+    common = ",".join(["Peripheral Blood"] * 9)
+    typo = ",".join(["Peripheral Blod"] * 9)
+    source.write_text(
+        header
+        + f"S001,{common}\n"
+        + f"S002,{common}\n"
+        + f"S003,{common}\n"
+        + f"S004,{typo}\n",
+        encoding="utf-8",
+    )
+    provider = AcceptAllSemanticProvider()
+
+    result = propose_ai_plan(
+        source,
+        provider=provider,
+        model="fake-model",
+        include_rules=False,
+    )
+
+    assert len(result.candidates) == 9
+    assert len(result.review_contexts) == 2
+    assert [len(context.candidates) for context in result.review_contexts] == [8, 1]
+    assert provider.calls == 4
+    assert result.review_call_count == 4
+    assert all(
+        len(context.tables) == 1
+        for context in result.review_contexts
+    )
+    assert [len(context.tables[0].columns) for context in result.review_contexts] == [8, 1]
+
+
 def test_semantic_routing_blocks_composite_multiselect_subset_merges(
     tmp_path: Path,
 ) -> None:
@@ -265,6 +300,23 @@ class MalformedOllama(OllamaProvider):
         assert method == "POST"
         assert path == "/api/chat"
         return {"message": {"content": "{ definitely not valid json"}}
+
+
+def test_ollama_timeout_is_not_reported_as_connection_failure(monkeypatch) -> None:
+    provider = OllamaProvider(
+        "http://localhost:11434",
+        timeout_seconds=0.01,
+    )
+
+    def raise_timeout(*_args, **_kwargs):
+        raise TimeoutError
+
+    monkeypatch.setattr(
+        "data_cleaning_assistant.ai_provider.urlopen",
+        raise_timeout,
+    )
+    with pytest.raises(AIProviderError, match=r"timed out after 0\.01 seconds"):
+        provider.list_models()
 
 
 def test_real_ollama_provider_wraps_malformed_structured_output() -> None:
