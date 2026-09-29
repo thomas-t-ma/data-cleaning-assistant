@@ -157,15 +157,15 @@ def test_semantic_reviews_are_batched_and_focused(tmp_path: Path) -> None:
     )
 
     assert len(result.candidates) == 9
-    assert len(result.review_contexts) == 2
-    assert [len(context.candidates) for context in result.review_contexts] == [8, 1]
-    assert provider.calls == 4
-    assert result.review_call_count == 4
+    assert len(result.review_contexts) == 3
+    assert [len(context.candidates) for context in result.review_contexts] == [4, 4, 1]
+    assert provider.calls == 6
+    assert result.review_call_count == 6
     assert all(
         len(context.tables) == 1
         for context in result.review_contexts
     )
-    assert [len(context.tables[0].columns) for context in result.review_contexts] == [8, 1]
+    assert [len(context.tables[0].columns) for context in result.review_contexts] == [4, 4, 1]
 
 
 def test_conflicting_ai_canonicals_fail_closed(tmp_path: Path) -> None:
