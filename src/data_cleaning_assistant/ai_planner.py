@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .actions import ActionOrigin, ActionType, CleaningAction, CleaningPlan, DeferredReview
-from .ai_candidates import AICandidate, build_ai_candidates
+from .ai_candidates import AICandidate, build_ai_candidates, semantic_review_candidates
 from .ai_context import build_ai_context
 from .ai_models import (
     AICandidateSelection,
@@ -417,11 +417,14 @@ def propose_ai_plan(
     model: str,
     include_rules: bool = True,
     schema: StudySchema | None = None,
+    semantic_only: bool = True,
 ) -> AIPlanResult:
     resolved = Path(path).expanduser().resolve()
     loaded = load_dataset(resolved)
     report = profile_dataset(resolved, schema=schema)
     candidates = build_ai_candidates(report, loaded.tables, schema=schema)
+    if semantic_only:
+        candidates = semantic_review_candidates(candidates)
     context = build_ai_context(report, candidates)
 
     response, rejected, review_call_count, disagreement_count = (
