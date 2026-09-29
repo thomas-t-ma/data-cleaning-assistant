@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .detectors import (
     detect_basic_issues,
+    detect_conditional_consistency,
     detect_fuzzy_categories,
     detect_multiselect_component_variants,
 )
@@ -153,6 +154,7 @@ def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> D
         issues.extend(safe_basic)
         issues.extend(detect_fuzzy_categories(table_name, frame))
         issues.extend(detect_multiselect_component_variants(table_name, frame))
+        issues.extend(detect_conditional_consistency(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
 
     if schema is not None:

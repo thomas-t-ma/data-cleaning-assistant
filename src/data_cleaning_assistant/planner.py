@@ -63,23 +63,19 @@ def _canonical_multiselect_component(
     column: str,
     variants: list[str],
     delimiter: str,
-) -> str:
+) -> str | None:
     counts: Counter[str] = Counter()
     for value in frame[column].tolist():
         for component in str(value).split(delimiter):
             component = component.strip()
             if component:
                 counts[component] += 1
-    return max(
-        variants,
-        key=lambda value: (
-            counts[value],
-            int(value == value.strip()),
-            int(value[:1].isupper()),
-            -len(value),
-            value,
-        ),
-    ).strip()
+
+    highest_count = max(counts[value] for value in variants)
+    winners = [value for value in variants if counts[value] == highest_count]
+    if len(winners) != 1:
+        return None
+    return winners[0].strip()
 
 
 def _multiselect_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
@@ -98,6 +94,8 @@ def _multiselect_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
             variants,
             delimiter,
         )
+        if canonical is None:
+            continue
         for variant in variants:
             if variant != canonical:
                 mapping[variant] = canonical

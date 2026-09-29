@@ -15,7 +15,9 @@ def test_multiselect_variants_get_component_level_action(tmp_path: Path) -> None
         'S001,"R;BUGS"\n'
         'S002,"R;Bugs"\n'
         'S003,"Python;BUGS"\n'
-        'S004,"R;BUGS"\n',
+        'S004,"R;BUGS"\n'
+        'S005,"R;BUGS"\n'
+        'S006,"Python;BUGS"\n',
         encoding="utf-8",
     )
 
@@ -49,7 +51,9 @@ def test_multiselect_normalization_preserves_other_selected_components(
         'S001,"R; BUGS; Python"\n'
         'S002,"R; Bugs; Python"\n'
         'S003,"R; BUGS; Julia"\n'
-        'S004,"R; BUGS; Python"\n',
+        'S004,"R; BUGS; Python"\n'
+        'S005,"Python; BUGS; Julia"\n'
+        'S006,"R; BUGS; Python"\n',
         encoding="utf-8",
     )
     original = source.read_bytes()
@@ -90,6 +94,58 @@ def test_multiselect_detector_skips_free_response_semicolon_prose(
         'S004,"The package installed; one optional dependency failed"\n'
         'S005,"Several scripts were present; paths were machine-specific"\n'
         'S006,"The archive opened; tests were not documented"\n',
+        encoding="utf-8",
+    )
+
+    plan = propose_actions(source)
+
+    assert not any(
+        action.type == ActionType.NORMALIZE_MULTISELECT
+        for action in plan.actions
+    )
+
+
+def test_multiselect_detector_requires_repeated_delimiter_structure(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "counts.csv"
+    rows = [
+        "S001,Unclear",
+        "S002,unclear",
+        "S003,1",
+        "S004,2",
+        "S005,3",
+        'S006,"bat = 0 ; LiDAR = 5"',
+        'S007,"1; however, the citation may be misassigned"',
+        "S008,4",
+        "S009,5",
+        "S010,6",
+    ]
+    source.write_text(
+        "subject_id,citation_count\n" + "\n".join(rows) + "\n",
+        encoding="utf-8",
+    )
+
+    plan = propose_actions(source)
+
+    assert not any(
+        action.type == ActionType.NORMALIZE_MULTISELECT
+        for action in plan.actions
+    )
+
+
+def test_multiselect_tied_component_variants_do_not_pick_arbitrary_casing(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "tied.csv"
+    source.write_text(
+        "subject_id,language\n"
+        'S001,"R;BUGS"\n'
+        'S002,"R;Bugs"\n'
+        'S003,"Python;BUGS"\n'
+        'S004,"Python;Bugs"\n'
+        'S005,"Julia;BUGS"\n'
+        'S006,"Julia;Bugs"\n',
         encoding="utf-8",
     )
 

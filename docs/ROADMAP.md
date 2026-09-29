@@ -28,13 +28,17 @@ researcher would need while preserving the v0.9 execution boundary.
 
 ### 1. Structured multi-select cleaning
 
-Status: **in progress**
+Status: **implemented; validation in progress**
 
+- Require repeated delimiter structure before treating a field as multi-select,
+  so occasional semicolons in scalar prose do not activate this path.
 - Detect semicolon-delimited categorical fields separately from ordinary scalar
   categories.
 - Normalize exact case/whitespace component variants without comparing the whole
   cell as one category.
 - Preserve every selected option and its order.
+- Do not choose a canonical component casing when observed variants are tied;
+  leave the ambiguity visible for schema/human review.
 - Keep fuzzy component merging disabled until it has its own evidence and
   validation strategy.
 - Support preview, audit, recipe replay, and undo through a dedicated reversible
@@ -47,8 +51,11 @@ Initial safety invariant:
 
 ### 2. Conditional and cross-column consistency QA
 
-Planned:
+Status: **initial non-executable detector implemented**
 
+- Detect explicit If yes / If no dependent fields and link them only to a nearby
+  yes/no-like parent field.
+- Flag contradictions and trigger-state missing detail as QA findings only.
 - Detect repeated conditional structures such as a parent yes/no field followed
   by a dependent detail field.
 - Flag contradictions and suspicious populated/empty dependent fields without
