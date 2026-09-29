@@ -190,6 +190,16 @@ def _canonical_pair(left: str, right: str, counts: Counter[str]) -> tuple[str, s
     return variant, canonical
 
 
+def _is_composite_multiselect_label(value: str) -> bool:
+    """Return True for delimiter-composed multi-select responses.
+
+    Whole-string fuzzy similarity is unsafe for these values: a response that
+    contains an additional real option can look nearly identical to its subset.
+    Composite labels need component-aware cleaning rather than whole-value merges.
+    """
+    return ";" in value
+
+
 def _category_candidates(
     issue: Issue,
     frame: pd.DataFrame,
@@ -248,6 +258,11 @@ def _category_candidates(
             left = str(item.get("left", ""))
             right = str(item.get("right", ""))
             if not left or not right:
+                continue
+            if (
+                _is_composite_multiselect_label(left)
+                or _is_composite_multiselect_label(right)
+            ):
                 continue
             variant, canonical = _canonical_pair(left, right, counts)
             zero_padding = _zero_padding_equivalent(left, right)
