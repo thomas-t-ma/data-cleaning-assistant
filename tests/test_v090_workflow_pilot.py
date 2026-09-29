@@ -208,6 +208,52 @@ def test_workflow_pilot_routes_mechanical_cleanup_without_ai(
     assert "trim_whitespace" in action_types
 
 
+def test_grouped_review_can_approve_one_mechanical_family(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
+    from workflow_pilot import review_grouped, start_pilot
+
+    source = tmp_path / "mechanical_family.csv"
+    source.write_text(
+        "subject_id,a,b\n"
+        "S001,NA,NA\n"
+        "S002,1,2\n"
+        "S003,3,4\n",
+        encoding="utf-8",
+    )
+    before = source.read_bytes()
+
+    class NeverCalledProvider:
+        name = "offline_fake"
+
+        def generate_structured(self, **kwargs):
+            raise AssertionError("No semantic candidates expected.")
+
+    pilot = tmp_path / "pilot"
+    started = start_pilot(
+        source,
+        pilot,
+        provider=NeverCalledProvider(),
+        model="fake-model",
+    )
+    assert len(started["plan"].actions) == 2
+
+    responses = iter(["a", "YES"])
+    reviewed = review_grouped(
+        pilot,
+        pilot / "reviewed_grouped.json",
+        input_fn=lambda _prompt: next(responses),
+    )
+
+    assert all(
+        action.decision == ActionDecision.APPROVED
+        for action in reviewed.actions
+    )
+    assert source.read_bytes() == before
+    assert (pilot / "reviewed_grouped.json").exists()
+
+
 def test_workflow_pilot_refuses_changed_source(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "examples"))
     from workflow_pilot import score_pilot, start_pilot
