@@ -22,6 +22,11 @@ _TEXT_NO = {"no", "n", "false"}
 _YES = _TEXT_YES | {"1"}
 _NO = _TEXT_NO | {"0"}
 _COUNT_PATTERN = re.compile(r"\b(how many|count|number)\b", re.IGNORECASE)
+_BOOLEAN_NAME_PATTERN = re.compile(
+    r"\b(does|do|did|has|have|had|is|are|was|were|can|could|"
+    r"yes|no|flag|indicator)\b|^(has|is|was|can|did|does)[_-]",
+    re.IGNORECASE,
+)
 _UNCERTAIN = {
     "unclear",
     "unsure",
@@ -45,7 +50,7 @@ def _response_state(value) -> str | None:
     return None
 
 
-def _binary_parent_score(series: pd.Series) -> float:
+def _binary_parent_score(name: str, series: pd.Series) -> float:
     values = [
         normalize_text(value)
         for value in series.tolist()
@@ -53,12 +58,20 @@ def _binary_parent_score(series: pd.Series) -> float:
     ]
     if len(values) < 3:
         return 0.0
+    textual_binary = any(
+        value in _TEXT_YES or value in _TEXT_NO
+        for value in values
+    )
+    numeric_binary = any(value in {"0", "1"} for value in values)
+    if not textual_binary and (
+        not numeric_binary or _BOOLEAN_NAME_PATTERN.search(name) is None
+    ):
+        return 0.0
+
     recognized = sum(
         value in _YES or value in _NO or value in _UNCERTAIN
         for value in values
     )
-    if not any(value in _YES or value in _NO for value in values):
-        return 0.0
     return recognized / len(values)
 
 
@@ -109,7 +122,7 @@ def detect_conditional_consistency(
         lower_bound = max(-1, dependent_index - search_previous_columns - 1)
         for parent_index in range(dependent_index - 1, lower_bound, -1):
             candidate = columns[parent_index]
-            score = _binary_parent_score(frame[candidate])
+            score = _binary_parent_score(candidate, frame[candidate])
             if score >= 0.80:
                 parent_column = candidate
                 parent_score = score

@@ -138,3 +138,43 @@ def test_skip_if_no_instruction_links_to_binary_parent(tmp_path: Path) -> None:
     assert issue.evidence["contradiction_count"] == 1
     assert issue.evidence["missing_detail_count"] == 1
     assert issue.affected_count == 2
+
+
+def test_numeric_count_column_is_not_mistaken_for_binary_parent(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "parent_selection.csv"
+    source.write_text(
+        'subject_id,has_license,citation_count,"If yes, what license?"\n'
+        "S001,Yes,1,MIT\n"
+        "S002,No,0,\n"
+        "S003,No,1,CC BY\n"
+        "S004,Yes,0,GPL v3\n"
+        "S005,Unclear,1,Unclear\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    assert issues[0].evidence["parent_column"] == "has_license"
+
+
+def test_numeric_coded_boolean_parent_is_supported_when_name_is_boolean(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "coded_boolean.csv"
+    source.write_text(
+        'subject_id,has_license,"If yes, what license?"\n'
+        "S001,1,MIT\n"
+        "S002,0,\n"
+        "S003,0,CC BY\n"
+        "S004,1,GPL v3\n",
+        encoding="utf-8",
+    )
+
+    issues = _conditional_issues(source)
+
+    assert len(issues) == 1
+    assert issues[0].evidence["parent_column"] == "has_license"
+    assert issues[0].evidence["contradiction_count"] == 1
