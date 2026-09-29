@@ -12,6 +12,7 @@ from data_cleaning_assistant.ai_planner import propose_ai_plan
 from data_cleaning_assistant.ai_provider import AIProviderError, OllamaProvider
 from data_cleaning_assistant.cli import app
 from data_cleaning_assistant.io import load_dataset
+from data_cleaning_assistant.inference import parse_date
 from data_cleaning_assistant.planner import propose_actions
 from data_cleaning_assistant.transforms import apply_plan
 
@@ -55,6 +56,16 @@ class NeverCalledProvider:
 
     def generate_structured(self, **kwargs):
         raise AssertionError("Mechanical-only plans must not call the model.")
+
+
+def test_numeric_date_parser_fails_closed_on_ambiguous_day_month_order() -> None:
+    assert parse_date("06/08/2025") is None
+    assert parse_date("02-10-2025") is None
+    assert parse_date("10/11/2025") is None
+
+    assert parse_date("29/09/2025").date().isoformat() == "2025-09-29"
+    assert parse_date("09/29/2025").date().isoformat() == "2025-09-29"
+    assert parse_date("2025/08/06").date().isoformat() == "2025-08-06"
 
 
 def test_default_ai_routing_skips_mechanical_cleanup(tmp_path: Path) -> None:
