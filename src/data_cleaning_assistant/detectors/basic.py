@@ -165,6 +165,15 @@ def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue
     if len(raw_unique) > 200:
         return []
 
+    # Sparse free-text fields can look categorical when most rows are missing.
+    # Suppress cosmetic case/whitespace normalization when almost every
+    # meaningful response is unique; those values are prose, not a codebook.
+    if (
+        len(raw_unique) > 10
+        and len(raw_unique) / len(non_null) > 0.50
+    ):
+        return []
+
     groups: dict[str, set[str]] = defaultdict(set)
     for value in raw_unique:
         groups[normalize_text(value)].add(value)
