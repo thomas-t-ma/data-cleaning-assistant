@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 
 import pandas as pd
 
-from ..inference import is_missing_like, normalize_text
+from ..inference import is_missing_like, looks_like_free_text_response, normalize_text
 from ..models import Issue, Severity
 
 
@@ -22,6 +22,8 @@ def detect_fuzzy_categories(table: str, frame: pd.DataFrame) -> list[Issue]:
     issues: list[Issue] = []
     for raw_column in frame.columns:
         column = str(raw_column)
+        if looks_like_free_text_response(column, frame[raw_column]):
+            continue
         values = [str(v).strip() for v in frame[raw_column].tolist() if not is_missing_like(v)]
         unique = sorted(set(values))
         if len(unique) < 2 or len(unique) > 80:
