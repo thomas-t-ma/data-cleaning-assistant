@@ -23,6 +23,7 @@ from .issue_summary import summarize_issues, visible_issues
 from .planner import file_sha256, propose_actions
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
+from .recall_benchmark import run_v010_recall_benchmark
 from .recall_eval import build_recall_surface_report
 from .review import (
     action_target,
@@ -437,6 +438,32 @@ def codebook_suggest_command(
         "They are not a study schema and authorize no transformations.[/dim]"
     )
     console.print(f"[green]Codebook suggestions written to:[/green] {output}")
+
+
+@app.command("recall-benchmark")
+def recall_benchmark_command(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write deterministic recall benchmark JSON"),
+    ] = Path("recall_benchmark.json"),
+) -> None:
+    """Run the v0.10 deterministic recall benchmark without Ollama."""
+    summary = run_v010_recall_benchmark()
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+
+    console.print(
+        f"[bold]Recall benchmark:[/bold] {summary.passed_cases}/{summary.case_count} "
+        f"cases passed ({summary.pass_rate:.1%})"
+    )
+    console.print(
+        f"Required recall: [bold]{summary.required_hits}/{summary.required_total} "
+        f"({summary.required_recall:.1%})[/bold] · "
+        f"Forbidden exposures: [bold]{summary.forbidden_hits}/{summary.forbidden_total}[/bold]"
+    )
+    console.print("[dim]No Ollama calls and no external dataset edits.[/dim]")
+    console.print(f"[green]Benchmark written to:[/green] {output}")
 
 
 @app.command("recall-report")

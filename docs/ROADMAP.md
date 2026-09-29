@@ -117,6 +117,8 @@ Status: **deterministic recall-surface report implemented**
 
 - `data-cleaner recall-report` summarizes new v0.10 review surfaces without
   Ollama calls or dataset edits.
+- `data-cleaner recall-benchmark` runs a frozen synthetic suite with required
+  recall and forbidden-exposure controls for the new deterministic features.
 - The report separates detector/action exposure from scientific correctness and
   complete issue recall.
 
