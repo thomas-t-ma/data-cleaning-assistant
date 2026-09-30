@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.1
+
+- Redesigned `review-grouped` around plain-language human decisions instead of implementation fields such as action type, origin, raw parameters, and independent-preview terminology.
+- Added explicit explanations of what each grouped change does, what the reviewer should verify, total scope, highest-impact targets, and representative before→after examples.
+- Added prominent warnings for unusually large review groups while preserving the existing explicit `YES` bulk-approval confirmation and audit provenance.
+- Removed repeated dataset-name noise from single-table target displays and render unnamed export columns such as `...63` as readable labels such as `Unnamed column 63`.
+- Simplified `ai-plan` output into a compact summary of proposed changes and examples, while retaining full machine-readable plan data in JSON.
+- Reworded deferred semantic reviews to explain the possible change, why it is uncertain, and what the human should check before approving.
+- Added CLI regression coverage protecting the human-readable grouped-review surface.
+
+
 ## 0.9.0
 
 - Restricted normal local-AI planning to bounded semantic category-equivalence candidates; mechanical missing-token, whitespace, date, and numeric cleanup remains deterministic human-review work.
