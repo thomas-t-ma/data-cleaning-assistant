@@ -2,6 +2,14 @@
 
 ## 0.9.2
 
+- Fixed grouped-review guidance where terminal markup swallowed the inspect hint.
+- Replaced top-impact-only family examples with representative sampling across named and unnamed targets and across the impact range.
+- Added explicit named-versus-unnamed scope counts for wide exports so reviewers can see when unnamed columns are part of a bulk decision.
+- Added regression coverage for representative grouped-review evidence.
+
+
+## 0.9.2
+
 - Fixed grouped-review guidance where Rich markup swallowed the literal `[i]` inspect hint.
 - Replaced top-impact-only family examples with representative sampling across named and unnamed targets and across the impact range.
 - Added explicit named-versus-unnamed scope counts for wide exports so reviewers can see when hidden/unnamed columns are part of a bulk decision.
