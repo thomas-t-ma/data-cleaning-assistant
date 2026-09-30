@@ -254,6 +254,60 @@ def _snapshot_text(snapshot) -> str:
     return repr(snapshot.value)
 
 
+def _is_unnamed_target(action) -> bool:
+    column = action.column or ""
+    return column.startswith("...") and column[3:].isdigit()
+
+
+def _evenly_spaced_members(members, count: int):
+    if count <= 0 or not members:
+        return []
+    if len(members) <= count:
+        return list(members)
+    if count == 1:
+        return [members[0]]
+
+    indices = [
+        round(index * (len(members) - 1) / (count - 1))
+        for index in range(count)
+    ]
+    selected = []
+    seen: set[str] = set()
+    for index in indices:
+        member = members[index]
+        if member.action.id in seen:
+            continue
+        seen.add(member.action.id)
+        selected.append(member)
+    return selected
+
+
+def _representative_family_members(family, limit: int):
+    candidates = [member for member in family.members if member.affected_count > 0]
+    if len(candidates) <= limit:
+        return candidates
+
+    named = [member for member in candidates if not _is_unnamed_target(member.action)]
+    unnamed = [member for member in candidates if _is_unnamed_target(member.action)]
+
+    if not named or not unnamed:
+        return _evenly_spaced_members(candidates, limit)
+
+    named_slots = max(1, limit - 1)
+    selected = _evenly_spaced_members(named, named_slots)
+    selected.append(unnamed[0])
+
+    if len(selected) < limit:
+        selected_ids = {member.action.id for member in selected}
+        for member in candidates:
+            if member.action.id in selected_ids:
+                continue
+            selected.append(member)
+            if len(selected) >= limit:
+                break
+    return selected[:limit]
+
+
 def _print_plan(plan: CleaningPlan) -> None:
     if plan.planning_notes:
         omitted: dict[str, set[str]] = {}
@@ -1022,25 +1076,31 @@ def review_grouped_command(
             console.print(f"[bold]What it does:[/bold] {_compact_text(representative.description)}")
         console.print(f"[bold]What to check:[/bold] {_review_caution(family.action_type)}")
 
-        impact = Table(title="Where this change would happen")
+        unnamed_count = sum(_is_unnamed_target(member.action) for member in family.members)
+        if unnamed_count:
+            console.print(
+                f"[dim]Scope includes {len(family.members) - unnamed_count} named column(s) "
+                f"and {unnamed_count} unnamed export column(s).[/dim]"
+            )
+
+        impact = Table(title="Representative targets across this group")
         impact.add_column("Column / target")
         impact.add_column(f"{affected_label.capitalize()} changed", justify="right")
-        for member in family.members[:8]:
+        impact_members = _representative_family_members(family, limit=8)
+        for member in impact_members:
             impact.add_row(
                 _friendly_target(member.action, include_table=multiple_tables),
                 f"{member.affected_count:,}",
             )
         console.print(impact)
-        if len(family.members) > 8:
+        if len(family.members) > len(impact_members):
             console.print(
-                f"[dim]{len(family.members) - 8} more target(s) are included in this group.[/dim]"
+                f"[dim]{len(family.members) - len(impact_members)} more target(s) are "
+                "included in this group.[/dim]"
             )
 
-        console.print("[bold]Examples:[/bold]")
-        examples_shown = 0
-        for member in family.members:
-            if member.affected_count == 0:
-                continue
+        console.print("[bold]Representative before → after examples:[/bold]")
+        for member in _representative_family_members(family, limit=4):
             action = member.action
             preview = preview_action(tables, action, sample_limit=min(sample, 3))
             console.print(
@@ -1063,14 +1123,11 @@ def review_grouped_command(
                         f"{_snapshot_text(change.old_value)} → "
                         f"{_snapshot_text(change.new_value)}"
                     )
-            examples_shown += 1
-            if examples_shown >= 3:
-                break
-
         if len(family.members) >= 20 or family.affected_count >= 10_000:
             console.print(
                 "[yellow]Large change:[/yellow] this decision covers many cells/columns. "
-                "Use [i] if you are not confident the same meaning applies everywhere."
+                "Press i to inspect targets one by one if the same value could mean "
+                "different things in different columns."
             )
 
         while True:
