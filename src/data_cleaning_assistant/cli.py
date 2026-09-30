@@ -954,10 +954,10 @@ def review_grouped_command(
     ] = Path("reviewed_plan.json"),
     sample: Annotated[
         int,
-        typer.Option("--sample", min=1, max=50, help="Maximum changes shown when drilling down"),
+        typer.Option("--sample", min=1, max=50, help="Maximum examples shown per action"),
     ] = 5,
 ) -> None:
-    """Review exact transformation families with explicit human approval."""
+    """Review proposed changes in plain-language groups before anything is applied."""
     plan = _load_plan(plan_path)
     if file_sha256(input_path) != plan.source_sha256:
         raise typer.BadParameter(
@@ -967,6 +967,7 @@ def review_grouped_command(
     tables = load_dataset(input_path).tables
     families = group_actions(tables, plan)
     session_started = begin_review_session(plan)
+    multiple_tables = len(tables) > 1
 
     def save_and_report(*, partial: bool) -> None:
         finish_review_session(plan, session_started)
@@ -976,56 +977,106 @@ def review_grouped_command(
         approved = sum(a.decision == ActionDecision.APPROVED for a in plan.actions)
         rejected = sum(a.decision == ActionDecision.REJECTED for a in plan.actions)
         unresolved = sum(a.decision == ActionDecision.PROPOSED for a in plan.actions)
-        label = "Partial grouped review saved to" if partial else "Reviewed plan written to"
+        label = "Partial review saved to" if partial else "Reviewed plan written to"
         console.print(f"[green]{label}:[/green] {resolved_output}")
         console.print(
             f"Approved: [bold]{approved}[/bold] · "
             f"Rejected: [bold]{rejected}[/bold] · "
-            f"Deferred: [bold]{unresolved}[/bold]"
+            f"Decide later: [bold]{unresolved}[/bold]"
         )
         if plan.review_session and plan.review_session.duration_seconds is not None:
             console.print(
                 "Review time: "
                 f"[bold]{plan.review_session.duration_seconds:.1f}s[/bold] · "
-                f"Decision events: [bold]{len(plan.review_session.events)}[/bold]"
+                f"Recorded decisions: [bold]{len(plan.review_session.events)}[/bold]"
             )
-        console.print("[dim]No edits were applied.[/dim]")
+        console.print("[dim]The source dataset was not changed.[/dim]")
 
     console.print(
-        f"[bold]Grouped review:[/bold] {len(plan.actions)} action(s) in "
-        f"{len(families)} exact transformation family/families."
+        f"[bold]Review proposed cleaning:[/bold] {len(plan.actions)} action(s) grouped into "
+        f"{len(families)} set(s) of identical changes."
     )
     console.print(
-        "[dim]Bulk approval changes only the reviewed plan. "
-        "Multi-action approval requires typing YES exactly.[/dim]"
+        "[dim]You are only deciding what should be allowed into the reviewed plan. "
+        "Nothing is applied during this review.[/dim]"
     )
 
     for family_index, family in enumerate(families, start=1):
         family_started = time.perf_counter()
-        console.rule(f"Family {family_index}/{len(families)}")
-        console.print(f"[bold]Type:[/bold] {family.action_type}")
-        console.print(f"[bold]Origin:[/bold] {family.origin}")
-        console.print(f"[bold]Parameters:[/bold] {family.parameters!r}")
+        actions = [member.action for member in family.members]
+        representative = actions[0]
+        is_row_action = family.action_type == "remove_exact_duplicates"
+        affected_label = "rows" if is_row_action else "cells"
+
+        console.rule(f"Change {family_index} of {len(families)}")
         console.print(
-            f"[bold]Actions:[/bold] {len(family.members)} · "
-            f"[bold]Affected by independent previews:[/bold] {family.affected_count:,}"
+            f"[bold cyan]{_human_action_name(family.action_type, family.parameters)}[/bold cyan]"
+        )
+        console.print(
+            f"This same change is proposed in [bold]{len(family.members)}[/bold] "
+            f"{'table(s)' if representative.column is None else 'column(s)'}, affecting "
+            f"[bold]{family.affected_count:,}[/bold] {affected_label} in total."
         )
 
-        impact = Table(title="Highest-impact targets")
-        impact.add_column("Target")
-        impact.add_column("Affected", justify="right")
-        for member in family.members[:12]:
-            impact.add_row(action_target(member.action), f"{member.affected_count:,}")
+        if representative.description:
+            console.print(f"[bold]What it does:[/bold] {_compact_text(representative.description)}")
+        console.print(f"[bold]What to check:[/bold] {_review_caution(family.action_type)}")
+
+        impact = Table(title="Where this change would happen")
+        impact.add_column("Column / target")
+        impact.add_column(f"{affected_label.capitalize()} changed", justify="right")
+        for member in family.members[:8]:
+            impact.add_row(
+                _friendly_target(member.action, include_table=multiple_tables),
+                f"{member.affected_count:,}",
+            )
         console.print(impact)
-        if len(family.members) > 12:
+        if len(family.members) > 8:
             console.print(
-                f"[dim]{len(family.members) - 12} additional target(s) in this family.[/dim]"
+                f"[dim]{len(family.members) - 8} more target(s) are included in this group.[/dim]"
+            )
+
+        console.print("[bold]Examples:[/bold]")
+        examples_shown = 0
+        for member in family.members:
+            if member.affected_count == 0:
+                continue
+            action = member.action
+            preview = preview_action(tables, action, sample_limit=min(sample, 3))
+            console.print(
+                f"[dim]{_friendly_target(action, include_table=multiple_tables)} "
+                f"({member.affected_count:,} affected)[/dim]"
+            )
+            if preview.sample_rows:
+                for snapshot in preview.sample_rows[:2]:
+                    values = {
+                        _friendly_column_name(column): value.value
+                        for column, value in snapshot.values.items()
+                    }
+                    console.print(
+                        f"  row {snapshot.row_position}: {_compact_text(repr(values), 220)}"
+                    )
+            else:
+                for change in preview.sample_changes[:3]:
+                    console.print(
+                        f"  row {change.row_index}: "
+                        f"{_snapshot_text(change.old_value)} → "
+                        f"{_snapshot_text(change.new_value)}"
+                    )
+            examples_shown += 1
+            if examples_shown >= 3:
+                break
+
+        if len(family.members) >= 20 or family.affected_count >= 10_000:
+            console.print(
+                "[yellow]Large change:[/yellow] this decision covers many cells/columns. "
+                "Use [i] if you are not confident the same meaning applies everywhere."
             )
 
         while True:
             decision = typer.prompt(
-                "Family decision: [a]pprove all, [r]eject all, "
-                "[i]nspect individually, [s]kip/defer, [q]uit",
+                "Choose: [a]pprove this group, [i]nspect one by one, "
+                "[r]eject this group, [s]decide later, [q]uit",
                 default="s",
             ).strip().casefold()
 
@@ -1033,17 +1084,16 @@ def review_grouped_command(
                 bulk_confirmed = False
                 if len(family.members) > 1:
                     confirmation = typer.prompt(
-                        "Type YES to approve the entire family "
-                        f"({len(family.members)} actions; "
-                        f"{family.affected_count:,} affected items)",
+                        "Type YES to confirm approval of "
+                        f"{len(family.members)} action(s) affecting "
+                        f"{family.affected_count:,} {affected_label}",
                         default="",
                         show_default=False,
                     ).strip()
                     if confirmation != "YES":
-                        console.print("[yellow]Family approval not confirmed.[/yellow]")
+                        console.print("[yellow]Approval not confirmed; nothing was approved.[/yellow]")
                         continue
                     bulk_confirmed = True
-                actions = [member.action for member in family.members]
                 for action in actions:
                     action.decision = ActionDecision.APPROVED
                 record_review_event(
@@ -1059,7 +1109,6 @@ def review_grouped_command(
                 break
 
             if decision in {"r", "reject"}:
-                actions = [member.action for member in family.members]
                 for action in actions:
                     action.decision = ActionDecision.REJECTED
                 record_review_event(
@@ -1074,7 +1123,6 @@ def review_grouped_command(
                 break
 
             if decision in {"s", "skip", "defer"}:
-                actions = [member.action for member in family.members]
                 for action in actions:
                     action.decision = ActionDecision.PROPOSED
                 record_review_event(
@@ -1089,7 +1137,6 @@ def review_grouped_command(
                 break
 
             if decision in {"i", "inspect"}:
-                actions = [member.action for member in family.members]
                 record_review_event(
                     plan,
                     scope="family",
@@ -1102,19 +1149,20 @@ def review_grouped_command(
                 for member_index, member in enumerate(family.members, start=1):
                     action = member.action
                     console.rule(
-                        f"Family {family_index} · action "
+                        f"Change {family_index} · target "
                         f"{member_index}/{len(family.members)}"
                     )
+                    console.print(f"[bold]{_friendly_target(action, include_table=multiple_tables)}[/bold]")
                     console.print(
-                        f"[bold]{action_target(action)}[/bold] · "
-                        f"{member.affected_count:,} affected"
+                        f"{_human_action_name(action.type.value, action.parameters)} · "
+                        f"{member.affected_count:,} {'rows' if action.column is None else 'cells'} affected"
                     )
-                    console.print(action.description)
+                    console.print(f"[bold]What to check:[/bold] {_review_caution(action.type.value)}")
                     _print_action_preview(tables, action, sample_limit=sample)
                     item_started = time.perf_counter()
                     while True:
                         item_decision = typer.prompt(
-                            "Decision: [a]pprove, [r]eject, [s]kip/defer, [q]uit",
+                            "Choose: [a]pprove, [r]eject, [s]decide later, [q]uit",
                             default="s",
                         ).strip().casefold()
                         if item_decision in {"a", "approve"}:
@@ -1154,7 +1202,6 @@ def review_grouped_command(
                 break
 
             if decision in {"q", "quit"}:
-                actions = [member.action for member in family.members]
                 record_review_event(
                     plan,
                     scope="family",
@@ -1167,24 +1214,34 @@ def review_grouped_command(
                 save_and_report(partial=True)
                 return
 
-            console.print("[red]Enter a, r, i, s, or q.[/red]")
+            console.print("[red]Enter a, i, r, s, or q.[/red]")
 
-    for deferred in plan.deferred_reviews:
-        if deferred.status != "pending":
-            continue
+    pending_deferred = [item for item in plan.deferred_reviews if item.status == "pending"]
+    if pending_deferred:
+        console.rule("Changes that need human judgment")
+        console.print(
+            f"The AI left [bold]{len(pending_deferred)}[/bold] possible semantic "
+            "correction(s) unresolved. These are not executable unless you explicitly approve them."
+        )
+
+    for deferred_index, deferred in enumerate(pending_deferred, start=1):
         action = deferred.proposed_action
         preview = preview_action(tables, action, sample_limit=sample)
-        console.rule(f"Deferred AI review {deferred.candidate_id}")
-        console.print(f"[bold]{action_target(action)}[/bold]")
-        console.print(deferred.question)
-        console.print(f"[yellow]AI deferred:[/yellow] {deferred.rationale}")
-        console.print(f"Proposed parameters: {action.parameters!r}")
+        console.rule(f"Judgment {deferred_index} of {len(pending_deferred)}")
+        console.print(f"[bold]{_friendly_target(action, include_table=multiple_tables)}[/bold]")
+        console.print(
+            f"[bold]Possible change:[/bold] "
+            f"{_human_action_name(action.type.value, action.parameters)}"
+        )
+        console.print(f"[bold]Why it is uncertain:[/bold] {_compact_text(deferred.rationale, 500)}")
+        console.print(f"[bold]What to check:[/bold] {_review_caution(action.type.value)}")
         _print_action_preview(tables, action, sample_limit=sample)
         item_started = time.perf_counter()
+
         while True:
             decision = typer.prompt(
-                "Manual decision: [a]pprove candidate, [r]eject, "
-                "[s]kip/defer, [q]uit",
+                "Choose: [a]pprove this correction, [r]eject it, "
+                "[s]decide later, [q]uit",
                 default="s",
             ).strip().casefold()
             if decision in {"a", "approve"}:
@@ -1235,6 +1292,7 @@ def review_grouped_command(
                 save_and_report(partial=True)
                 return
             console.print("[red]Enter a, r, s, or q.[/red]")
+
         record_review_event(
             plan,
             scope="deferred_ai",
