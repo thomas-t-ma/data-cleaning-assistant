@@ -108,10 +108,15 @@ target.
 
 ### 5. Cleaning-pattern and recoding suggestions
 
-Planned:
+Status: **initial read-only typo-variant suggestions implemented**
 
-- Surface repeated transformation patterns that are not safely expressible as
-  lexical normalization.
+- Group exact case/whitespace-equivalent labels before looking for typo-shaped
+  relationships, avoiding competing raw canonical targets.
+- Surface bounded typo-shaped categorical pairs as review suggestions only.
+- Require numeric/version tokens to match exactly, so distinctions such as GPL
+  v2 versus GPL v3 are never treated as spelling variants.
+- Suggest a canonical target only when one observed equivalence class clearly
+  dominates in frequency; ties remain unresolved.
 - Keep study-specific recoding suggestions separate from generic cleaning.
 - Require explicit user-authored or schema-backed rules before execution.
 - Preserve raw values and transformation provenance.

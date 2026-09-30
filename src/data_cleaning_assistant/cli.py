@@ -29,6 +29,7 @@ from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
 from .recall_benchmark import run_v010_recall_benchmark
 from .recall_eval import build_recall_surface_report
+from .recode import suggest_recodes
 from .review import (
     action_target,
     begin_review_session,
@@ -526,6 +527,54 @@ def codebook_promote_command(
         "Observed core/rare values were not converted into allowed-value rules. "
         "No dataset edits were applied.[/dim]"
     )
+
+
+@app.command("recode-suggest")
+def recode_suggest_command(
+    input_path: Annotated[
+        Path,
+        typer.Argument(help="Dataset to inspect for typo-shaped categorical variants"),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write read-only recoding suggestions as YAML"),
+    ] = Path("recode_suggestions.yaml"),
+) -> None:
+    """Suggest typo-shaped categorical recoding groups without changing data."""
+    loaded = load_dataset(input_path)
+    report = suggest_recodes(input_path, loaded.tables)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(
+            report.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    table = Table(title="Typo-shaped recoding suggestions — review required")
+    table.add_column("Table")
+    table.add_column("Column")
+    table.add_column("Left")
+    table.add_column("Right")
+    table.add_column("Suggested target")
+    for suggestion in report.suggestions:
+        table.add_row(
+            suggestion.table,
+            suggestion.column,
+            " / ".join(suggestion.left.values),
+            " / ".join(suggestion.right.values),
+            suggestion.suggested_target or "unresolved",
+        )
+    console.print(table)
+    console.print(
+        "[dim]Read-only suggestions only. Numeric/version tokens must match exactly, "
+        "and these suggestions authorize no transformations.[/dim]"
+    )
+    console.print(f"[green]Recoding suggestions written to:[/green] {output}")
 
 
 @app.command("recall-benchmark")

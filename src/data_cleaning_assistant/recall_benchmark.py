@@ -12,10 +12,11 @@ from .codebook import suggest_codebooks
 from .engine import profile_dataset
 from .io import load_dataset
 from .planner import propose_actions
+from .recode import suggest_recodes
 
 
 class RecallSignal(BaseModel):
-    kind: Literal["action", "issue", "codebook"]
+    kind: Literal["action", "issue", "codebook", "recode"]
     name: str
     column: str | None = None
     parameters: dict[str, Any] | None = None
@@ -79,12 +80,13 @@ def _matches_action(signal: RecallSignal, action: CleaningAction) -> bool:
     )
 
 
-def _observed(path: Path) -> tuple[list[CleaningAction], list, list]:
+def _observed(path: Path) -> tuple[list[CleaningAction], list, list, list]:
     loaded = load_dataset(path)
     profile = profile_dataset(path)
     plan = propose_actions(path)
     codebooks = suggest_codebooks(path, loaded.tables)
-    return plan.actions, profile.issues, codebooks.suggestions
+    recodes = suggest_recodes(path, loaded.tables)
+    return plan.actions, profile.issues, codebooks.suggestions, recodes.suggestions
 
 
 def _signal_present(
@@ -93,6 +95,7 @@ def _signal_present(
     actions: list[CleaningAction],
     issues: list,
     codebooks: list,
+    recodes: list,
 ) -> bool:
     if signal.kind == "action":
         return any(_matches_action(signal, action) for action in actions)
@@ -102,10 +105,16 @@ def _signal_present(
             and (signal.column is None or issue.column == signal.column)
             for issue in issues
         )
+    if signal.kind == "codebook":
+        return any(
+            signal.name == "codebook"
+            and (signal.column is None or suggestion.column == signal.column)
+            for suggestion in codebooks
+        )
     return any(
-        signal.name == "codebook"
+        signal.name == "typo_variant"
         and (signal.column is None or suggestion.column == signal.column)
-        for suggestion in codebooks
+        for suggestion in recodes
     )
 
 
@@ -421,6 +430,45 @@ def v010_recall_benchmark_cases() -> list[RecallBenchmarkCase]:
             ],
         ),
         RecallBenchmarkCase(
+            id="recode_typo_variant",
+            description=(
+                "A typo-shaped category variant should be surfaced without "
+                "becoming an executable action."
+            ),
+            csv_text=(
+                "status\n"
+                + "Unclear\n" * 20
+                + "unclear\n" * 5
+                + "Uclear\n"
+                + "Known\n" * 10
+            ),
+            required=[
+                RecallSignal(
+                    kind="recode",
+                    name="typo_variant",
+                    column="status",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
+            id="recode_version_negative",
+            description=(
+                "Different numeric/version tokens must never be treated as typo variants."
+            ),
+            csv_text=(
+                "license\n"
+                + "GNU General Public License v2.0\n" * 10
+                + "GNU General Public License v3\n" * 10
+            ),
+            forbidden=[
+                RecallSignal(
+                    kind="recode",
+                    name="typo_variant",
+                    column="license",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
             id="codebook_count_negative",
             description="Explicit count fields are not categorical codebooks.",
             csv_text=(
@@ -452,7 +500,7 @@ def run_v010_recall_benchmark(
         for case in corpus:
             source = root / f"{case.id}.csv"
             source.write_text(case.csv_text, encoding="utf-8")
-            actions, issues, codebooks = _observed(source)
+            actions, issues, codebooks, recodes = _observed(source)
 
             missing = [
                 signal
@@ -462,6 +510,7 @@ def run_v010_recall_benchmark(
                     actions=actions,
                     issues=issues,
                     codebooks=codebooks,
+                    recodes=recodes,
                 )
             ]
             forbidden_hits = [
@@ -472,6 +521,7 @@ def run_v010_recall_benchmark(
                     actions=actions,
                     issues=issues,
                     codebooks=codebooks,
+                    recodes=recodes,
                 )
             ]
             results.append(

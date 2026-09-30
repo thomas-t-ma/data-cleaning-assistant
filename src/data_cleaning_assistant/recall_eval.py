@@ -10,6 +10,7 @@ from .codebook import CodebookSuggestion, suggest_codebooks
 from .engine import profile_dataset
 from .io import load_dataset
 from .planner import propose_actions
+from .recode import RecodeSuggestion, suggest_recodes
 from .transforms import preview_action
 
 
@@ -38,6 +39,8 @@ class RecallSurfaceReport(BaseModel):
     normalized_duplicate_affected_count: int = 0
     codebook_suggestion_count: int = 0
     codebook_suggestions: list[CodebookSuggestion] = Field(default_factory=list)
+    recode_suggestion_count: int = 0
+    recode_suggestions: list[RecodeSuggestion] = Field(default_factory=list)
     interpretation_note: str = (
         "This report measures the deterministic v0.10 review surface. It does not "
         "establish scientific correctness, complete issue recall, or permission to "
@@ -51,6 +54,7 @@ def build_recall_surface_report(path: str | Path) -> RecallSurfaceReport:
     profile = profile_dataset(resolved)
     plan = propose_actions(resolved)
     codebooks = suggest_codebooks(resolved, loaded.tables)
+    recodes = suggest_recodes(resolved, loaded.tables)
 
     issue_counts: Counter[str] = Counter()
     affected_counts: Counter[str] = Counter()
@@ -97,4 +101,6 @@ def build_recall_surface_report(path: str | Path) -> RecallSurfaceReport:
         normalized_duplicate_affected_count=affected_counts["normalization_equivalent_rows"],
         codebook_suggestion_count=len(codebooks.suggestions),
         codebook_suggestions=codebooks.suggestions,
+        recode_suggestion_count=len(recodes.suggestions),
+        recode_suggestions=recodes.suggestions,
     )
