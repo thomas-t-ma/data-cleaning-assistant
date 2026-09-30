@@ -263,8 +263,8 @@ def _print_plan(plan: CleaningPlan) -> None:
         if omitted:
             total = sum(len(columns) for columns in omitted.values())
             console.print(
-                f"[bold]Non-executable coverage QA:[/bold] {total} entirely structural/empty "
-                "column(s) were not turned into routine cleaning actions."
+                f"[bold]Non-executable coverage QA:[/bold] {total} structural-only "
+                "column(s) omitted from routine cleaning actions."
             )
 
     console.print(
