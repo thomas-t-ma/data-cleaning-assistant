@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.9.0**.
+Current version: **v0.9.1**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,19 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.9.1 — human-readable review workflow
+
+v0.9.1 keeps the v0.9 safety and provenance model but redesigns the terminal review
+experience around the decision a researcher actually needs to make. Grouped review
+now explains the proposed change in plain language, shows its total scope and
+representative before→after examples, describes the main risk to check, and warns
+when one decision covers an unusually large number of cells or columns.
+
+Single-table reviews no longer repeat the dataset name on every target, unnamed
+export columns receive readable labels, and raw implementation fields remain in the
+JSON/audit artifacts instead of dominating the interactive interface. Multi-action
+approval still requires an explicit `YES`, and review never edits the source file.
 
 ## v0.9.0 — semantic AI routing and grouped human review
 
