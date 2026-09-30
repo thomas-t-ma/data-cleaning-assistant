@@ -1083,7 +1083,7 @@ def review_grouped_command(
                 f"and {unnamed_count} unnamed export column(s).[/dim]"
             )
 
-        impact = Table(title="Where this change would happen — representative targets")
+        impact = Table(title="Representative targets across this group — Where this change would happen")
         impact.add_column("Column / target")
         impact.add_column(f"{affected_label.capitalize()} changed", justify="right")
         impact_members = _representative_family_members(family, limit=8)
@@ -1099,7 +1099,7 @@ def review_grouped_command(
                 "included in this group.[/dim]"
             )
 
-        console.print("[bold]Examples: representative before → after changes[/bold]")
+        console.print("[bold]Examples: Representative before → after changes[/bold]")
         for member in _representative_family_members(family, limit=4):
             action = member.action
             preview = preview_action(tables, action, sample_limit=min(sample, 3))
