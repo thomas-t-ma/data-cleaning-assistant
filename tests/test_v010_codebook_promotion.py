@@ -129,7 +129,8 @@ def test_codebook_promote_cli_requires_explicit_review_and_preserves_rare_values
         ],
     )
     assert promote.exit_code == 0, promote.output
-    assert "No dataset edits were applied" in promote.output
+    normalized_output = " ".join(promote.output.split())
+    assert "No dataset edits were applied" in normalized_output
 
     schema = load_study_schema(schema_path)
     spec = schema.tables["study"].columns["status"]
