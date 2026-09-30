@@ -169,6 +169,91 @@ def _print_summary(report, *, all_issues: bool = False) -> None:
         console.print("[green]No issues detected by the current rule set.[/green]")
 
 
+def _friendly_column_name(column: str | None) -> str:
+    if column is None:
+        return "(whole table)"
+    if column.startswith("...") and column[3:].isdigit():
+        return f"Unnamed column {column[3:]}"
+    return column
+
+
+def _friendly_target(action, *, include_table: bool = False) -> str:
+    column = _friendly_column_name(action.column)
+    if include_table:
+        return action.table if action.column is None else f"{action.table} · {column}"
+    return action.table if action.column is None else column
+
+
+def _compact_text(text: str, limit: int = 360) -> str:
+    cleaned = " ".join(str(text).split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _human_action_name(action_type: str, parameters: dict[str, object]) -> str:
+    if action_type == "normalize_missing":
+        values = [repr(value) for value in parameters.get("values", [])]
+        if values:
+            return f"Treat {', '.join(values)} as missing"
+        return "Convert missing-value placeholders to true missing values"
+    if action_type == "trim_whitespace":
+        return "Remove spaces at the beginning or end of text"
+    if action_type == "standardize_dates":
+        return "Standardize recognized dates to YYYY-MM-DD"
+    if action_type == "coerce_numeric":
+        return "Convert numeric-looking text to numbers"
+    if action_type == "normalize_categories":
+        mapping = parameters.get("mapping", {})
+        if isinstance(mapping, dict) and len(mapping) == 1:
+            old, new = next(iter(mapping.items()))
+            return f"Standardize {old!r} → {new!r}"
+        return "Standardize equivalent category labels"
+    if action_type == "remove_exact_duplicates":
+        return "Remove later copies of fully identical rows"
+    return action_type.replace("_", " ").capitalize()
+
+
+def _review_caution(action_type: str) -> str:
+    if action_type == "normalize_missing":
+        return (
+            "Approve only if the listed text is a missing-value marker in every included "
+            "column, not a legitimate category or abbreviation."
+        )
+    if action_type == "normalize_categories":
+        return (
+            "Approve only if the source and replacement truly mean the same category. "
+            "Do not merge different versions, stages, codes, doses, or scientific labels."
+        )
+    if action_type == "standardize_dates":
+        return (
+            "Check the examples for date-order ambiguity. Unparseable values stay unchanged, "
+            "but a mixed regional date convention should be reviewed carefully."
+        )
+    if action_type == "coerce_numeric":
+        return (
+            "Check that these fields are measurements/counts rather than identifiers or codes. "
+            "Values that cannot be parsed as numbers stay unchanged."
+        )
+    if action_type == "trim_whitespace":
+        return (
+            "Usually low risk, but inspect if leading or trailing spaces could be meaningful "
+            "fixed-width formatting."
+        )
+    if action_type == "remove_exact_duplicates":
+        return (
+            "Identical rows can still represent legitimate repeated observations. "
+            "Inspect before approving row deletion."
+        )
+    return "Inspect the examples and make sure the change matches the meaning of the data."
+
+
+def _snapshot_text(snapshot) -> str:
+    if snapshot.kind == "null":
+        return "missing (null)"
+    return repr(snapshot.value)
+
+
 def _print_plan(plan: CleaningPlan) -> None:
     if plan.planning_notes:
         omitted: dict[str, set[str]] = {}
@@ -178,60 +263,66 @@ def _print_plan(plan: CleaningPlan) -> None:
         if omitted:
             total = sum(len(columns) for columns in omitted.values())
             console.print(
-                f"[bold]Non-executable coverage QA:[/bold] {total} structural-only "
-                "column(s) omitted from routine missing-token proposals. "
-                "Original findings remain in the profile; plan notes retain "
-                "their targets and issue IDs. Explicit study-schema rules can "
-                "still propose a change."
+                f"[bold]Left as QA-only:[/bold] {total} entirely structural/empty "
+                "column(s) were not turned into routine cleaning actions."
             )
-            breakdown = Table(title="Structural-only fields (no routine action)")
-            breakdown.add_column("Table")
-            breakdown.add_column("Columns", justify="right")
-            for name, columns in sorted(omitted.items()):
-                breakdown.add_row(name, str(len(columns)))
-            console.print(breakdown)
 
-    table = Table(title="Proposed cleaning actions")
-    table.add_column("Action ID")
-    table.add_column("Type")
-    table.add_column("Table")
-    table.add_column("Column")
-    table.add_column("Confidence", justify="right")
-    table.add_column("Origin")
-    table.add_column("Decision")
-    table.add_column("Description")
-    for action in plan.actions:
-        table.add_row(
-            action.id,
-            action.type.value,
-            action.table,
-            action.column or "—",
-            f"{action.confidence:.0%}",
-            action.origin.value,
-            action.decision.value,
-            action.title,
-        )
-    console.print(table)
+    console.print(
+        f"\n[bold]Cleaning plan:[/bold] {len(plan.actions)} proposed action(s). "
+        "Nothing is changed until you review and later apply approved actions."
+    )
+    if plan.actions:
+        counts: dict[str, int] = {}
+        for action in plan.actions:
+            label = _human_action_name(action.type.value, action.parameters)
+            counts[label] = counts.get(label, 0) + 1
+
+        summary = Table(title="What the plan proposes")
+        summary.add_column("Change")
+        summary.add_column("Actions", justify="right")
+        for label, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
+            summary.add_row(label, str(count))
+        console.print(summary)
+
+        sample_table = Table(title="Examples of proposed targets")
+        sample_table.add_column("Target")
+        sample_table.add_column("Proposed change")
+        for action in plan.actions[:12]:
+            sample_table.add_row(
+                _friendly_target(action, include_table=len({a.table for a in plan.actions}) > 1),
+                _human_action_name(action.type.value, action.parameters),
+            )
+        console.print(sample_table)
+        if len(plan.actions) > 12:
+            console.print(
+                f"[dim]{len(plan.actions) - 12} more action(s) are saved in the plan. "
+                "Use review-grouped to review them with examples before deciding.[/dim]"
+            )
+
     if plan.deferred_reviews:
-        deferred_table = Table(title="Deferred AI reviews — not executable")
-        deferred_table.add_column("Candidate")
+        console.print(
+            f"\n[bold]Needs human judgment:[/bold] {len(plan.deferred_reviews)} "
+            "AI-reviewed candidate(s) were intentionally left non-executable."
+        )
+        deferred_table = Table(title="Examples needing judgment")
         deferred_table.add_column("Target")
-        deferred_table.add_column("Proposed change")
-        deferred_table.add_column("Status")
-        deferred_table.add_column("Reason")
-        for deferred in plan.deferred_reviews:
+        deferred_table.add_column("Possible change")
+        deferred_table.add_column("Why not automatic")
+        for deferred in plan.deferred_reviews[:8]:
             action = deferred.proposed_action
             deferred_table.add_row(
-                deferred.candidate_id,
-                f"{action.table}.{action.column or '(table)'}",
-                repr(action.parameters),
-                deferred.status,
-                deferred.rationale,
+                _friendly_target(action, include_table=False),
+                _human_action_name(action.type.value, action.parameters),
+                _compact_text(deferred.rationale, 180),
             )
         console.print(deferred_table)
-    console.print(
-        "\n[dim]No action is applied until it is explicitly approved.[/dim]"
-    )
+        if len(plan.deferred_reviews) > 8:
+            console.print(
+                f"[dim]{len(plan.deferred_reviews) - 8} more deferred candidate(s) are "
+                "preserved in the plan and will appear during review.[/dim]"
+            )
+
+    console.print("\n[dim]No edits have been applied.[/dim]")
 
 
 def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
@@ -239,21 +330,22 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
 
     if preview.sample_rows:
         table = Table(
-            title=f"{action.id}: {action.title} — {preview.affected_count} row(s)"
+            title=f"Examples of rows that would be removed — "
+            f"{preview.affected_count:,} row(s) total"
         )
-        table.add_column("Original row", justify="right")
-        table.add_column("Row values")
+        table.add_column("Row", justify="right")
+        table.add_column("Current row values")
         for snapshot in preview.sample_rows:
             values = {
-                column: value.value
+                _friendly_column_name(column): value.value
                 for column, value in snapshot.values.items()
             }
-            table.add_row(str(snapshot.row_position), repr(values))
+            table.add_row(str(snapshot.row_position), _compact_text(repr(values), 300))
         console.print(table)
         return
 
     table = Table(
-        title=f"{action.id}: {action.title} — {preview.affected_count} cell(s)"
+        title=f"Before → after examples — {preview.affected_count:,} cell(s) total"
     )
     table.add_column("Row", justify="right")
     table.add_column("Before")
@@ -261,8 +353,8 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
     for change in preview.sample_changes:
         table.add_row(
             str(change.row_index),
-            repr(change.old_value.value),
-            repr(change.new_value.value),
+            _snapshot_text(change.old_value),
+            _snapshot_text(change.new_value),
         )
     console.print(table)
 
