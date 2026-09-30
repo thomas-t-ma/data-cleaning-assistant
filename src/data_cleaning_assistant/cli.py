@@ -254,6 +254,80 @@ def _snapshot_text(snapshot) -> str:
     return repr(snapshot.value)
 
 
+def _review_category_name(action_type: str) -> str:
+    names = {
+        "normalize_missing": "Missing-value cleanup",
+        "trim_whitespace": "Whitespace cleanup",
+        "standardize_dates": "Date standardization",
+        "coerce_numeric": "Numeric conversion",
+        "normalize_categories": "Category-label cleanup",
+        "remove_exact_duplicates": "Duplicate-row cleanup",
+    }
+    return names.get(action_type, action_type.replace("_", " ").capitalize())
+
+
+def _edge_whitespace_description(value: str) -> str:
+    leading = value[: len(value) - len(value.lstrip())]
+    trailing = value[len(value.rstrip()) :]
+
+    def describe(part: str, side: str) -> list[str]:
+        if not part:
+            return []
+        pieces = []
+        newlines = part.count("\n")
+        tabs = part.count("\t")
+        spaces = sum(char == " " for char in part)
+        other = len(part) - newlines - tabs - spaces
+        if newlines:
+            pieces.append(f"{newlines} {side} newline{'s' if newlines != 1 else ''}")
+        if tabs:
+            pieces.append(f"{tabs} {side} tab{'s' if tabs != 1 else ''}")
+        if spaces:
+            pieces.append(f"{spaces} {side} space{'s' if spaces != 1 else ''}")
+        if other:
+            pieces.append(f"{other} other {side} whitespace character{'s' if other != 1 else ''}")
+        return pieces
+
+    removed = describe(leading, "leading") + describe(trailing, "trailing")
+    return "remove " + ", ".join(removed) if removed else "remove surrounding whitespace"
+
+
+def _dataset_excerpt(value: object, limit: int = 150) -> str:
+    text = " ".join(str(value).strip().split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _print_dataset_change_examples(preview, action, *, limit: int = 3) -> None:
+    if action.type.value == "trim_whitespace":
+        table = Table(title="Dataset examples — content is unchanged except edge whitespace")
+        table.add_column("Row", justify="right")
+        table.add_column("Dataset text excerpt")
+        table.add_column("Proposed cleanup")
+        for change in preview.sample_changes[:limit]:
+            old = str(change.old_value.value)
+            table.add_row(
+                str(change.row_index),
+                _dataset_excerpt(old),
+                _edge_whitespace_description(old),
+            )
+        console.print(table)
+        return
+
+    table = Table(title="Dataset values and proposed output")
+    table.add_column("Row", justify="right")
+    table.add_column("Original dataset value")
+    table.add_column("Proposed cleaned value")
+    for change in preview.sample_changes[:limit]:
+        table.add_row(
+            str(change.row_index),
+            _snapshot_text(change.old_value),
+            _snapshot_text(change.new_value),
+        )
+    console.print(table)
+
+
 def _is_unnamed_target(action) -> bool:
     column = action.column or ""
     return column.startswith("...") and column[3:].isdigit()
@@ -398,19 +472,11 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
         console.print(table)
         return
 
-    table = Table(
-        title=f"Before → after examples — {preview.affected_count:,} cell(s) total"
+    console.print(
+        f"[bold]Dataset column:[/bold] {_friendly_target(action, include_table=False)} · "
+        f"{preview.affected_count:,} cell(s) affected"
     )
-    table.add_column("Row", justify="right")
-    table.add_column("Before")
-    table.add_column("After")
-    for change in preview.sample_changes:
-        table.add_row(
-            str(change.row_index),
-            _snapshot_text(change.old_value),
-            _snapshot_text(change.new_value),
-        )
-    console.print(table)
+    _print_dataset_change_examples(preview, action, limit=sample_limit)
 
 
 def _print_overlap_warning(overlaps, action_id: str) -> None:
@@ -1063,6 +1129,24 @@ def review_grouped_command(
         affected_label = "rows" if is_row_action else "cells"
 
         console.rule(f"Change {family_index} of {len(families)}")
+        same_category = [
+            candidate
+            for candidate in families
+            if candidate.action_type == family.action_type
+            and candidate.origin == family.origin
+        ]
+        if len(same_category) > 1:
+            subgroup_index = same_category.index(family) + 1
+            console.print(
+                f"[bold]Cleaning category:[/bold] {_review_category_name(family.action_type)} · "
+                f"subgroup {subgroup_index}/{len(same_category)}"
+            )
+            if family.action_type == "normalize_missing":
+                console.print(
+                    "[dim]This subgroup is kept separate because it recognizes a different "
+                    "exact set of missing-value markers. Broader token sets require their "
+                    "own approval.[/dim]"
+                )
         console.print(
             f"[bold cyan]{_human_action_name(family.action_type, family.parameters)}[/bold cyan]"
         )
@@ -1099,13 +1183,14 @@ def review_grouped_command(
                 "included in this group.[/dim]"
             )
 
-        console.print("[bold]Examples: Representative before → after changes[/bold]")
+        console.print("[bold]Dataset evidence:[/bold]")
         for member in _representative_family_members(family, limit=4):
             action = member.action
             preview = preview_action(tables, action, sample_limit=min(sample, 3))
             console.print(
-                f"[dim]{_friendly_target(action, include_table=multiple_tables)} "
-                f"({member.affected_count:,} affected)[/dim]"
+                f"[bold]Dataset column:[/bold] "
+                f"{_friendly_target(action, include_table=multiple_tables)} "
+                f"· {member.affected_count:,} affected"
             )
             if preview.sample_rows:
                 for snapshot in preview.sample_rows[:2]:
@@ -1114,15 +1199,11 @@ def review_grouped_command(
                         for column, value in snapshot.values.items()
                     }
                     console.print(
-                        f"  row {snapshot.row_position}: {_compact_text(repr(values), 220)}"
+                        f"  Dataset row {snapshot.row_position}: "
+                        f"{_compact_text(repr(values), 220)}"
                     )
             else:
-                for change in preview.sample_changes[:3]:
-                    console.print(
-                        f"  row {change.row_index}: "
-                        f"{_snapshot_text(change.old_value)} → "
-                        f"{_snapshot_text(change.new_value)}"
-                    )
+                _print_dataset_change_examples(preview, action, limit=3)
         if len(family.members) >= 20 or family.affected_count >= 10_000:
             console.print(
                 "[yellow]Large change:[/yellow] this decision covers many cells/columns. "
