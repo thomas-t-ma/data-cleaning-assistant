@@ -1091,7 +1091,9 @@ def review_grouped_command(
                         show_default=False,
                     ).strip()
                     if confirmation != "YES":
-                        console.print("[yellow]Approval not confirmed; nothing was approved.[/yellow]")
+                        console.print(
+                            "[yellow]Approval not confirmed; nothing was approved.[/yellow]"
+                        )
                         continue
                     bulk_confirmed = True
                 for action in actions:
@@ -1152,12 +1154,17 @@ def review_grouped_command(
                         f"Change {family_index} · target "
                         f"{member_index}/{len(family.members)}"
                     )
-                    console.print(f"[bold]{_friendly_target(action, include_table=multiple_tables)}[/bold]")
+                    console.print(
+                        f"[bold]{_friendly_target(action, include_table=multiple_tables)}[/bold]"
+                    )
                     console.print(
                         f"{_human_action_name(action.type.value, action.parameters)} · "
-                        f"{member.affected_count:,} {'rows' if action.column is None else 'cells'} affected"
+                        f"{member.affected_count:,} "
+                        f"{'rows' if action.column is None else 'cells'} affected"
                     )
-                    console.print(f"[bold]What to check:[/bold] {_review_caution(action.type.value)}")
+                    console.print(
+                        f"[bold]What to check:[/bold] {_review_caution(action.type.value)}"
+                    )
                     _print_action_preview(tables, action, sample_limit=sample)
                     item_started = time.perf_counter()
                     while True:
