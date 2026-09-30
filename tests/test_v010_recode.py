@@ -32,11 +32,11 @@ def test_recode_suggestion_collapses_case_equivalence_before_typo_review(
     ]
     assert len(matches) == 1
     suggestion = matches[0]
-    assert suggestion.suggested_target == "Unclear"
+    assert suggestion.suggested_target == "Response Unclear"
     assert suggestion.target_basis == "observed_frequency_dominance"
     assert suggestion.left.total_count + suggestion.right.total_count == 26
     values = set(suggestion.left.values) | set(suggestion.right.values)
-    assert values == {"Unclear", "unclear", "Uclear"}
+    assert values == {"Response Unclear", "response unclear", "Response Uclear"}
 
 
 def test_recode_suggestion_keeps_equal_frequency_variants_unresolved(
@@ -46,7 +46,7 @@ def test_recode_suggestion_keeps_equal_frequency_variants_unresolved(
     source.write_text(
         "license\n"
         + "Creative Commons Attribution Internation 4.0\n"
-        + "Creative Commons Attribution 4.0 International\n"
+        + "CC BY;Creative Commons Attribution 4.0 International\n"
         + "MIT\n" * 12
         + "GPL\n" * 8,
         encoding="utf-8",
@@ -63,6 +63,7 @@ def test_recode_suggestion_keeps_equal_frequency_variants_unresolved(
     ]
     assert len(matches) == 1
     assert matches[0].suggested_target is None
+    assert matches[0].component_mode is True
 
 
 def test_recode_suggestion_never_groups_different_numeric_versions(
@@ -73,6 +74,24 @@ def test_recode_suggestion_never_groups_different_numeric_versions(
         "license\n"
         + "GNU General Public License v2.0\n" * 10
         + "GNU General Public License v3\n" * 10,
+        encoding="utf-8",
+    )
+
+    report = suggest_recodes(source, load_dataset(source).tables)
+
+    assert report.suggestions == []
+
+
+def test_recode_suggestion_rejects_single_token_semantic_neighbors(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "country.csv"
+    source.write_text(
+        "country\n"
+        + "Australia\n" * 30
+        + "Austria\n" * 3
+        + "Ireland\n" * 10
+        + "Iceland\n",
         encoding="utf-8",
     )
 

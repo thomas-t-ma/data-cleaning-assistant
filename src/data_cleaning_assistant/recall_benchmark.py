@@ -451,6 +451,27 @@ def v010_recall_benchmark_cases() -> list[RecallBenchmarkCase]:
             ],
         ),
         RecallBenchmarkCase(
+            id="recode_single_token_semantic_negative",
+            description=(
+                "Single-token semantic near-neighbors such as country names "
+                "must not be treated as typo recodes."
+            ),
+            csv_text=(
+                "country\n"
+                + "Australia\n" * 30
+                + "Austria\n" * 3
+                + "Ireland\n" * 10
+                + "Iceland\n"
+            ),
+            forbidden=[
+                RecallSignal(
+                    kind="recode",
+                    name="typo_variant",
+                    column="country",
+                )
+            ],
+        ),
+        RecallBenchmarkCase(
             id="recode_version_negative",
             description=(
                 "Different numeric/version tokens must never be treated as typo variants."

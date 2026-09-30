@@ -113,6 +113,10 @@ Status: **initial read-only typo-variant suggestions implemented**
 - Group exact case/whitespace-equivalent labels before looking for typo-shaped
   relationships, avoiding competing raw canonical targets.
 - Surface bounded typo-shaped categorical pairs as review suggestions only.
+- Require at least two shared text-token positions so isolated semantic
+  near-neighbors such as Austria/Australia are not treated as typo candidates.
+- Analyze structured multi-select fields at the component level rather than
+  comparing or rewriting whole multi-select cells.
 - Require numeric/version tokens to match exactly, so distinctions such as GPL
   v2 versus GPL v3 are never treated as spelling variants.
 - Suggest a canonical target only when one observed equivalence class clearly

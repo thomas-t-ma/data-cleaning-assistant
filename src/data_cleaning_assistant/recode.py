@@ -39,6 +39,7 @@ class RecodeSuggestion(BaseModel):
     edit_distance: int = Field(ge=1)
     suggested_target: str | None = None
     target_basis: str | None = None
+    component_mode: bool = False
     review_required: bool = True
 
 
@@ -94,7 +95,7 @@ def _typo_shape(left: str, right: str) -> tuple[int, int] | None:
     right_text, right_numeric = _token_parts(right)
     if left_numeric != right_numeric:
         return None
-    if len(left_text) != len(right_text) or not left_text:
+    if len(left_text) != len(right_text) or len(left_text) < 2:
         return None
 
     differing = [
@@ -180,12 +181,22 @@ def suggest_recodes(
             ]
             if len(values) < 10:
                 continue
-            if sum(";" in value for value in values) >= max(
+            delimited_count = sum(";" in value for value in values)
+            component_mode = delimited_count >= max(
                 5, math.ceil(len(values) * 0.01)
-            ):
-                continue
+            )
+            observed_values = (
+                [
+                    component.strip()
+                    for value in values
+                    for component in value.split(";")
+                    if component.strip()
+                ]
+                if component_mode
+                else values
+            )
 
-            counts: Counter[str] = Counter(values)
+            counts: Counter[str] = Counter(observed_values)
             if not 2 <= len(counts) <= max_observed_values:
                 continue
 
@@ -227,6 +238,7 @@ def suggest_recodes(
                         edit_distance=edit_distance,
                         suggested_target=suggested_target,
                         target_basis=target_basis,
+                        component_mode=component_mode,
                     )
                 )
 
