@@ -45,6 +45,24 @@ app = typer.Typer(
 console = Console()
 
 
+def _safe_console_text(
+    preferred: str,
+    fallback: str,
+    *,
+    encoding: str | None = None,
+) -> str:
+    """Return preferred text when the active console encoding can represent it."""
+    active_encoding = encoding or getattr(console.file, "encoding", None) or "utf-8"
+    try:
+        preferred.encode(active_encoding)
+    except (LookupError, UnicodeEncodeError):
+        return fallback
+    return preferred
+
+
+ARROW = _safe_console_text("→", "->")
+
+
 @app.callback()
 def main() -> None:
     """Data Cleaning Assistant command-line interface."""
@@ -207,7 +225,7 @@ def _human_action_name(action_type: str, parameters: dict[str, object]) -> str:
         mapping = parameters.get("mapping", {})
         if isinstance(mapping, dict) and len(mapping) == 1:
             old, new = next(iter(mapping.items()))
-            return f"Standardize {old!r} → {new!r}"
+            return f"Standardize {old!r} {ARROW} {new!r}"
         return "Standardize equivalent category labels"
     if action_type == "remove_exact_duplicates":
         return "Remove later copies of fully identical rows"
@@ -345,7 +363,7 @@ def _print_action_preview(tables, action, sample_limit: int = 8) -> None:
         return
 
     table = Table(
-        title=f"Before → after examples — {preview.affected_count:,} cell(s) total"
+        title=f"Before {ARROW} after examples — {preview.affected_count:,} cell(s) total"
     )
     table.add_column("Row", justify="right")
     table.add_column("Before")
@@ -1060,7 +1078,7 @@ def review_grouped_command(
                 for change in preview.sample_changes[:3]:
                     console.print(
                         f"  row {change.row_index}: "
-                        f"{_snapshot_text(change.old_value)} → "
+                        f"{_snapshot_text(change.old_value)} {ARROW} "
                         f"{_snapshot_text(change.new_value)}"
                     )
             examples_shown += 1
@@ -1420,7 +1438,7 @@ def replay_command(
     if remapped:
         console.print("[dim]Single-table recipe mapping:[/dim]")
         for source, target in remapped.items():
-            console.print(f"  {source} → {target}")
+            console.print(f"  {source} {ARROW} {target}")
 
     _print_plan(plan)
     for action in plan.actions:
