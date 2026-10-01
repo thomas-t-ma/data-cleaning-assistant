@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from data_cleaning_assistant.cli import _friendly_column_name, app
+from data_cleaning_assistant.cli import _friendly_column_name, _safe_console_text, app
 from data_cleaning_assistant.planner import propose_actions
 
 
@@ -52,3 +52,8 @@ def test_grouped_review_uses_plain_language_and_examples(tmp_path: Path) -> None
 def test_unnamed_export_columns_get_readable_labels() -> None:
     assert _friendly_column_name("...63") == "Unnamed column 63"
     assert _friendly_column_name("real_name") == "real_name"
+
+
+def test_console_text_falls_back_for_cp1252() -> None:
+    assert _safe_console_text("→", "->", encoding="cp1252") == "->"
+    assert _safe_console_text("→", "->", encoding="utf-8") == "→"
