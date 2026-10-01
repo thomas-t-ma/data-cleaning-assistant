@@ -38,7 +38,7 @@ def get_json(url: str) -> dict[str, Any]:
             with urlopen(request, timeout=90) as response:
                 payload = json.load(response)
             if not isinstance(payload, dict):
-                raise ValueError("Unexpected non-object GDC API response")
+                raise TypeError("Unexpected non-object GDC API response")
             return payload
         except HTTPError as exc:
             if exc.code not in {429, 500, 502, 503, 504} or attempt == 3:
@@ -73,11 +73,11 @@ def fetch_cases(limit: int, page_size: int = 10) -> tuple[list[dict[str, Any]], 
         response = get_json(url)
         data = response.get("data")
         if not isinstance(data, dict):
-            raise ValueError("GDC response missing data object")
+            raise TypeError("GDC response missing data object")
         pagination = data.get("pagination", {})
         current_total = pagination.get("total")
         if not isinstance(current_total, int):
-            raise ValueError("GDC response missing cohort count")
+            raise TypeError("GDC response missing cohort count")
         if total is not None and current_total != total:
             raise ValueError("GDC cohort changed during pagination; rerun the download")
         total = current_total
@@ -86,7 +86,7 @@ def fetch_cases(limit: int, page_size: int = 10) -> tuple[list[dict[str, Any]], 
             raise ValueError("GDC returned an empty or malformed page before completion")
         for case in page:
             if not isinstance(case, dict):
-                raise ValueError("GDC case record is not an object")
+                raise TypeError("GDC case record is not an object")
             project_id = (case.get("project") or {}).get("project_id")
             if project_id != PROJECT or not case.get("case_id"):
                 raise ValueError("GDC returned a case outside the requested project")
