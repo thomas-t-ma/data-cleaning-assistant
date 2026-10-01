@@ -210,7 +210,7 @@ def run(
                 result["protocol_ok"] = False
                 result["passed"] = False
             result["error"] = None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - benchmark must record any model/runtime failure
             # Make errors count as failures, not false deferrals.
             result = {
                 "correct": 0, "total": len(candidates),
