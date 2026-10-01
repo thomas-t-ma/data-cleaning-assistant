@@ -230,7 +230,7 @@ def run_suite(
                                 response_model=AIPlannerResponse,
                             )
                             record.update(_score_reply(response, candidate.id, case.expected))
-                        except Exception as exc:
+                        except Exception as exc:  # noqa: BLE001 - stress test records all model/runtime failures
                             record["actual"] = "model_error"
                             record["protocol_ok"] = False
                             record["error"] = f"{type(exc).__name__}: {exc}"
