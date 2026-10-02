@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.11.0**.
+Current version: **v0.12.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,27 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.12.0 — unified offline generalization scorecard
+
+v0.12.0 consolidates the repository's existing core, research, and semantic-stress
+benchmarks into one repeatable offline evaluation layer. It requires no Ollama,
+network access, account, or private dataset.
+
+```bash
+data-cleaner evaluate-offline --json-output offline_evaluation.json
+```
+
+The scorecard separately reports required-effect recall, deterministic review burden,
+semantic review burden, unsafe executable proposals, prohibited candidate exposure,
+and semantic detector coverage for both expected-safe corrections and expected-risky
+pairs. Risky pairs reaching semantic review are deliberately not counted as unsafe
+merges; the hard safety gate concerns executable proposals and policy violations.
+
+The current release baseline covers all 20 built-in benchmark cases and all 10
+required effects with zero unsafe executable proposals and zero prohibited candidate
+exposures. The fixed 40-case semantic corpus remains diagnostic so its exposure
+rates can change transparently as detector coverage improves.
 
 ## v0.11.0 — evidence-backed schema drafting
 
