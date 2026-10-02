@@ -185,7 +185,7 @@ def test_schema_rejects_unknown_columns_and_identifier_edits(tmp_path: Path) -> 
 
 
 def test_schema_rejects_inconsistent_canonical_dictionary() -> None:
-    with pytest.raises(ValueError, match="canonical_map targets"):
+    with pytest.raises(ValueError, match="canonical mapping targets"):
         StudySchema.model_validate(
             {"tables": {"Visits": {"columns": {
                 "Arm": {

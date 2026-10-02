@@ -341,10 +341,7 @@ def build_ai_candidates(
         if issue.type in {"category_inconsistency", "fuzzy_category_match"}:
             # The study dictionary, when provided, is the only authority for
             # category normalization in a schema-managed column.
-            if column_spec is None or (
-                column_spec.allowed_values is None
-                and not column_spec.canonical_map
-            ):
+            if column_spec is None or not column_spec.has_category_dictionary():
                 candidates.extend(_category_candidates(issue, frame))
             continue
 
