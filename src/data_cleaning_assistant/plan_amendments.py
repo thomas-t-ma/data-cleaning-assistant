@@ -9,7 +9,7 @@ from .actions import (
     DeferredReview,
     PlanAmendment,
 )
-from .mapping_safety import selected_mapping_conflicts
+from .mapping_safety import approval_mapping_conflicts, selected_mapping_conflicts
 
 
 def _find_action(plan: CleaningPlan, action_id: str) -> CleaningAction:
@@ -150,6 +150,18 @@ def promote_deferred_candidate(
 
     deferred = _find_deferred(plan, candidate_id)
     action = deferred.proposed_action
+
+    conflicts = approval_mapping_conflicts(plan, [action])
+    if conflicts:
+        details = "; ".join(
+            f"{conflict.table}.{conflict.column or '(table)'}: "
+            f"{conflict.source!r} -> {list(conflict.targets)!r}"
+            for conflict in conflicts[:8]
+        )
+        raise ValueError(
+            "Approving the deferred candidate would create conflicting "
+            f"category mappings. {details}"
+        )
 
     matching = next(
         (
