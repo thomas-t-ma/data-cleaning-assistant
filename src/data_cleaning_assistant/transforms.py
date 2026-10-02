@@ -24,6 +24,7 @@ from .actions import (
     ValueSnapshot,
 )
 from .inference import is_missing_like, is_null, parse_date, parse_number
+from .mapping_safety import selected_mapping_conflicts
 from .planner import file_sha256
 
 
@@ -274,6 +275,18 @@ def apply_plan(
         )
         if approved:
             selected.append(action)
+
+    conflicts = selected_mapping_conflicts(selected)
+    if conflicts:
+        details = "; ".join(
+            f"{conflict.table}.{conflict.column or '(table)'}: "
+            f"{conflict.source!r} -> {list(conflict.targets)!r}"
+            for conflict in conflicts[:8]
+        )
+        raise ValueError(
+            "Conflicting approved category mappings would send the same source "
+            f"value to multiple targets. Resolve the review conflict first. {details}"
+        )
 
     # Cell edits run before row deletion. This preserves original row positions in
     # the audit log and makes persisted save/reload/undo deterministic.
