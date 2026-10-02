@@ -1370,7 +1370,11 @@ def review_grouped_command(
     multiple_tables = len(tables) > 1
 
     def save_and_report(*, partial: bool) -> None:
-        finish_review_session(plan, session_started)
+        finish_review_session(
+            plan,
+            session_started,
+            outcome="partial" if partial else "completed",
+        )
         resolved_output = output.expanduser().resolve()
         resolved_output.parent.mkdir(parents=True, exist_ok=True)
         resolved_output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
