@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from data_cleaning_assistant.actions import ActionDecision, ActionType, CleaningPlan
 from data_cleaning_assistant.cli import app
+from data_cleaning_assistant.mapping_safety import atomize_category_mappings
 from data_cleaning_assistant.planner import file_sha256
 
 
@@ -95,19 +96,30 @@ def test_synthetic_workbook_complete_cli_pilot(tmp_path: Path) -> None:
 
     invoke("preview", str(source), str(plan_path))
 
+    # Review operates at mapping granularity in v0.10. Build the expected
+    # interactive action sequence the same way as the CLI so the smoke test
+    # remains tied to decisions rather than a hard-coded prompt count.
+    review_plan = plan.model_copy(deep=True)
+    atomize_category_mappings(review_plan)
+
     # Never accept row deletion in the pilot; approve only exact dictionary
     # category mappings so restoration is straightforward to inspect.
     approved = [
-        action for action in plan.actions
+        action
+        for action in review_plan.actions
         if action.type == ActionType.NORMALIZE_CATEGORIES
         and action.column in {"Sex", "Status"}
     ]
-    assert len(approved) == 2
+    assert len(approved) == 4
     answers = [
-        "a" if action in approved else (
-            "r" if action.type == ActionType.REMOVE_EXACT_DUPLICATES else "s"
+        "a"
+        if action in approved
+        else (
+            "r"
+            if action.type == ActionType.REMOVE_EXACT_DUPLICATES
+            else "s"
         )
-        for action in plan.actions
+        for action in review_plan.actions
     ]
     invoke(
         "review", str(source), str(plan_path),
@@ -117,7 +129,10 @@ def test_synthetic_workbook_complete_cli_pilot(tmp_path: Path) -> None:
     reviewed = CleaningPlan.model_validate_json(
         reviewed_path.read_text(encoding="utf-8")
     )
-    assert sum(a.decision == ActionDecision.APPROVED for a in reviewed.actions) == 2
+    assert sum(
+        a.decision == ActionDecision.APPROVED
+        for a in reviewed.actions
+    ) == len(approved)
     assert all(
         a.decision == ActionDecision.REJECTED
         for a in reviewed.actions
@@ -139,7 +154,7 @@ def test_synthetic_workbook_complete_cli_pilot(tmp_path: Path) -> None:
     recipe_path = cleaned_path.with_name(f"{cleaned_path.name}.recipe.yaml")
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
     assert audit["study_schema_sha256"] == plan.study_schema_sha256
-    assert len(audit["executions"]) == 2
+    assert len(audit["executions"]) == len(approved)
     assert recipe_path.exists()
 
     replay_output = invoke("replay", str(source), str(recipe_path))
