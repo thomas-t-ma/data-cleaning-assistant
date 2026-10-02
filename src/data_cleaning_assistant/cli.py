@@ -17,6 +17,17 @@ from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
 from .evaluation import run_offline_evaluation
+from .guided import (
+    GuidedSession,
+    GuidedStage,
+    create_guided_session,
+    finalize_guided_session,
+    load_guided_session,
+    prepare_guided_plan,
+    record_confirmed_schema,
+    record_reviewed_plan,
+    save_guided_session,
+)
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
 from .mapping_safety import (
@@ -628,6 +639,13 @@ def schema_review_command(
             help="Optional path for the reviewed draft/provenance YAML",
         ),
     ] = None,
+    unresolved_only: Annotated[
+        bool,
+        typer.Option(
+            "--unresolved-only",
+            help="Review only suggestions still marked proposed",
+        ),
+    ] = False,
 ) -> None:
     """Review draft suggestions and compile only approvals into a real schema."""
     draft = load_schema_draft(draft_path)
@@ -638,8 +656,15 @@ def schema_review_command(
             "Generate a new schema draft."
         )
 
+    review_items = [
+        suggestion
+        for suggestion in draft.suggestions
+        if not unresolved_only
+        or suggestion.decision == SchemaSuggestionDecision.PROPOSED
+    ]
+
     console.print(
-        f"[bold]Review schema draft:[/bold] {len(draft.suggestions)} suggestion(s)."
+        f"[bold]Review schema draft:[/bold] {len(review_items)} suggestion(s)."
     )
     console.print(
         "[dim]Approving a suggestion adds it to the study dictionary; "
@@ -647,10 +672,10 @@ def schema_review_command(
     )
 
     position = 0
-    while position < len(draft.suggestions):
-        suggestion = draft.suggestions[position]
+    while position < len(review_items):
+        suggestion = review_items[position]
         console.rule(
-            f"Schema suggestion {position + 1} of {len(draft.suggestions)}"
+            f"Schema suggestion {position + 1} of {len(review_items)}"
         )
         console.print(f"[bold]{_schema_suggestion_text(suggestion)}[/bold]")
         console.print(
@@ -679,7 +704,7 @@ def schema_review_command(
                         "[yellow]There is no previous schema suggestion.[/yellow]"
                     )
                     continue
-                previous = draft.suggestions[position - 1]
+                previous = review_items[position - 1]
                 previous.decision = SchemaSuggestionDecision.PROPOSED
                 console.print(
                     "[cyan]Previous schema decision reset.[/cyan] "
@@ -1355,6 +1380,13 @@ def review_grouped_command(
         int,
         typer.Option("--sample", min=1, max=50, help="Maximum examples shown per action"),
     ] = 5,
+    unresolved_only: Annotated[
+        bool,
+        typer.Option(
+            "--unresolved-only",
+            help="Review only actions still marked proposed plus pending deferred judgments",
+        ),
+    ] = False,
 ) -> None:
     """Review proposed changes in plain-language groups before anything is applied."""
     plan = _load_plan(plan_path)
@@ -1365,12 +1397,24 @@ def review_grouped_command(
 
     tables = load_dataset(input_path).tables
     split_count, additional_actions = atomize_category_mappings(plan)
-    families = group_actions(tables, plan)
-    session_started = begin_review_session(plan)
+    families = group_actions(
+        tables,
+        plan,
+        include_decisions=(
+            {ActionDecision.PROPOSED}
+            if unresolved_only
+            else None
+        ),
+    )
+    session_started = begin_review_session(plan, resume=unresolved_only)
     multiple_tables = len(tables) > 1
 
     def save_and_report(*, partial: bool) -> None:
-        finish_review_session(plan, session_started)
+        finish_review_session(
+            plan,
+            session_started,
+            outcome="partial" if partial else "completed",
+        )
         resolved_output = output.expanduser().resolve()
         resolved_output.parent.mkdir(parents=True, exist_ok=True)
         resolved_output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
@@ -2197,6 +2241,282 @@ def undo_command(
         inserted_rows=inserted_rows,
     )
     console.print(f"[green]Restored dataset:[/green] {restored_path}")
+
+
+def _guided_status_table(session: GuidedSession) -> Table:
+    table = Table(title="Guided cleaning session")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("Stage", session.stage.value)
+    table.add_row("Source", session.source_path)
+    table.add_row("Workspace", session.workspace)
+    table.add_row("Approved actions", str(session.approved_action_count))
+    table.add_row("Executed actions", str(session.executed_action_count))
+    table.add_row("Cleaned output", session.cleaned_path)
+    if session.schema_path:
+        table.add_row("Study schema", session.schema_path)
+    if session.plan_path:
+        table.add_row("Plan", session.plan_path)
+    if session.reviewed_plan_path:
+        table.add_row("Reviewed plan", session.reviewed_plan_path)
+    if session.verification_path:
+        table.add_row("Verification", session.verification_path)
+    return table
+
+
+def _print_guided_next_step(session: GuidedSession) -> None:
+    console.print(_guided_status_table(session))
+    if session.stage in {
+        GuidedStage.SCHEMA_REVIEW,
+        GuidedStage.CLEANING_REVIEW,
+        GuidedStage.PLANNING,
+    }:
+        console.print(
+            f"[dim]Continue later with: data-cleaner guided-resume "
+            f"{session.workspace!r}[/dim]"
+        )
+
+
+def _continue_guided_session(
+    session: GuidedSession,
+    *,
+    sample: int,
+) -> None:
+    source = Path(session.source_path)
+    workspace = Path(session.workspace)
+
+    if session.stage == GuidedStage.SCHEMA_REVIEW:
+        draft_path = Path(
+            session.reviewed_schema_draft_path
+            or session.schema_draft_path
+        )
+        schema_path = workspace / "study_schema.yaml"
+        reviewed_draft = workspace / "schema_draft.reviewed.yaml"
+        resume_schema = session.reviewed_schema_draft_path is not None
+
+        schema_review_command(
+            input_path=source,
+            draft_path=draft_path,
+            output=schema_path,
+            reviewed_draft=reviewed_draft,
+            unresolved_only=resume_schema,
+        )
+
+        if not schema_path.exists():
+            if reviewed_draft.exists():
+                session.reviewed_schema_draft_path = str(reviewed_draft)
+            session.stage = GuidedStage.SCHEMA_REVIEW
+            save_guided_session(session)
+            console.print(
+                "[yellow]Guided session paused during schema review.[/yellow]"
+            )
+            _print_guided_next_step(session)
+            return
+
+        record_confirmed_schema(
+            session,
+            schema_path=schema_path,
+            reviewed_draft_path=reviewed_draft,
+        )
+
+    if session.stage == GuidedStage.PLANNING:
+        plan = prepare_guided_plan(session)
+        if session.stage == GuidedStage.NO_CHANGES:
+            console.print(
+                "[green]No reviewable cleaning changes were found.[/green] "
+                "The source dataset was not modified."
+            )
+            _print_guided_next_step(session)
+            return
+        console.print(
+            f"[green]Cleaning plan prepared:[/green] "
+            f"{len(plan.actions)} action(s)."
+        )
+
+    if session.stage == GuidedStage.CLEANING_REVIEW:
+        plan_input = Path(
+            session.reviewed_plan_path
+            or session.plan_path
+            or ""
+        )
+        if not plan_input.exists():
+            raise typer.BadParameter(
+                "Guided session is missing its cleaning plan artifact."
+            )
+        reviewed_path = workspace / "reviewed_plan.json"
+        resume_review = session.reviewed_plan_path is not None
+
+        review_grouped_command(
+            input_path=source,
+            plan_path=plan_input,
+            output=reviewed_path,
+            sample=sample,
+            unresolved_only=resume_review,
+        )
+
+        if not reviewed_path.exists():
+            raise typer.BadParameter(
+                "Cleaning review did not produce a reviewed plan."
+            )
+        reviewed = record_reviewed_plan(session, reviewed_path)
+        if (
+            reviewed.review_session is None
+            or reviewed.review_session.outcome != "completed"
+        ):
+            console.print(
+                "[yellow]Guided session paused during cleaning review.[/yellow]"
+            )
+            _print_guided_next_step(session)
+            return
+
+        verification = finalize_guided_session(session)
+        if session.stage == GuidedStage.NO_APPROVED_CHANGES:
+            console.print(
+                "[green]Review completed with no approved changes.[/green] "
+                "The source dataset was not modified."
+            )
+            _print_guided_next_step(session)
+            return
+        if session.stage == GuidedStage.NO_EXECUTABLE_CHANGES:
+            console.print(
+                "[green]Approved changes produced no remaining executable edits.[/green] "
+                "The source dataset was not modified."
+            )
+            _print_guided_next_step(session)
+            return
+        if verification is None:
+            _print_guided_next_step(session)
+            return
+        if verification.passed:
+            console.print(
+                "[bold green]GUIDED CLEANING COMPLETE — VERIFIED[/bold green]"
+            )
+            console.print(
+                f"[green]Cleaned dataset:[/green] {session.cleaned_path}"
+            )
+            console.print(
+                f"[green]Verification report:[/green] "
+                f"{session.verification_path}"
+            )
+            _print_guided_next_step(session)
+            return
+
+        console.print(
+            "[bold red]Guided cleaning finished but verification failed.[/bold red]"
+        )
+        _print_guided_next_step(session)
+        raise typer.Exit(code=2)
+
+    _print_guided_next_step(session)
+
+
+@app.command("guided-clean")
+def guided_clean_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to clean")],
+    workspace: Annotated[
+        Path | None,
+        typer.Option(
+            "--workspace",
+            "-w",
+            help=(
+                "New directory for run artifacts; defaults beside the dataset "
+                "as <name>_cleaning_run"
+            ),
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Optional cleaned output path; defaults inside the workspace",
+        ),
+    ] = None,
+    schema_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--schema",
+            help="Optional already-confirmed StudySchema; otherwise a draft is reviewed",
+        ),
+    ] = None,
+    sample: Annotated[
+        int,
+        typer.Option(
+            "--sample",
+            min=1,
+            max=50,
+            help="Maximum examples shown during cleaning review",
+        ),
+    ] = 5,
+) -> None:
+    """Run the safe deterministic cleaning workflow as one guided session."""
+    source = input_path.expanduser().resolve()
+    selected_workspace = (
+        workspace
+        if workspace is not None
+        else source.with_name(f"{source.stem}_cleaning_run")
+    )
+    try:
+        session = create_guided_session(
+            source,
+            selected_workspace,
+            output_path=output,
+            schema_path=schema_path,
+        )
+    except (FileExistsError, FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    console.print(
+        f"[green]Guided workspace created:[/green] {session.workspace}"
+    )
+    console.print(
+        "[dim]The source dataset is read-only throughout review. "
+        "A cleaned copy is written only after completed approval.[/dim]"
+    )
+    try:
+        _continue_guided_session(session, sample=sample)
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("guided-resume")
+def guided_resume_command(
+    workspace: Annotated[
+        Path,
+        typer.Argument(help="Existing guided workspace or session.json"),
+    ],
+    sample: Annotated[
+        int,
+        typer.Option(
+            "--sample",
+            min=1,
+            max=50,
+            help="Maximum examples shown during cleaning review",
+        ),
+    ] = 5,
+) -> None:
+    """Resume a paused guided cleaning session without repeating decided items."""
+    try:
+        session = load_guided_session(workspace)
+        _continue_guided_session(session, sample=sample)
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("guided-status")
+def guided_status_command(
+    workspace: Annotated[
+        Path,
+        typer.Argument(help="Existing guided workspace or session.json"),
+    ],
+) -> None:
+    """Show the current stage and artifacts for a guided cleaning session."""
+    try:
+        session = load_guided_session(workspace)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(_guided_status_table(session))
+    typer.echo(f"Exact workspace: {session.workspace}")
 
 
 if __name__ == "__main__":

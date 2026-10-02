@@ -90,6 +90,7 @@ class ReviewSession(BaseModel):
     started_at: datetime
     completed_at: datetime | None = None
     duration_seconds: float | None = Field(default=None, ge=0.0)
+    outcome: str | None = None
     events: list[ReviewEvent] = Field(default_factory=list)
 
 
