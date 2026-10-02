@@ -9,6 +9,12 @@ from .engine import profile_dataset
 from .models import DatasetReport, Issue
 from .planner import propose_actions
 from .recipe import CleaningRecipe, load_recipe, recipe_to_plan
+from .schema_draft import (
+    SchemaDraft,
+    SchemaSuggestion,
+    build_schema_draft,
+    materialize_study_schema,
+)
 from .study_schema import StudySchema, load_study_schema
 from .verification import RunVerificationReport, verify_run
 
@@ -22,11 +28,15 @@ __all__ = [
     "Issue",
     "OllamaProvider",
     "RunVerificationReport",
+    "SchemaDraft",
+    "SchemaSuggestion",
     "StudySchema",
     "benchmark_cases",
     "build_ai_context",
+    "build_schema_draft",
     "load_recipe",
     "load_study_schema",
+    "materialize_study_schema",
     "profile_dataset",
     "propose_actions",
     "propose_ai_plan",
@@ -35,4 +45,4 @@ __all__ = [
     "run_ai_benchmark",
     "verify_run",
 ]
-__version__ = "0.10.0"
+__version__ = "0.11.0"

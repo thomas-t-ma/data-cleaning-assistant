@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.10.0**.
+Current version: **v0.11.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,29 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.11.0 — evidence-backed schema drafting
+
+v0.11.0 reduces manual study-schema authoring without allowing inference to become
+cleaning authority. `schema-draft` uses the existing deterministic profiler and
+planner to propose a non-authoritative schema draft containing only bounded,
+evidence-backed suggestions such as high-confidence grain keys, atomic category
+aliases, structural missing tokens, and high-confidence parent/child relationships.
+
+```bash
+data-cleaner schema-draft data.xlsx -o schema_draft.yaml
+data-cleaner schema-review data.xlsx schema_draft.yaml -o study_schema.yaml
+```
+
+A schema draft is deliberately a different model from `StudySchema`; it cannot be
+passed directly to normal schema-aware cleaning. `schema-review` requires explicit
+approve/reject/defer decisions, supports backtracking, writes reviewed-draft
+provenance, validates the confirmed schema against the unchanged dataset, and never
+edits source data.
+
+The public Python API also exposes `SchemaDraft`, `SchemaSuggestion`,
+`build_schema_draft`, and `materialize_study_schema` for future GUI or notebook
+workflows.
 
 ## v0.10.0 — review safety, canonical vocabularies, and run verification
 
