@@ -1459,6 +1459,36 @@ def review_grouped_command(
     save_and_report(partial=False)
 
 
+@app.command("plan-actions")
+def plan_actions_command(
+    plan_path: Annotated[Path, typer.Argument(help="Cleaning plan JSON to inspect")],
+) -> None:
+    """List atomic action ids and current decisions for supported amendments."""
+    plan = _load_plan(plan_path)
+    atomize_category_mappings(plan)
+
+    table = Table(title="Plan actions")
+    table.add_column("Action ID")
+    table.add_column("Decision")
+    table.add_column("Target")
+    table.add_column("Change")
+
+    multiple_tables = len({action.table for action in plan.actions}) > 1
+    for action in plan.actions:
+        table.add_row(
+            action.id,
+            action.decision.value,
+            _friendly_target(action, include_table=multiple_tables),
+            _human_action_name(action.type.value, action.parameters),
+        )
+
+    console.print(table)
+    if plan.amendments:
+        console.print(
+            f"[dim]Recorded amendments: {len(plan.amendments)}[/dim]"
+        )
+
+
 @app.command("amend-plan")
 def amend_plan_command(
     plan_path: Annotated[Path, typer.Argument(help="Existing cleaning plan JSON")],
