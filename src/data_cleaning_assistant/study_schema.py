@@ -76,6 +76,12 @@ class ColumnSpec(BaseModel):
                 vocabulary_alias_targets[alias] = canonical
 
         protected_aliases = canonical_labels & set(vocabulary_alias_targets)
+        legacy_protected_aliases = {
+            source
+            for source, target in self.canonical_map.items()
+            if source in canonical_labels and source != target
+        }
+        protected_aliases |= legacy_protected_aliases
         if protected_aliases:
             alias = sorted(protected_aliases)[0]
             raise ValueError(
