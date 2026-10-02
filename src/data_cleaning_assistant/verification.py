@@ -83,29 +83,29 @@ def _tables_equal(
         left_frame = left[left_name]
         right_frame = right[right_name]
         if list(left_frame.columns) != list(right_frame.columns):
-            return (
-                False,
+            detail = (
                 f"Column layout differs for {left_name!r}: "
-                f"{list(left_frame.columns)!r} vs {list(right_frame.columns)!r}",
+                f"{list(left_frame.columns)!r} vs {list(right_frame.columns)!r}"
             )
+            return False, detail
         if left_frame.shape != right_frame.shape:
-            return (
-                False,
+            detail = (
                 f"Shape differs for {left_name!r}: "
-                f"{left_frame.shape!r} vs {right_frame.shape!r}",
+                f"{left_frame.shape!r} vs {right_frame.shape!r}"
             )
+            return False, detail
 
         for row_position in range(len(left_frame)):
             for column in left_frame.columns:
                 left_value = left_frame.iloc[row_position][column]
                 right_value = right_frame.iloc[row_position][column]
                 if not _value_equal(left_value, right_value):
-                    return (
-                        False,
+                    detail = (
                         f"First differing value at {left_name!r} row "
                         f"{row_position}, column {column!r}: "
-                        f"{left_value!r} vs {right_value!r}",
+                        f"{left_value!r} vs {right_value!r}"
                     )
+                    return False, detail
     return True, "Logical table values are equivalent."
 
 
@@ -281,7 +281,7 @@ def verify_run(
                     cleaned_loaded.tables,
                 )
                 replay_byte_identical = replay_path.read_bytes() == cleaned.read_bytes()
-        except Exception as exc:  # verification should report, not crash, on replay failure
+        except (KeyError, OSError, TypeError, ValueError) as exc:
             replay_detail = f"Recipe replay failed: {type(exc).__name__}: {exc}"
 
     _check(
@@ -319,7 +319,7 @@ def verify_run(
                 restored_loaded.tables,
                 source_loaded.tables,
             )
-    except Exception as exc:  # verification should report, not crash, on undo failure
+    except (KeyError, OSError, TypeError, ValueError) as exc:
         undo_detail = f"Audit undo failed: {type(exc).__name__}: {exc}"
 
     _check(
