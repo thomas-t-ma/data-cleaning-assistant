@@ -100,7 +100,6 @@ def create_guided_session(
             f"Guided workspace already exists: {root}. "
             "Use guided-resume to continue an existing session."
         )
-    root.mkdir(parents=True)
 
     cleaned = (
         Path(output_path).expanduser().resolve()
@@ -111,6 +110,13 @@ def create_guided_session(
         raise ValueError("Guided output may not overwrite the source dataset.")
     if cleaned.exists():
         raise FileExistsError(f"Guided output already exists: {cleaned}")
+
+    supplied_schema = None
+    if schema_path is not None:
+        supplied_schema = load_study_schema(schema_path)
+        supplied_schema.validate_dataset(loaded.tables)
+
+    root.mkdir(parents=True)
 
     profile_path = root / "profile.json"
     profile = profile_dataset(source)
@@ -127,11 +133,9 @@ def create_guided_session(
         else GuidedStage.PLANNING
     )
 
-    if schema_path is not None:
-        schema = load_study_schema(schema_path)
-        schema.validate_dataset(loaded.tables)
+    if supplied_schema is not None:
         confirmed_path = root / "study_schema.yaml"
-        write_study_schema(schema, confirmed_path)
+        write_study_schema(supplied_schema, confirmed_path)
         confirmed_schema = str(confirmed_path)
         stage = GuidedStage.PLANNING
 
