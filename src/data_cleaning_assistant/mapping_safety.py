@@ -5,7 +5,7 @@ import json
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Iterable
+from collections.abc import Iterable
 
 from .actions import ActionDecision, ActionType, CleaningAction, CleaningPlan
 
