@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.9.1**.
+Current version: **v0.10.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,43 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.10.0 — review safety, canonical vocabularies, and run verification
+
+v0.10.0 turns lessons from a full public research-data cleaning pilot into reusable
+product safeguards. Category normalization now operates at mapping granularity, so
+one safe alias can be approved without accepting unrelated mappings from the same
+column. Competing canonical targets are surfaced during review and fail closed at
+execution even if a reviewed plan was edited outside the CLI.
+
+Review decisions are reversible. Grouped actions and deferred AI judgments support
+backtracking, and saved plans can be changed through auditable `plan-actions` and
+`amend-plan` commands instead of hand-editing JSON. Every supported amendment
+records before/after provenance.
+
+Study schemas can now declare protected canonical vocabularies. Aliases may map into
+a canonical label, but distinct canonical labels cannot collapse into one another.
+This lets a study explicitly preserve distinctions such as generic GPL, GPL v2.0,
+and GPL v3 while still normalizing known spelling/casing aliases. Schema-managed
+category columns also suppress fuzzy AI merge proposals because the declared
+dictionary is the authority.
+
+Completed runs can be verified end to end:
+
+```bash
+data-cleaner verify-run source.csv cleaned.csv
+```
+
+By default this discovers `cleaned.csv.audit.json` and
+`cleaned.csv.recipe.yaml`, then independently checks source immutability, audit
+hash integrity, audit counts, recipe/audit agreement, persisted recipe replay, and
+persisted audit undo. It also reports cell-change events, unique touched cells,
+repeated-touch events, row deletions, and net cells different from the source when
+the shapes are directly comparable. An optional `--json-output` writes the same
+verification result for automation.
+
+CI now runs the full suite on Ubuntu with Python 3.11, 3.12, and 3.13 plus Windows
+with Python 3.13.
 
 ## v0.9.1 — human-readable review workflow
 
