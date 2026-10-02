@@ -83,7 +83,7 @@ class ColumnSpec(BaseModel):
         }
         protected_aliases |= legacy_protected_aliases
         if protected_aliases:
-            alias = sorted(protected_aliases)[0]
+            alias = min(protected_aliases)
             raise ValueError(
                 f"Canonical label {alias!r} cannot be an alias of another "
                 "canonical value"
