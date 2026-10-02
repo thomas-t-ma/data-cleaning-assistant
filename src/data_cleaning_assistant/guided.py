@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from enum import Enum
 from pathlib import Path
 
@@ -104,6 +105,13 @@ def create_guided_session(
     ollama_url: str | None = None,
     think: bool = False,
 ) -> GuidedSession:
+    if planning_mode not in {"deterministic", "ai"}:
+        raise ValueError(
+            "Guided planning mode must be 'deterministic' or 'ai'."
+        )
+    if planning_mode == "ai" and not model:
+        raise ValueError("AI-assisted guided planning requires a model name.")
+
     source = Path(input_path).expanduser().resolve()
     loaded = load_dataset(source)
 
@@ -233,8 +241,6 @@ def prepare_guided_plan(
                 for item in result.rejected
             ],
         }
-        import json
-
         provenance_path.write_text(
             json.dumps(provenance, indent=2, default=str),
             encoding="utf-8",
