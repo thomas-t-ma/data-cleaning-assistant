@@ -6,6 +6,7 @@ from .actions import (
     ActionDecision,
     CleaningAction,
     CleaningPlan,
+    DeferredReview,
     PlanAmendment,
 )
 from .mapping_safety import selected_mapping_conflicts
@@ -120,3 +121,139 @@ def reset_action_for_backtracking(
         decision=ActionDecision.PROPOSED,
         reason="Interactive review backtracking",
     )
+
+
+
+def _find_deferred(
+    plan: CleaningPlan,
+    candidate_id: str,
+) -> DeferredReview:
+    matches = [
+        item
+        for item in plan.deferred_reviews
+        if item.candidate_id == candidate_id
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one deferred candidate with id "
+            f"{candidate_id!r}; found {len(matches)}."
+        )
+    return matches[0]
+
+
+def promote_deferred_candidate(
+    plan: CleaningPlan,
+    *,
+    candidate_id: str,
+) -> CleaningAction:
+    """Approve one deferred candidate while retaining reversible provenance."""
+
+    deferred = _find_deferred(plan, candidate_id)
+    action = deferred.proposed_action
+
+    matching = next(
+        (
+            existing
+            for existing in plan.actions
+            if existing.type == action.type
+            and existing.table == action.table
+            and existing.column == action.column
+            and existing.parameters == action.parameters
+        ),
+        None,
+    )
+
+    if matching is not None:
+        deferred.promoted_action_id = matching.id
+        deferred.promoted_action_created = False
+        deferred.promoted_action_previous_decision = matching.decision
+        matching.decision = ActionDecision.APPROVED
+        recorded_action = matching
+    else:
+        approved_action = action.model_copy(deep=True)
+        approved_action.decision = ActionDecision.APPROVED
+        approved_action.description = (
+            "Manually approved deferred AI candidate: " + deferred.rationale
+        )
+        plan.actions.append(approved_action)
+        deferred.promoted_action_id = approved_action.id
+        deferred.promoted_action_created = True
+        deferred.promoted_action_previous_decision = None
+        recorded_action = approved_action
+
+    deferred.status = "approved"
+    return recorded_action
+
+
+def reject_deferred_candidate(
+    plan: CleaningPlan,
+    *,
+    candidate_id: str,
+) -> DeferredReview:
+    deferred = _find_deferred(plan, candidate_id)
+    deferred.status = "rejected"
+    deferred.promoted_action_id = None
+    deferred.promoted_action_created = False
+    deferred.promoted_action_previous_decision = None
+    return deferred
+
+
+def reset_deferred_for_backtracking(
+    plan: CleaningPlan,
+    *,
+    candidate_id: str,
+) -> PlanAmendment | None:
+    """Undo a prior deferred-candidate decision and return it to pending."""
+
+    deferred = _find_deferred(plan, candidate_id)
+    before = {
+        "status": deferred.status,
+        "promoted_action_id": deferred.promoted_action_id,
+        "promoted_action_created": deferred.promoted_action_created,
+        "promoted_action_previous_decision": (
+            deferred.promoted_action_previous_decision.value
+            if deferred.promoted_action_previous_decision is not None
+            else None
+        ),
+    }
+
+    if deferred.status == "pending":
+        return None
+
+    if deferred.status == "approved" and deferred.promoted_action_id is not None:
+        promoted = next(
+            (
+                action
+                for action in plan.actions
+                if action.id == deferred.promoted_action_id
+            ),
+            None,
+        )
+        if promoted is not None:
+            if deferred.promoted_action_created:
+                plan.actions.remove(promoted)
+            else:
+                promoted.decision = (
+                    deferred.promoted_action_previous_decision
+                    or ActionDecision.PROPOSED
+                )
+
+    deferred.status = "pending"
+    deferred.promoted_action_id = None
+    deferred.promoted_action_created = False
+    deferred.promoted_action_previous_decision = None
+
+    amendment = PlanAmendment(
+        kind="deferred_status",
+        deferred_candidate_id=deferred.candidate_id,
+        before=before,
+        after={
+            "status": "pending",
+            "promoted_action_id": None,
+            "promoted_action_created": False,
+            "promoted_action_previous_decision": None,
+        },
+        reason="Interactive deferred-review backtracking",
+    )
+    plan.amendments.append(amendment)
+    return amendment
