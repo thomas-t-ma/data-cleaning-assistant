@@ -58,3 +58,30 @@ def test_fuzzy_category_suggestions_are_review_only(tmp_path: Path) -> None:
     fuzzy = [issue for issue in report.issues if issue.type == "fuzzy_category_match"]
     assert fuzzy
     assert all(issue.auto_fix_safe is False for issue in fuzzy)
+
+
+def test_inferred_relationships_do_not_casefold_identifiers(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "case_sensitive_ids.xlsx"
+    wb = Workbook()
+
+    patients = wb.active
+    patients.title = "Patients"
+    patients.append(["PatientID", "Status"])
+    patients.append(["ABC123", "Active"])
+    patients.append(["XYZ999", "Active"])
+
+    visits = wb.create_sheet("Visits")
+    visits.append(["PatientID", "VisitDate"])
+    visits.append(["abc123", "2026-01-01"])
+    visits.append(["ZZZ000", "2026-01-02"])
+    wb.save(path)
+
+    report = profile_dataset(path)
+
+    assert not any(
+        relationship.left_column == "PatientID"
+        and relationship.right_column == "PatientID"
+        for relationship in report.relationships
+    )

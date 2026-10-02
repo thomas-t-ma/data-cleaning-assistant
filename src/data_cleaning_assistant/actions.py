@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class ActionType(str, Enum):
     NORMALIZE_CATEGORIES = "normalize_categories"
+    NORMALIZE_MULTISELECT = "normalize_multiselect"
     NORMALIZE_MISSING = "normalize_missing"
     STANDARDIZE_DATES = "standardize_dates"
     COERCE_NUMERIC = "coerce_numeric"

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .detectors import detect_basic_issues, detect_fuzzy_categories
+from .detectors import (
+    detect_basic_issues,
+    detect_conditional_consistency,
+    detect_fuzzy_categories,
+    detect_multiselect_component_variants,
+    detect_other_specify_consistency,
+)
 from .detectors.basic import _iqr_outliers
 from .io import load_dataset
 from .inference import is_missing_like, parse_number
@@ -15,6 +21,7 @@ from .structure import (
     infer_candidate_keys,
     infer_grain,
     infer_relationships,
+    normalization_equivalent_duplicate_issues,
     repeated_entity_issues,
 )
 
@@ -148,7 +155,11 @@ def profile_dataset(path: str | Path, *, schema: StudySchema | None = None) -> D
             )
         issues.extend(safe_basic)
         issues.extend(detect_fuzzy_categories(table_name, frame))
+        issues.extend(detect_multiselect_component_variants(table_name, frame))
+        issues.extend(detect_conditional_consistency(table_name, frame))
+        issues.extend(detect_other_specify_consistency(table_name, frame))
         issues.extend(repeated_entity_issues(table_name, frame))
+        issues.extend(normalization_equivalent_duplicate_issues(table_name, frame))
 
     if schema is not None:
         issues.extend(schema_issues(loaded.tables, schema))

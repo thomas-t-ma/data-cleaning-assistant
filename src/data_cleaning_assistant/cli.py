@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from rich.console import Console
 from rich.table import Table
 
@@ -15,12 +16,20 @@ from .ai_context import build_ai_context
 from .ai_planner import build_review_contexts, propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
+from .codebook import (
+    load_codebook_suggestion_report,
+    promote_codebook_mappings,
+    suggest_codebooks,
+)
 from .engine import profile_dataset
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
 from .planner import file_sha256, propose_actions
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
+from .recall_benchmark import run_v010_recall_benchmark
+from .recall_eval import build_recall_surface_report
+from .recode import suggest_recodes
 from .review import (
     action_target,
     begin_review_session,
@@ -497,6 +506,261 @@ def profile(
             encoding="utf-8",
         )
         console.print(f"\n[green]Report written to:[/green] {output}")
+
+
+@app.command("codebook-suggest")
+def codebook_suggest_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect for recurring categorical vocabularies")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write review-only codebook suggestions as YAML"),
+    ] = Path("codebook_suggestions.yaml"),
+) -> None:
+    """Suggest recurring categorical vocabularies without changing data."""
+    loaded = load_dataset(input_path)
+    report = suggest_codebooks(input_path, loaded.tables)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(
+            report.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    table = Table(title="Candidate codebooks — review required")
+    table.add_column("Table")
+    table.add_column("Column")
+    table.add_column("Core labels", justify="right")
+    table.add_column("Coverage", justify="right")
+    table.add_column("Rare/other values", justify="right")
+    table.add_column("Exact variant mappings", justify="right")
+    for suggestion in report.suggestions:
+        table.add_row(
+            suggestion.table,
+            suggestion.column,
+            str(len(suggestion.core_values)),
+            f"{suggestion.core_coverage:.1%}",
+            str(len(suggestion.rare_values)),
+            str(len(suggestion.canonical_map)),
+        )
+    console.print(table)
+    console.print(
+        "[dim]These are observed vocabulary suggestions only. "
+        "They are not a study schema and authorize no transformations.[/dim]"
+    )
+    console.print(f"[green]Codebook suggestions written to:[/green] {output}")
+
+
+@app.command("codebook-promote")
+def codebook_promote_command(
+    input_path: Annotated[
+        Path,
+        typer.Argument(help="Dataset the codebook suggestions were generated from"),
+    ],
+    suggestions_path: Annotated[
+        Path,
+        typer.Argument(help="YAML codebook suggestion report to review/promote"),
+    ],
+    approve: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--approve",
+            help="Promote one reviewed TABLE::COLUMN canonical map; repeat as needed",
+        ),
+    ] = None,
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the promoted StudySchema YAML"),
+    ] = Path("study_schema.yaml"),
+) -> None:
+    """Promote explicitly reviewed codebook mappings into StudySchema authority."""
+    loaded = load_dataset(input_path)
+    report = load_codebook_suggestion_report(suggestions_path)
+    actual_hash = file_sha256(input_path)
+    if report.source_sha256 != actual_hash:
+        raise typer.BadParameter(
+            "The dataset no longer matches this codebook suggestion report. "
+            "Generate fresh suggestions before promotion."
+        )
+
+    approved_targets: set[tuple[str, str]] = set()
+    for raw_target in approve or []:
+        if "::" not in raw_target:
+            raise typer.BadParameter(
+                "--approve must use TABLE::COLUMN so long survey column names "
+                "remain unambiguous."
+            )
+        table_name, column_name = raw_target.split("::", 1)
+        table_name = table_name.strip()
+        column_name = column_name.strip()
+        if not table_name or not column_name:
+            raise typer.BadParameter(
+                "--approve must contain both TABLE and COLUMN."
+            )
+        approved_targets.add((table_name, column_name))
+
+    try:
+        schema = promote_codebook_mappings(
+            report,
+            loaded.tables,
+            approved_targets,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(
+            schema.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    mapping_count = sum(
+        len(spec.canonical_map)
+        for table in schema.tables.values()
+        for spec in table.columns.values()
+    )
+    console.print(
+        f"[green]StudySchema written to:[/green] {output} · "
+        f"[bold]{len(approved_targets)}[/bold] approved field(s), "
+        f"[bold]{mapping_count}[/bold] canonical mapping(s)"
+    )
+    console.print(
+        "[dim]Only reviewed exact case/whitespace mappings were promoted. "
+        "Observed core/rare values were not converted into allowed-value rules. "
+        "No dataset edits were applied.[/dim]"
+    )
+
+
+@app.command("recode-suggest")
+def recode_suggest_command(
+    input_path: Annotated[
+        Path,
+        typer.Argument(help="Dataset to inspect for typo-shaped categorical variants"),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write read-only recoding suggestions as YAML"),
+    ] = Path("recode_suggestions.yaml"),
+) -> None:
+    """Suggest typo-shaped categorical recoding groups without changing data."""
+    loaded = load_dataset(input_path)
+    report = suggest_recodes(input_path, loaded.tables)
+
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        yaml.safe_dump(
+            report.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    table = Table(title="Typo-shaped recoding suggestions — review required")
+    table.add_column("Table")
+    table.add_column("Column")
+    table.add_column("Left")
+    table.add_column("Right")
+    table.add_column("Suggested target")
+    for suggestion in report.suggestions:
+        table.add_row(
+            suggestion.table,
+            suggestion.column,
+            " / ".join(suggestion.left.values),
+            " / ".join(suggestion.right.values),
+            suggestion.suggested_target or "unresolved",
+        )
+    console.print(table)
+    console.print(
+        "[dim]Read-only suggestions only. Numeric/version tokens must match exactly, "
+        "and these suggestions authorize no transformations.[/dim]"
+    )
+    console.print(f"[green]Recoding suggestions written to:[/green] {output}")
+
+
+@app.command("recall-benchmark")
+def recall_benchmark_command(
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write deterministic recall benchmark JSON"),
+    ] = Path("recall_benchmark.json"),
+) -> None:
+    """Run the v0.10 deterministic recall benchmark without Ollama."""
+    summary = run_v010_recall_benchmark()
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+
+    console.print(
+        f"[bold]Recall benchmark:[/bold] {summary.passed_cases}/{summary.case_count} "
+        f"cases passed ({summary.pass_rate:.1%})"
+    )
+    console.print(
+        f"Required recall: [bold]{summary.required_hits}/{summary.required_total} "
+        f"({summary.required_recall:.1%})[/bold] · "
+        f"Forbidden exposures: [bold]{summary.forbidden_hits}/{summary.forbidden_total}[/bold]"
+    )
+    console.print("[dim]No Ollama calls and no external dataset edits.[/dim]")
+    console.print(f"[green]Benchmark written to:[/green] {output}")
+
+
+@app.command("recall-report")
+def recall_report_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect with deterministic v0.10 recall checks")],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the recall-surface JSON report"),
+    ] = Path("recall_report.json"),
+) -> None:
+    """Summarize the deterministic v0.10 review surface without AI or edits."""
+    report = build_recall_surface_report(input_path)
+    output = output.expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+
+    table = Table(title="v0.10 deterministic recall surface")
+    table.add_column("Signal")
+    table.add_column("Count", justify="right")
+    table.add_column("Affected", justify="right")
+    table.add_row(
+        "Multi-select normalization actions",
+        str(report.multiselect_action_count),
+        str(report.multiselect_action_affected_count),
+    )
+    table.add_row(
+        "Conditional QA pairs",
+        str(report.conditional_pair_count),
+        str(report.conditional_affected_count),
+    )
+    table.add_row(
+        "Other/specify QA pairs",
+        str(report.other_specify_pair_count),
+        str(report.other_specify_affected_count),
+    )
+    table.add_row(
+        "Normalization-equivalent duplicate QA",
+        str(report.normalized_duplicate_group_issue_count),
+        str(report.normalized_duplicate_affected_count),
+    )
+    table.add_row(
+        "Read-only codebook suggestions",
+        str(report.codebook_suggestion_count),
+        "—",
+    )
+    console.print(table)
+    console.print(
+        "[dim]Read-only evaluation: no Ollama calls and no dataset edits.[/dim]"
+    )
+    console.print(f"[green]Recall report written to:[/green] {output}")
 
 
 @app.command("ai-status")

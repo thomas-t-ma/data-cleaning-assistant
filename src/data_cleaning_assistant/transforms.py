@@ -98,6 +98,36 @@ def _new_value(action: CleaningAction, value: Any) -> tuple[bool, Any]:
             return True, mapping[key]
         return False, value
 
+    if action.type == ActionType.NORMALIZE_MULTISELECT:
+        delimiter = str(action.parameters.get("delimiter", ";"))
+        mapping = {
+            str(key): replacement
+            for key, replacement in action.parameters.get("mapping", {}).items()
+        }
+        if not isinstance(value, str) or not mapping:
+            return False, value
+
+        parts = value.split(delimiter)
+        changed = False
+        normalized_parts: list[str] = []
+        for part in parts:
+            stripped = part.strip()
+            replacement = mapping.get(stripped)
+            if replacement is None or replacement == stripped:
+                normalized_parts.append(part)
+                continue
+
+            leading_length = len(part) - len(part.lstrip())
+            trailing_length = len(part) - len(part.rstrip())
+            leading = part[:leading_length]
+            trailing = part[len(part) - trailing_length :] if trailing_length else ""
+            normalized_parts.append(f"{leading}{replacement}{trailing}")
+            changed = True
+
+        if not changed:
+            return False, value
+        return True, delimiter.join(normalized_parts)
+
     if action.type == ActionType.NORMALIZE_MISSING:
         tokens = {str(item) for item in action.parameters.get("values", [])}
         if not is_null(value) and str(value) in tokens:

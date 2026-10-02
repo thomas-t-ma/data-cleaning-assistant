@@ -313,3 +313,44 @@ def test_schema_canonical_mapping_does_not_need_ai_acceptance(tmp_path: Path) ->
     }
     assert categories[0].decision == ActionDecision.PROPOSED
     assert result.plan.deferred_reviews == []
+
+
+def test_schema_category_authority_suppresses_multiselect_heuristics(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "study.csv"
+    source.write_text(
+        "subject_id,language\n"
+        'S001,"R;BUGS"\n'
+        'S002,"R;Bugs"\n'
+        'S003,"Python;BUGS"\n'
+        'S004,"R;BUGS"\n'
+        'S005,"R;BUGS"\n'
+        'S006,"Python;BUGS"\n',
+        encoding="utf-8",
+    )
+    schema = StudySchema.model_validate(
+        {
+            "tables": {
+                "study": {
+                    "columns": {
+                        "language": {
+                            "allowed_values": [
+                                "R;BUGS",
+                                "R;Bugs",
+                                "Python;BUGS",
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    )
+
+    plan = propose_actions(source, schema=schema)
+
+    assert not any(
+        action.type == ActionType.NORMALIZE_MULTISELECT
+        and action.column == "language"
+        for action in plan.actions
+    )
