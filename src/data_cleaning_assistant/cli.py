@@ -2504,6 +2504,10 @@ def guided_status_command(
     except FileNotFoundError as exc:
         raise typer.BadParameter(str(exc)) from exc
     console.print(_guided_status_table(session))
+    console.print(
+        f"Exact workspace: {session.workspace}",
+        markup=False,
+    )
 
 
 if __name__ == "__main__":
