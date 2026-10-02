@@ -18,6 +18,11 @@ from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
+from .mapping_safety import (
+    approval_mapping_conflicts,
+    atomize_category_mappings,
+    review_mapping_conflicts,
+)
 from .planner import file_sha256, propose_actions
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
@@ -388,6 +393,27 @@ def _print_overlap_warning(overlaps, action_id: str) -> None:
         + ". These previews all use the original data; sequential execution may "
         "turn a later action into a no-op or change its effective count."
     )
+
+
+def _print_mapping_conflicts(conflicts, *, title: str = "Canonical mapping conflicts") -> None:
+    if not conflicts:
+        return
+    table = Table(title=title)
+    table.add_column("Target")
+    table.add_column("Source value")
+    table.add_column("Competing proposed targets")
+    for conflict in conflicts:
+        target = (
+            f"{conflict.table}.{_friendly_column_name(conflict.column)}"
+            if conflict.column is not None
+            else conflict.table
+        )
+        table.add_row(
+            target,
+            repr(conflict.source),
+            ", ".join(repr(value) for value in conflict.targets),
+        )
+    console.print(table)
 
 
 def _print_drift(compatibility) -> None:
@@ -914,6 +940,14 @@ def review_command(
                 default="s",
             ).strip().casefold()
             if decision in {"a", "approve"}:
+                conflicts = approval_mapping_conflicts(plan, [action])
+                if conflicts:
+                    console.print(
+                        "[red]Approval blocked:[/red] this candidate conflicts with "
+                        "an already approved canonical target."
+                    )
+                    _print_mapping_conflicts(conflicts, title="Approval conflict")
+                    continue
                 matching = next(
                     (
                         existing
@@ -983,6 +1017,7 @@ def review_grouped_command(
         )
 
     tables = load_dataset(input_path).tables
+    split_count, additional_actions = atomize_category_mappings(plan)
     families = group_actions(tables, plan)
     session_started = begin_review_session(plan)
     multiple_tables = len(tables) > 1
@@ -1014,6 +1049,19 @@ def review_grouped_command(
         f"[bold]Review proposed cleaning:[/bold] {len(plan.actions)} action(s) grouped into "
         f"{len(families)} set(s) of identical changes."
     )
+    if split_count:
+        console.print(
+            f"[cyan]Mapping-level review:[/cyan] split [bold]{split_count}[/bold] "
+            f"multi-mapping action(s) into [bold]{additional_actions + split_count}[/bold] "
+            "independently reviewable mappings."
+        )
+    unresolved_mapping_conflicts = review_mapping_conflicts(plan)
+    if unresolved_mapping_conflicts:
+        console.print(
+            "[yellow]Conflicting canonical targets detected.[/yellow] "
+            "These mappings must not both be approved."
+        )
+        _print_mapping_conflicts(unresolved_mapping_conflicts)
     console.print(
         "[dim]You are only deciding what should be allowed into the reviewed plan. "
         "Nothing is applied during this review.[/dim]"
@@ -1099,6 +1147,14 @@ def review_grouped_command(
             ).strip().casefold()
 
             if decision in {"a", "approve"}:
+                conflicts = approval_mapping_conflicts(plan, actions)
+                if conflicts:
+                    console.print(
+                        "[red]Approval blocked:[/red] this would create competing "
+                        "canonical targets for the same source value."
+                    )
+                    _print_mapping_conflicts(conflicts, title="Approval conflict")
+                    continue
                 bulk_confirmed = False
                 if len(family.members) > 1:
                     confirmation = typer.prompt(
@@ -1191,6 +1247,14 @@ def review_grouped_command(
                             default="s",
                         ).strip().casefold()
                         if item_decision in {"a", "approve"}:
+                            conflicts = approval_mapping_conflicts(plan, [action])
+                            if conflicts:
+                                console.print(
+                                    "[red]Approval blocked:[/red] this mapping conflicts "
+                                    "with an already approved canonical target."
+                                )
+                                _print_mapping_conflicts(conflicts, title="Approval conflict")
+                                continue
                             action.decision = ActionDecision.APPROVED
                             event_decision = "approved"
                             break
