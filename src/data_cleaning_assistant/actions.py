@@ -54,6 +54,9 @@ class DeferredReview(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evidence: dict[str, Any] = Field(default_factory=dict)
     status: str = "pending"
+    promoted_action_id: str | None = None
+    promoted_action_created: bool = False
+    promoted_action_previous_decision: ActionDecision | None = None
 
 
 class PlanningNote(BaseModel):

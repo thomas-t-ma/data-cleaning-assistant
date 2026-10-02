@@ -27,7 +27,10 @@ from .planner import file_sha256, propose_actions
 from .plan_amendments import (
     amend_action_decision,
     amend_mapping_target,
+    promote_deferred_candidate,
+    reject_deferred_candidate,
     reset_action_for_backtracking,
+    reset_deferred_for_backtracking,
 )
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
@@ -944,19 +947,28 @@ def review_command(
                 return
             console.print("[red]Enter a, r, s, or q.[/red]")
 
-    for deferred in plan.deferred_reviews:
-        if deferred.status != "pending":
-            continue
+    pending_deferred = [
+        item for item in plan.deferred_reviews if item.status == "pending"
+    ]
+    deferred_position = 0
+    while deferred_position < len(pending_deferred):
+        deferred = pending_deferred[deferred_position]
         action = deferred.proposed_action
-        console.rule(f"Deferred AI review {deferred.candidate_id}")
+        console.rule(
+            f"Deferred AI review {deferred_position + 1}/{len(pending_deferred)} "
+            f"({deferred.candidate_id})"
+        )
         console.print(f"[bold]{action.table}.{action.column or '(table)'}[/bold]")
         console.print(deferred.question)
         console.print(f"[yellow]AI deferred:[/yellow] {deferred.rationale}")
         console.print(f"Proposed parameters: {action.parameters!r}")
         _print_action_preview(tables, action, sample_limit=sample)
+        backtracked = False
+
         while True:
             decision = typer.prompt(
-                "Manual decision: [a]pprove candidate, [r]eject, [s]kip, [q]uit",
+                "Manual decision: [a]pprove candidate, [r]eject, "
+                "[s]kip, [b]ack, [q]uit",
                 default="s",
             ).strip().casefold()
             if decision in {"a", "approve"}:
@@ -968,32 +980,36 @@ def review_command(
                     )
                     _print_mapping_conflicts(conflicts, title="Approval conflict")
                     continue
-                matching = next(
-                    (
-                        existing
-                        for existing in plan.actions
-                        if existing.type == action.type
-                        and existing.table == action.table
-                        and existing.column == action.column
-                        and existing.parameters == action.parameters
-                    ),
-                    None,
+                promote_deferred_candidate(
+                    plan,
+                    candidate_id=deferred.candidate_id,
                 )
-                if matching is not None:
-                    matching.decision = ActionDecision.APPROVED
-                else:
-                    approved_action = action.model_copy(deep=True)
-                    approved_action.decision = ActionDecision.APPROVED
-                    approved_action.description = (
-                        "Manually approved deferred AI candidate: " + deferred.rationale
-                    )
-                    plan.actions.append(approved_action)
-                deferred.status = "approved"
                 break
             if decision in {"r", "reject"}:
-                deferred.status = "rejected"
+                reject_deferred_candidate(
+                    plan,
+                    candidate_id=deferred.candidate_id,
+                )
                 break
             if decision in {"s", "skip", "defer"}:
+                break
+            if decision in {"b", "back"}:
+                if deferred_position == 0:
+                    console.print(
+                        "[yellow]There is no previous deferred judgment.[/yellow]"
+                    )
+                    continue
+                previous = pending_deferred[deferred_position - 1]
+                reset_deferred_for_backtracking(
+                    plan,
+                    candidate_id=previous.candidate_id,
+                )
+                console.print(
+                    "[cyan]Previous deferred judgment undone.[/cyan] "
+                    "Returning to that candidate."
+                )
+                deferred_position -= 1
+                backtracked = True
                 break
             if decision in {"q", "quit"}:
                 output = output.expanduser().resolve()
@@ -1001,7 +1017,11 @@ def review_command(
                 output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
                 console.print(f"[yellow]Partial review saved to:[/yellow] {output}")
                 return
-            console.print("[red]Enter a, r, s, or q.[/red]")
+            console.print("[red]Enter a, r, s, b, or q.[/red]")
+
+        if backtracked:
+            continue
+        deferred_position += 1
 
     output = output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1369,10 +1389,14 @@ def review_grouped_command(
             "correction(s) unresolved. These are not executable unless you explicitly approve them."
         )
 
-    for deferred_index, deferred in enumerate(pending_deferred, start=1):
+    deferred_position = 0
+    while deferred_position < len(pending_deferred):
+        deferred = pending_deferred[deferred_position]
         action = deferred.proposed_action
         preview = preview_action(tables, action, sample_limit=sample)
-        console.rule(f"Judgment {deferred_index} of {len(pending_deferred)}")
+        console.rule(
+            f"Judgment {deferred_position + 1} of {len(pending_deferred)}"
+        )
         console.print(f"[bold]{_friendly_target(action, include_table=multiple_tables)}[/bold]")
         console.print(
             f"[bold]Possible change:[/bold] "
@@ -1382,11 +1406,12 @@ def review_grouped_command(
         console.print(f"[bold]What to check:[/bold] {_review_caution(action.type.value)}")
         _print_action_preview(tables, action, sample_limit=sample)
         item_started = time.perf_counter()
+        backtracked = False
 
         while True:
             decision = typer.prompt(
                 "Choose: [a]pprove this correction, [r]eject it, "
-                "[s]decide later, [q]uit",
+                "[s]decide later, [b]ack, [q]uit",
                 default="s",
             ).strip().casefold()
             if decision in {"a", "approve"}:
@@ -1398,39 +1423,56 @@ def review_grouped_command(
                     )
                     _print_mapping_conflicts(conflicts, title="Approval conflict")
                     continue
-                matching = next(
-                    (
-                        existing
-                        for existing in plan.actions
-                        if existing.type == action.type
-                        and existing.table == action.table
-                        and existing.column == action.column
-                        and existing.parameters == action.parameters
-                    ),
-                    None,
+                recorded_action = promote_deferred_candidate(
+                    plan,
+                    candidate_id=deferred.candidate_id,
                 )
-                if matching is not None:
-                    matching.decision = ActionDecision.APPROVED
-                    recorded_action = matching
-                else:
-                    approved_action = action.model_copy(deep=True)
-                    approved_action.decision = ActionDecision.APPROVED
-                    approved_action.description = (
-                        "Manually approved deferred AI candidate: " + deferred.rationale
-                    )
-                    plan.actions.append(approved_action)
-                    recorded_action = approved_action
-                deferred.status = "approved"
                 event_decision = "approved"
                 break
             if decision in {"r", "reject"}:
-                deferred.status = "rejected"
+                reject_deferred_candidate(
+                    plan,
+                    candidate_id=deferred.candidate_id,
+                )
                 recorded_action = action
                 event_decision = "rejected"
                 break
             if decision in {"s", "skip", "defer"}:
                 recorded_action = action
                 event_decision = "deferred"
+                break
+            if decision in {"b", "back"}:
+                if deferred_position == 0:
+                    console.print(
+                        "[yellow]There is no previous deferred judgment.[/yellow]"
+                    )
+                    continue
+                previous = pending_deferred[deferred_position - 1]
+                previous_action = previous.proposed_action
+                previous_preview = preview_action(
+                    tables,
+                    previous_action,
+                    sample_limit=sample,
+                )
+                reset_deferred_for_backtracking(
+                    plan,
+                    candidate_id=previous.candidate_id,
+                )
+                record_review_event(
+                    plan,
+                    scope="deferred_ai_backtrack",
+                    actions=[previous_action],
+                    affected_count=previous_preview.affected_count,
+                    decision="reset_to_pending",
+                    duration_seconds=time.perf_counter() - item_started,
+                    targets_preview=[action_target(previous_action)],
+                )
+                console.print(
+                    "[cyan]Previous deferred judgment undone.[/cyan] "
+                    "Returning to that candidate."
+                )
+                deferred_position -= 1
+                backtracked = True
                 break
             if decision in {"q", "quit"}:
                 record_review_event(
@@ -1444,7 +1486,10 @@ def review_grouped_command(
                 )
                 save_and_report(partial=True)
                 return
-            console.print("[red]Enter a, r, s, or q.[/red]")
+            console.print("[red]Enter a, r, s, b, or q.[/red]")
+
+        if backtracked:
+            continue
 
         record_review_event(
             plan,
@@ -1455,6 +1500,7 @@ def review_grouped_command(
             duration_seconds=time.perf_counter() - item_started,
             targets_preview=[action_target(action)],
         )
+        deferred_position += 1
 
     save_and_report(partial=False)
 
