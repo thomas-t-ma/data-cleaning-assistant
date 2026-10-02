@@ -1483,6 +1483,11 @@ def plan_actions_command(
         )
 
     console.print(table)
+
+    console.print("\n[bold]Exact action IDs (copyable):[/bold]")
+    for action in plan.actions:
+        console.print(f"  {action.id}", markup=False)
+
     if plan.amendments:
         console.print(
             f"[dim]Recorded amendments: {len(plan.amendments)}[/dim]"
