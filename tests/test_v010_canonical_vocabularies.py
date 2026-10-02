@@ -81,6 +81,29 @@ def test_canonical_labels_cannot_be_aliases_of_other_canonical_values() -> None:
         )
 
 
+def test_legacy_map_cannot_override_protected_canonical_value() -> None:
+    with pytest.raises(ValueError, match="cannot be an alias"):
+        StudySchema.model_validate(
+            {
+                "tables": {
+                    "study": {
+                        "columns": {
+                            "license": {
+                                "canonical_map": {
+                                    "Version 2": "Generic"
+                                },
+                                "canonical_values": {
+                                    "Generic": {"aliases": []},
+                                    "Version 2": {"aliases": []},
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+        )
+
+
 def test_alias_cannot_point_to_competing_canonical_values() -> None:
     with pytest.raises(ValueError, match="maps to multiple canonical values"):
         StudySchema.model_validate(
