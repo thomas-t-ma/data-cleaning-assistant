@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.12.0**.
+Current version: **v0.13.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,34 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.13.0 — guided cleaning sessions
+
+v0.13.0 introduces a persistent guided workflow so ordinary use no longer requires
+manually coordinating profile, schema-draft, schema-review, planning, cleaning
+review, application, audit/recipe creation, and verification commands.
+
+```bash
+data-cleaner guided-clean data.xlsx
+```
+
+By default, the run is stored beside the dataset in `data_cleaning_run`. The
+workspace contains a session manifest plus every generated artifact. A researcher
+can pause either schema review or cleaning review and continue later with:
+
+```bash
+data-cleaner guided-resume data_cleaning_run
+data-cleaner guided-status data_cleaning_run
+```
+
+Guided sessions are fail-closed. The source hash is pinned at session creation,
+source data is never overwritten, supplied schemas are validated before workspace
+creation, partial cleaning review cannot proceed to apply, resumed review skips
+already decided items while preserving review history, and every applied run
+automatically executes end-to-end verification.
+
+The session engine lives outside the CLI so the same state machine can support a
+future graphical interface.
 
 ## v0.12.0 — unified offline generalization scorecard
 
