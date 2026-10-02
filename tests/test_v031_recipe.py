@@ -115,6 +115,32 @@ def test_recipe_yaml_has_only_executed_actions(tmp_path: Path) -> None:
     assert payload["actions"][0]["column"] == "sex"
 
 
+
+def test_recipe_uses_applied_source_path_after_plan_moves(tmp_path: Path) -> None:
+    source = tmp_path / "source.csv"
+    recipe_path = tmp_path / "cleaning.recipe.yaml"
+    _write_dataset(source)
+
+    loaded = load_dataset(source)
+    plan = propose_actions(source)
+    one_action = next(action for action in plan.actions if action.column == "sex")
+    _, changeset = apply_plan(
+        source,
+        loaded.tables,
+        plan,
+        approved_ids={one_action.id},
+    )
+
+    # Simulate a reviewed plan created on another machine. Applying the plan
+    # succeeds by source hash; recipe generation must use that applied source,
+    # not reopen the stale path embedded in the original plan.
+    plan.source_path = "/Users/other-machine/project/source.csv"
+    write_recipe(plan, changeset, recipe_path)
+
+    recipe = load_recipe(recipe_path)
+    assert recipe.actions
+
+
 def test_replay_cli_is_preview_only_without_apply(tmp_path: Path) -> None:
     source = tmp_path / "source.csv"
     target = tmp_path / "target.csv"

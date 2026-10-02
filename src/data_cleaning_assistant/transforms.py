@@ -540,7 +540,7 @@ def write_recipe(
         for action in plan.actions
         if action.id in executed
     ]
-    source_tables = load_dataset(plan.source_path).tables
+    source_tables = load_dataset(changeset.source_path).tables
     payload = {
         "version": 2,
         "schema": build_schema_snapshot(source_tables),
