@@ -119,8 +119,14 @@ def record_review_event(
     )
 
 
-def finish_review_session(plan: CleaningPlan, started_perf: float) -> None:
+def finish_review_session(
+    plan: CleaningPlan,
+    started_perf: float,
+    *,
+    outcome: str = "completed",
+) -> None:
     if plan.review_session is None:
         return
     plan.review_session.completed_at = datetime.now(UTC)
     plan.review_session.duration_seconds = max(0.0, time.perf_counter() - started_perf)
+    plan.review_session.outcome = outcome
