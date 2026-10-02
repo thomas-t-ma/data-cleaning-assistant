@@ -41,6 +41,15 @@ from .review import (
     group_actions,
     record_review_event,
 )
+from .schema_draft import (
+    SchemaSuggestionDecision,
+    SchemaSuggestionKind,
+    build_schema_draft,
+    load_schema_draft,
+    materialize_study_schema,
+    write_schema_draft,
+    write_study_schema,
+)
 from .study_schema import load_study_schema
 from .verification import verify_run
 from .transforms import (
@@ -532,6 +541,204 @@ def profile(
             encoding="utf-8",
         )
         console.print(f"\n[green]Report written to:[/green] {output}")
+
+
+def _schema_suggestion_text(suggestion) -> str:
+    proposed = suggestion.proposed
+    if suggestion.kind == SchemaSuggestionKind.GRAIN_KEY:
+        return (
+            f"Use {proposed.get('columns', [])!r} as the row grain key "
+            f"for {suggestion.table!r}"
+        )
+    if suggestion.kind == SchemaSuggestionKind.CANONICAL_MAPPING:
+        return (
+            f"Treat {proposed.get('source')!r} as an alias of "
+            f"{proposed.get('target')!r} in "
+            f"{suggestion.table}.{suggestion.column}"
+        )
+    if suggestion.kind == SchemaSuggestionKind.MISSING_TOKEN:
+        return (
+            f"Treat {proposed.get('token')!r} as missing in "
+            f"{suggestion.table}.{suggestion.column}"
+        )
+    if suggestion.kind == SchemaSuggestionKind.FOREIGN_KEY:
+        return (
+            f"Declare {proposed.get('child_table')}.{proposed.get('child_column')} "
+            f"{ARROW} {proposed.get('parent_table')}.{proposed.get('parent_column')}"
+        )
+    return suggestion.kind.value
+
+
+@app.command("schema-draft")
+def schema_draft_command(
+    input_path: Annotated[Path, typer.Argument(help="Dataset to inspect")],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Non-authoritative schema draft YAML",
+        ),
+    ] = Path("study_schema_draft.yaml"),
+) -> None:
+    """Propose a non-authoritative study-schema draft from deterministic evidence."""
+    draft = build_schema_draft(input_path)
+    resolved = write_schema_draft(draft, output)
+
+    counts: dict[str, int] = {}
+    for suggestion in draft.suggestions:
+        counts[suggestion.kind.value] = counts.get(suggestion.kind.value, 0) + 1
+
+    console.print(
+        f"[green]Schema draft written to:[/green] {resolved}"
+    )
+    console.print(
+        f"Proposed [bold]{len(draft.suggestions)}[/bold] item(s). "
+        "Nothing in this draft is authoritative until explicitly reviewed."
+    )
+    if counts:
+        table = Table(title="Draft suggestions")
+        table.add_column("Kind")
+        table.add_column("Count", justify="right")
+        for kind, count in sorted(counts.items()):
+            table.add_row(kind.replace("_", " "), str(count))
+        console.print(table)
+    console.print(
+        "[dim]Next: schema-review DATASET DRAFT -o study_schema.yaml[/dim]"
+    )
+
+
+@app.command("schema-review")
+def schema_review_command(
+    input_path: Annotated[Path, typer.Argument(help="Original dataset")],
+    draft_path: Annotated[Path, typer.Argument(help="Schema draft YAML")],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Confirmed StudySchema YAML",
+        ),
+    ] = Path("study_schema.yaml"),
+    reviewed_draft: Annotated[
+        Path | None,
+        typer.Option(
+            "--reviewed-draft",
+            help="Optional path for the reviewed draft/provenance YAML",
+        ),
+    ] = None,
+) -> None:
+    """Review draft suggestions and compile only approvals into a real schema."""
+    draft = load_schema_draft(draft_path)
+    current_hash = file_sha256(input_path)
+    if current_hash != draft.source_sha256:
+        raise typer.BadParameter(
+            "The dataset changed after this schema draft was created. "
+            "Generate a new schema draft."
+        )
+
+    console.print(
+        f"[bold]Review schema draft:[/bold] {len(draft.suggestions)} suggestion(s)."
+    )
+    console.print(
+        "[dim]Approving a suggestion adds it to the study dictionary; "
+        "no dataset values are changed during schema review.[/dim]"
+    )
+
+    position = 0
+    while position < len(draft.suggestions):
+        suggestion = draft.suggestions[position]
+        console.rule(
+            f"Schema suggestion {position + 1} of {len(draft.suggestions)}"
+        )
+        console.print(f"[bold]{_schema_suggestion_text(suggestion)}[/bold]")
+        console.print(
+            f"Confidence: [bold]{suggestion.confidence:.0%}[/bold]"
+        )
+        console.print(f"Why proposed: {suggestion.rationale}")
+
+        while True:
+            decision = typer.prompt(
+                "Choose: [a]pprove, [r]eject, [s]decide later, [b]ack, [q]uit",
+                default="s",
+            ).strip().casefold()
+
+            if decision in {"a", "approve"}:
+                suggestion.decision = SchemaSuggestionDecision.APPROVED
+                break
+            if decision in {"r", "reject"}:
+                suggestion.decision = SchemaSuggestionDecision.REJECTED
+                break
+            if decision in {"s", "skip", "defer"}:
+                suggestion.decision = SchemaSuggestionDecision.PROPOSED
+                break
+            if decision in {"b", "back"}:
+                if position == 0:
+                    console.print(
+                        "[yellow]There is no previous schema suggestion.[/yellow]"
+                    )
+                    continue
+                previous = draft.suggestions[position - 1]
+                previous.decision = SchemaSuggestionDecision.PROPOSED
+                console.print(
+                    "[cyan]Previous schema decision reset.[/cyan] "
+                    "Returning to that suggestion."
+                )
+                position -= 1
+                break
+            if decision in {"q", "quit"}:
+                reviewed_path = (
+                    reviewed_draft.expanduser().resolve()
+                    if reviewed_draft
+                    else output.expanduser().resolve().with_name(
+                        f"{output.stem}.reviewed-draft.yaml"
+                    )
+                )
+                write_schema_draft(draft, reviewed_path)
+                console.print(
+                    f"[yellow]Partial schema review saved to:[/yellow] "
+                    f"{reviewed_path}"
+                )
+                return
+            console.print("[red]Enter a, r, s, b, or q.[/red]")
+
+        if decision in {"b", "back"}:
+            continue
+        position += 1
+
+    try:
+        schema = materialize_study_schema(
+            draft,
+            dataset_path=input_path,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    schema_path = write_study_schema(schema, output)
+    reviewed_path = (
+        reviewed_draft.expanduser().resolve()
+        if reviewed_draft
+        else schema_path.with_name(f"{schema_path.stem}.reviewed-draft.yaml")
+    )
+    write_schema_draft(draft, reviewed_path)
+
+    approved = sum(
+        item.decision == SchemaSuggestionDecision.APPROVED
+        for item in draft.suggestions
+    )
+    rejected = sum(
+        item.decision == SchemaSuggestionDecision.REJECTED
+        for item in draft.suggestions
+    )
+    proposed = len(draft.suggestions) - approved - rejected
+
+    console.print(f"[green]Confirmed study schema:[/green] {schema_path}")
+    console.print(f"[green]Reviewed draft:[/green] {reviewed_path}")
+    console.print(
+        f"Approved: [bold]{approved}[/bold] · "
+        f"Rejected: [bold]{rejected}[/bold] · "
+        f"Unresolved: [bold]{proposed}[/bold]"
+    )
 
 
 @app.command("ai-status")
