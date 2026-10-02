@@ -10,6 +10,7 @@ from .models import DatasetReport, Issue
 from .planner import propose_actions
 from .recipe import CleaningRecipe, load_recipe, recipe_to_plan
 from .study_schema import StudySchema, load_study_schema
+from .verification import RunVerificationReport, verify_run
 
 __all__ = [
     "ChangeSet",
@@ -20,6 +21,7 @@ __all__ = [
     "DeferredReview",
     "Issue",
     "OllamaProvider",
+    "RunVerificationReport",
     "StudySchema",
     "benchmark_cases",
     "build_ai_context",
@@ -31,5 +33,6 @@ __all__ = [
     "recipe_to_plan",
     "research_benchmark_cases",
     "run_ai_benchmark",
+    "verify_run",
 ]
-__version__ = "0.7.3"
+__version__ = "0.10.0"
