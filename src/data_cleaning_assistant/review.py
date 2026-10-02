@@ -6,7 +6,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from .actions import CleaningAction, CleaningPlan, ReviewEvent, ReviewSession
+from .actions import (
+    ActionDecision,
+    CleaningAction,
+    CleaningPlan,
+    ReviewEvent,
+    ReviewSession,
+)
 from .transforms import preview_action
 
 
@@ -46,10 +52,17 @@ def action_target(action: CleaningAction) -> str:
 def group_actions(
     tables,
     plan: CleaningPlan,
+    *,
+    include_decisions: set[ActionDecision] | None = None,
 ) -> list[ActionFamily]:
     """Group exact mechanical transformations for compact human review."""
     groups: dict[str, ActionFamily] = {}
     for action in plan.actions:
+        if (
+            include_decisions is not None
+            and action.decision not in include_decisions
+        ):
+            continue
         params = json.dumps(action.parameters, sort_keys=True, default=str)
         key = f"{action.origin.value}|{action.type.value}|{params}"
         family = groups.get(key)
@@ -82,9 +95,17 @@ def group_actions(
     return families
 
 
-def begin_review_session(plan: CleaningPlan) -> float:
-    """Start a new review session and return a perf-counter timestamp."""
-    plan.review_session = ReviewSession(started_at=datetime.now(UTC))
+def begin_review_session(
+    plan: CleaningPlan,
+    *,
+    resume: bool = False,
+) -> float:
+    """Start or resume a review session and return a perf-counter timestamp."""
+    if resume and plan.review_session is not None:
+        plan.review_session.completed_at = None
+        plan.review_session.outcome = None
+    else:
+        plan.review_session = ReviewSession(started_at=datetime.now(UTC))
     return time.perf_counter()
 
 
@@ -127,6 +148,8 @@ def finish_review_session(
 ) -> None:
     if plan.review_session is None:
         return
+    elapsed = max(0.0, time.perf_counter() - started_perf)
+    prior = plan.review_session.duration_seconds or 0.0
     plan.review_session.completed_at = datetime.now(UTC)
-    plan.review_session.duration_seconds = max(0.0, time.perf_counter() - started_perf)
+    plan.review_session.duration_seconds = prior + elapsed
     plan.review_session.outcome = outcome
