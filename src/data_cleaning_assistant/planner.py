@@ -234,7 +234,7 @@ def _schema_actions(
             observed = {str(value) for value in tables[table][column].tolist()}
             mapping = {
                 old: new
-                for old, new in column_spec.canonical_map.items()
+                for old, new in column_spec.effective_canonical_map().items()
                 if old in observed and old != new
             }
             if mapping:
