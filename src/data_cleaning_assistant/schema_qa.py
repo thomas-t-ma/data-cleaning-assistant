@@ -143,10 +143,10 @@ def schema_issues(
                 )
 
         for column, column_spec in spec.columns.items():
-            if column_spec.allowed_values is None:
+            allowed = column_spec.effective_allowed_values()
+            if allowed is None:
                 continue
-            allowed = set(column_spec.allowed_values)
-            authorized_variants = set(column_spec.canonical_map)
+            authorized_variants = set(column_spec.effective_canonical_map())
             declared_missing = set(column_spec.missing_tokens)
             unexpected = [
                 int(index)
@@ -165,8 +165,8 @@ def schema_issues(
                         unexpected,
                         title="Values outside the declared category dictionary",
                         description=(
-                            "Observed values are not in the allowed values, canonical map, "
-                            "or explicitly declared null tokens."
+                            "Observed values are not canonical/allowed values, authorized "
+                            "aliases, or explicitly declared null tokens."
                         ),
                         evidence={"allowed_value_count": len(allowed)},
                     )
