@@ -90,6 +90,18 @@ class ReviewSession(BaseModel):
     events: list[ReviewEvent] = Field(default_factory=list)
 
 
+class PlanAmendment(BaseModel):
+    """Auditable supported edit to a saved or in-progress cleaning plan."""
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    kind: str
+    action_id: str | None = None
+    deferred_candidate_id: str | None = None
+    before: dict[str, Any] = Field(default_factory=dict)
+    after: dict[str, Any] = Field(default_factory=dict)
+    reason: str
+
+
 class CleaningPlan(BaseModel):
     source_path: str
     source_sha256: str
@@ -101,6 +113,7 @@ class CleaningPlan(BaseModel):
     planner: str = "deterministic"
     model: str | None = None
     review_session: ReviewSession | None = None
+    amendments: list[PlanAmendment] = Field(default_factory=list)
 
 
 class ValueSnapshot(BaseModel):
