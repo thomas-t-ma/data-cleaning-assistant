@@ -7,6 +7,13 @@ from .ai_provider import OllamaProvider
 from .benchmark import benchmark_cases, research_benchmark_cases, run_ai_benchmark
 from .engine import profile_dataset
 from .evaluation import OfflineEvaluationReport, run_offline_evaluation
+from .guided import (
+    GuidedSession,
+    GuidedStage,
+    create_guided_session,
+    finalize_guided_session,
+    load_guided_session,
+)
 from .models import DatasetReport, Issue
 from .planner import propose_actions
 from .recipe import CleaningRecipe, load_recipe, recipe_to_plan
@@ -26,6 +33,8 @@ __all__ = [
     "CleaningRecipe",
     "DatasetReport",
     "DeferredReview",
+    "GuidedSession",
+    "GuidedStage",
     "Issue",
     "OfflineEvaluationReport",
     "OllamaProvider",
@@ -36,6 +45,9 @@ __all__ = [
     "benchmark_cases",
     "build_ai_context",
     "build_schema_draft",
+    "create_guided_session",
+    "finalize_guided_session",
+    "load_guided_session",
     "load_recipe",
     "load_study_schema",
     "materialize_study_schema",
@@ -48,4 +60,4 @@ __all__ = [
     "run_offline_evaluation",
     "verify_run",
 ]
-__version__ = "0.12.0"
+__version__ = "0.13.0"
