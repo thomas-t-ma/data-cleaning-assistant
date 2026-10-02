@@ -42,6 +42,7 @@ from .review import (
     record_review_event,
 )
 from .study_schema import load_study_schema
+from .verification import verify_run
 from .transforms import (
     apply_plan,
     preview_action,
@@ -1684,6 +1685,101 @@ def apply_command(
         audit=audit,
         recipe=recipe,
     )
+
+
+@app.command("verify-run")
+def verify_run_command(
+    source_path: Annotated[Path, typer.Argument(help="Original source dataset")],
+    cleaned_path: Annotated[Path, typer.Argument(help="Cleaned output dataset")],
+    audit_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--audit",
+            help="Audit JSON; defaults to CLEANED.audit.json",
+        ),
+    ] = None,
+    recipe_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--recipe",
+            help="Recipe YAML; defaults to CLEANED.recipe.yaml",
+        ),
+    ] = None,
+    json_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--json-output",
+            help="Optional machine-readable verification report",
+        ),
+    ] = None,
+) -> None:
+    """Verify provenance, replay reproducibility, and reversibility of a cleaning run."""
+    source = source_path.expanduser().resolve()
+    cleaned = cleaned_path.expanduser().resolve()
+    audit = (
+        audit_path.expanduser().resolve()
+        if audit_path
+        else cleaned.with_name(f"{cleaned.name}.audit.json")
+    )
+    recipe = (
+        recipe_path.expanduser().resolve()
+        if recipe_path
+        else cleaned.with_name(f"{cleaned.name}.recipe.yaml")
+    )
+
+    try:
+        report = verify_run(source, cleaned, audit, recipe)
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    table = Table(title="Cleaning run verification")
+    table.add_column("Check")
+    table.add_column("Result")
+    table.add_column("Details")
+    for check in report.checks:
+        table.add_row(
+            check.name,
+            "[green]PASS[/green]" if check.passed else "[red]FAIL[/red]",
+            check.detail,
+        )
+    console.print(table)
+
+    metrics = report.metrics
+    console.print(
+        "\n[bold]Run metrics:[/bold] "
+        f"{metrics.execution_count:,} executed action(s) · "
+        f"{metrics.cell_change_events:,} cell-change event(s) · "
+        f"{metrics.unique_touched_cells:,} unique touched cell(s) · "
+        f"{metrics.repeated_touch_events:,} repeated-touch event(s) · "
+        f"{metrics.row_deletions:,} row deletion(s)"
+    )
+    if metrics.net_different_cells is not None:
+        console.print(
+            f"Net cells different from source: "
+            f"[bold]{metrics.net_different_cells:,}[/bold]"
+        )
+    if metrics.replay_byte_identical is not None:
+        label = "yes" if metrics.replay_byte_identical else "no"
+        console.print(
+            f"Recipe replay byte-identical to cleaned output: [bold]{label}[/bold] "
+            "[dim](logical equivalence is the required check)[/dim]"
+        )
+
+    if json_output is not None:
+        resolved_json = json_output.expanduser().resolve()
+        resolved_json.parent.mkdir(parents=True, exist_ok=True)
+        resolved_json.write_text(
+            report.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+        console.print(f"[green]Verification report:[/green] {resolved_json}")
+
+    if report.passed:
+        console.print("\n[bold green]VERIFICATION PASS[/bold green]")
+        return
+
+    console.print("\n[bold red]VERIFICATION FAIL[/bold red]")
+    raise typer.Exit(code=2)
 
 
 @app.command("replay")
