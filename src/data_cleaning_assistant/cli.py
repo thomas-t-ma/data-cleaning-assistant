@@ -886,6 +886,13 @@ def review_command(
         )
 
     tables = load_dataset(input_path).tables
+    split_count, additional_actions = atomize_category_mappings(plan)
+    if split_count:
+        console.print(
+            f"[cyan]Mapping-level review:[/cyan] split [bold]{split_count}[/bold] "
+            f"multi-mapping action(s) into [bold]{additional_actions + split_count}[/bold] "
+            "independently reviewable mappings."
+        )
     overlaps = overlapping_previews(tables, plan.actions)
     for index, action in enumerate(plan.actions, start=1):
         console.rule(f"Action {index}/{len(plan.actions)}")
@@ -908,6 +915,14 @@ def review_command(
                 default="s",
             ).strip().casefold()
             if decision in {"a", "approve"}:
+                conflicts = approval_mapping_conflicts(plan, [action])
+                if conflicts:
+                    console.print(
+                        "[red]Approval blocked:[/red] this mapping conflicts with "
+                        "an already approved canonical target."
+                    )
+                    _print_mapping_conflicts(conflicts, title="Approval conflict")
+                    continue
                 action.decision = ActionDecision.APPROVED
                 break
             if decision in {"r", "reject"}:
@@ -1334,6 +1349,14 @@ def review_grouped_command(
                 default="s",
             ).strip().casefold()
             if decision in {"a", "approve"}:
+                conflicts = approval_mapping_conflicts(plan, [action])
+                if conflicts:
+                    console.print(
+                        "[red]Approval blocked:[/red] this candidate conflicts with "
+                        "an already approved canonical target."
+                    )
+                    _print_mapping_conflicts(conflicts, title="Approval conflict")
+                    continue
                 matching = next(
                     (
                         existing
