@@ -10,24 +10,107 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .inference import is_missing_like, normalize_column_name
 
 
+class CanonicalValueSpec(BaseModel):
+    """One protected canonical category and its explicitly authorized aliases."""
+
+    model_config = ConfigDict(extra="forbid")
+    aliases: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_aliases(self) -> CanonicalValueSpec:
+        if len(set(self.aliases)) != len(self.aliases):
+            raise ValueError("canonical value aliases may not contain duplicates")
+        return self
+
+
 class ColumnSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     allowed_values: list[str] | None = None
     canonical_map: dict[str, str] = Field(default_factory=dict)
+    canonical_values: dict[str, CanonicalValueSpec] = Field(default_factory=dict)
     missing_tokens: list[str] = Field(default_factory=list)
     unit: str | None = None
+
+    def effective_canonical_map(self) -> dict[str, str]:
+        """Return legacy and vocabulary aliases as one deterministic mapping."""
+        mapping = dict(self.canonical_map)
+        for canonical, spec in self.canonical_values.items():
+            for alias in spec.aliases:
+                mapping[alias] = canonical
+        return mapping
+
+    def effective_allowed_values(self) -> set[str] | None:
+        """Return the authoritative category set, if this column declares one."""
+        if self.allowed_values is None and not self.canonical_values:
+            return None
+        allowed = set(self.allowed_values or [])
+        allowed.update(self.canonical_values)
+        return allowed
+
+    def has_category_dictionary(self) -> bool:
+        return (
+            self.allowed_values is not None
+            or bool(self.canonical_map)
+            or bool(self.canonical_values)
+        )
 
     @model_validator(mode="after")
     def validate_mappings(self) -> ColumnSpec:
         if len(set(self.missing_tokens)) != len(self.missing_tokens):
             raise ValueError("missing_tokens may not contain duplicates")
-        if set(self.canonical_map) & set(self.missing_tokens):
-            raise ValueError("The same token cannot be both canonicalized and set to null")
-        if self.allowed_values is not None:
-            unknown_targets = set(self.canonical_map.values()) - set(self.allowed_values)
+
+        canonical_labels = set(self.canonical_values)
+        vocabulary_alias_targets: dict[str, str] = {}
+        for canonical, spec in self.canonical_values.items():
+            for alias in spec.aliases:
+                if alias == canonical:
+                    raise ValueError(
+                        f"Alias {alias!r} duplicates its canonical label"
+                    )
+                previous = vocabulary_alias_targets.get(alias)
+                if previous is not None and previous != canonical:
+                    raise ValueError(
+                        f"Alias {alias!r} maps to multiple canonical values: "
+                        f"{previous!r}, {canonical!r}"
+                    )
+                vocabulary_alias_targets[alias] = canonical
+
+        protected_aliases = canonical_labels & set(vocabulary_alias_targets)
+        if protected_aliases:
+            alias = sorted(protected_aliases)[0]
+            raise ValueError(
+                f"Canonical label {alias!r} cannot be an alias of another "
+                "canonical value"
+            )
+
+        for alias, target in self.canonical_map.items():
+            vocabulary_target = vocabulary_alias_targets.get(alias)
+            if vocabulary_target is not None and vocabulary_target != target:
+                raise ValueError(
+                    f"Alias {alias!r} has conflicting canonical targets: "
+                    f"{target!r}, {vocabulary_target!r}"
+                )
+
+        effective_mapping = self.effective_canonical_map()
+        declared_category_tokens = (
+            set(effective_mapping)
+            | canonical_labels
+        )
+        overlap = declared_category_tokens & set(self.missing_tokens)
+        if overlap:
+            raise ValueError(
+                "The same token cannot be both a category/canonical alias and "
+                "set to null: "
+                + ", ".join(sorted(overlap))
+            )
+
+        allowed = self.effective_allowed_values()
+        if allowed is not None:
+            unknown_targets = set(effective_mapping.values()) - allowed
             if unknown_targets:
                 raise ValueError(
-                    "canonical_map targets must be listed in allowed_values: "
+                    "canonical mapping targets must be declared canonical/allowed "
+                    "values: "
                     + ", ".join(sorted(unknown_targets))
                 )
         return self
@@ -114,12 +197,15 @@ class StudySchema(BaseModel):
                     or normalized.endswith(("_id", "_mrn", "_identifier"))
                 )
                 if (column in identifiers or named_identifier) and (
-                    spec.canonical_map or spec.missing_tokens
+                    spec.effective_canonical_map() or spec.missing_tokens
                 ):
                     raise ValueError(
                         f"Schema cannot propose identifier edits: {table_name}.{column}"
                     )
-                if any(is_missing_like(value) for value in spec.canonical_map.values()):
+                if any(
+                    is_missing_like(value)
+                    for value in spec.effective_canonical_map().values()
+                ):
                     raise ValueError(
                         f"Canonical targets cannot be structural nulls: {table_name}.{column}"
                     )
