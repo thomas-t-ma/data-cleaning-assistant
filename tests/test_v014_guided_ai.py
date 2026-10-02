@@ -178,5 +178,5 @@ def test_guided_rejects_ollama_options_without_model(
     )
 
     assert result.exit_code != 0
-    assert "--url/--think require --model" in result.output
+    assert "Ollama options require a model" in result.output
     assert not workspace.exists()
