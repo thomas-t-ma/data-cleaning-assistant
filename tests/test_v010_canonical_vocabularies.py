@@ -131,7 +131,7 @@ def test_alias_cannot_point_to_competing_canonical_values() -> None:
 def test_vocabulary_normalizes_aliases_but_preserves_distinct_versions(
     tmp_path: Path,
 ) -> None:
-    source = tmp_path / "licenses.csv"
+    source = tmp_path / "study.csv"
     source.write_text(
         "id,license\n"
         "1,GNU General Public License\n"
@@ -167,7 +167,7 @@ def test_vocabulary_normalizes_aliases_but_preserves_distinct_versions(
 def test_schema_qa_accepts_aliases_but_flags_unknown_values(
     tmp_path: Path,
 ) -> None:
-    source = tmp_path / "licenses.csv"
+    source = tmp_path / "study.csv"
     source.write_text(
         "id,license\n"
         "1,GNU General Public License\n"
@@ -193,7 +193,7 @@ def test_schema_qa_accepts_aliases_but_flags_unknown_values(
 def test_schema_vocabulary_blocks_ai_category_merge_candidates(
     tmp_path: Path,
 ) -> None:
-    source = tmp_path / "licenses.csv"
+    source = tmp_path / "study.csv"
     source.write_text(
         "id,license\n"
         "1,GNU General Public License\n"
