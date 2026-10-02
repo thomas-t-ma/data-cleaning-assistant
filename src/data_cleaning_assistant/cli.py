@@ -24,6 +24,11 @@ from .mapping_safety import (
     review_mapping_conflicts,
 )
 from .planner import file_sha256, propose_actions
+from .plan_amendments import (
+    amend_action_decision,
+    amend_mapping_target,
+    reset_action_for_backtracking,
+)
 from .preview_overlap import overlapping_previews
 from .recipe import load_recipe, recipe_to_plan
 from .review import (
@@ -1082,8 +1087,12 @@ def review_grouped_command(
         "Nothing is applied during this review.[/dim]"
     )
 
-    for family_index, family in enumerate(families, start=1):
+    family_position = 0
+    while family_position < len(families):
+        family_index = family_position + 1
+        family = families[family_position]
         family_started = time.perf_counter()
+        backtracked = False
         actions = [member.action for member in family.members]
         representative = actions[0]
         is_row_action = family.action_type == "remove_exact_duplicates"
@@ -1157,7 +1166,7 @@ def review_grouped_command(
         while True:
             decision = typer.prompt(
                 "Choose: [a]pprove this group, [i]nspect one by one, "
-                "[r]eject this group, [s]decide later, [q]uit",
+                "[r]eject this group, [s]decide later, [b]ack, [q]uit",
                 default="s",
             ).strip().casefold()
 
@@ -1305,6 +1314,34 @@ def review_grouped_command(
                     )
                 break
 
+            if decision in {"b", "back"}:
+                if family_position == 0:
+                    console.print("[yellow]There is no previous reviewed group.[/yellow]")
+                    continue
+                previous = families[family_position - 1]
+                previous_actions = [member.action for member in previous.members]
+                for previous_action in previous_actions:
+                    reset_action_for_backtracking(
+                        plan,
+                        action_id=previous_action.id,
+                    )
+                record_review_event(
+                    plan,
+                    scope="backtrack",
+                    actions=previous_actions,
+                    affected_count=previous.affected_count,
+                    decision="reset_to_proposed",
+                    duration_seconds=time.perf_counter() - family_started,
+                    targets_preview=previous.targets,
+                )
+                console.print(
+                    "[cyan]Previous decision undone.[/cyan] "
+                    "Returning to that group."
+                )
+                family_position -= 1
+                backtracked = True
+                break
+
             if decision in {"q", "quit"}:
                 record_review_event(
                     plan,
@@ -1318,7 +1355,11 @@ def review_grouped_command(
                 save_and_report(partial=True)
                 return
 
-            console.print("[red]Enter a, i, r, s, or q.[/red]")
+            console.print("[red]Enter a, i, r, s, b, or q.[/red]")
+
+        if backtracked:
+            continue
+        family_position += 1
 
     pending_deferred = [item for item in plan.deferred_reviews if item.status == "pending"]
     if pending_deferred:
@@ -1416,6 +1457,90 @@ def review_grouped_command(
         )
 
     save_and_report(partial=False)
+
+
+@app.command("amend-plan")
+def amend_plan_command(
+    plan_path: Annotated[Path, typer.Argument(help="Existing cleaning plan JSON")],
+    action_id: Annotated[
+        str,
+        typer.Option("--action-id", help="Atomic action id to amend"),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", "-o", help="Write the amended plan JSON here"),
+    ] = Path("amended_plan.json"),
+    decision: Annotated[
+        str | None,
+        typer.Option(
+            "--decision",
+            help="Set decision to proposed, approved, or rejected",
+        ),
+    ] = None,
+    target: Annotated[
+        str | None,
+        typer.Option(
+            "--target",
+            help="Retarget one atomic category mapping to this canonical value",
+        ),
+    ] = None,
+    reason: Annotated[
+        str,
+        typer.Option("--reason", help="Human-readable reason recorded in provenance"),
+    ] = "Manual plan amendment",
+) -> None:
+    """Safely amend an atomic reviewed action without hand-editing plan JSON."""
+    if decision is None and target is None:
+        raise typer.BadParameter("Provide --decision and/or --target.")
+
+    plan = _load_plan(plan_path)
+    atomize_category_mappings(plan)
+
+    if target is not None:
+        try:
+            amend_mapping_target(
+                plan,
+                action_id=action_id,
+                target=target,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+    if decision is not None:
+        try:
+            parsed_decision = ActionDecision(decision.casefold())
+        except ValueError as exc:
+            raise typer.BadParameter(
+                "--decision must be proposed, approved, or rejected."
+            ) from exc
+        try:
+            amend_action_decision(
+                plan,
+                action_id=action_id,
+                decision=parsed_decision,
+                reason=reason,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+    resolved_output = output.expanduser().resolve()
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
+    resolved_output.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+
+    amended_action = next(
+        action for action in plan.actions if action.id == action_id
+    )
+    console.print(f"[green]Amended plan written to:[/green] {resolved_output}")
+    console.print(
+        f"Action [bold]{action_id}[/bold] is now "
+        f"[bold]{amended_action.decision.value}[/bold]."
+    )
+    if amended_action.type.value == "normalize_categories":
+        console.print(f"Mapping: {amended_action.parameters.get('mapping')!r}")
+    console.print(
+        f"Recorded plan amendments: [bold]{len(plan.amendments)}[/bold]"
+    )
 
 
 @app.command("apply")
