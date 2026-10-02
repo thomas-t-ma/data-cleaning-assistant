@@ -16,6 +16,7 @@ from .ai_planner import build_review_contexts, propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
+from .evaluation import run_offline_evaluation
 from .io import load_dataset
 from .issue_summary import summarize_issues, visible_issues
 from .mapping_safety import (
@@ -739,6 +740,104 @@ def schema_review_command(
         f"Rejected: [bold]{rejected}[/bold] · "
         f"Unresolved: [bold]{proposed}[/bold]"
     )
+
+
+@app.command("evaluate-offline")
+def evaluate_offline_command(
+    json_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--json-output",
+            help="Optional machine-readable evaluation report",
+        ),
+    ] = None,
+) -> None:
+    """Run the built-in deterministic/generalization scorecard without Ollama."""
+    report = run_offline_evaluation()
+
+    summary = Table(title="Offline generalization scorecard")
+    summary.add_column("Metric")
+    summary.add_column("Result", justify="right")
+    summary.add_row(
+        "Benchmark cases",
+        f"{report.benchmark_passed_cases}/{report.benchmark_case_count} passed",
+    )
+    summary.add_row(
+        "Required-effect recall",
+        f"{report.required_hits}/{report.required_total} "
+        f"({report.required_recall:.1%})",
+    )
+    summary.add_row(
+        "Unsafe executable proposals",
+        str(report.unsafe_executable_proposals),
+    )
+    summary.add_row(
+        "Prohibited candidate exposures",
+        str(report.prohibited_candidate_exposures),
+    )
+    summary.add_row(
+        "Deterministic review actions",
+        str(report.deterministic_actions),
+    )
+    summary.add_row(
+        "Semantic review candidates",
+        str(report.semantic_review_candidates),
+    )
+    summary.add_row(
+        "Unmatched deterministic review actions",
+        str(report.unmatched_deterministic_actions),
+    )
+    console.print(summary)
+
+    semantic = report.semantic_coverage
+    semantic_table = Table(title="Semantic detector coverage (no model decisions)")
+    semantic_table.add_column("Category")
+    semantic_table.add_column("Exposed", justify="right")
+    semantic_table.add_column("Rate", justify="right")
+    semantic_table.add_row(
+        "Expected-safe corrections",
+        f"{semantic.safe_exposed}/{semantic.safe_cases}",
+        f"{semantic.safe_coverage:.1%}",
+    )
+    semantic_table.add_row(
+        "Expected-risky pairs",
+        f"{semantic.risky_exposed}/{semantic.risky_cases}",
+        f"{semantic.risky_exposure_rate:.1%}",
+    )
+    console.print(semantic_table)
+    console.print(
+        "[dim]Risky-pair exposure means the pair reached semantic review; "
+        "it does not mean the cleaner merged or approved it.[/dim]"
+    )
+
+    failures = [item for item in report.cases if not item.passed]
+    if failures:
+        failure_table = Table(title="Benchmark cases needing attention")
+        failure_table.add_column("Suite")
+        failure_table.add_column("Case")
+        failure_table.add_column("Reason")
+        for item in failures:
+            reason = " ".join(item.notes) or "Benchmark gate failed."
+            failure_table.add_row(item.suite, item.case_id, reason)
+        console.print(failure_table)
+
+    if json_output is not None:
+        output = json_output.expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[green]Evaluation report:[/green] {output}")
+
+    safety = "[green]PASS[/green]" if report.safety_pass else "[red]FAIL[/red]"
+    coverage = "[green]PASS[/green]" if report.coverage_pass else "[red]FAIL[/red]"
+    console.print(
+        f"\nSafety gate: {safety} · Required-coverage gate: {coverage}"
+    )
+    if report.overall_pass:
+        console.print("[bold green]OFFLINE EVALUATION PASS[/bold green]")
+        return
+
+    console.print("[bold red]OFFLINE EVALUATION FAIL[/bold red]")
+    raise typer.Exit(code=2)
 
 
 @app.command("ai-status")
