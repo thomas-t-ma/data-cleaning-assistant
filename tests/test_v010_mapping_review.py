@@ -78,7 +78,7 @@ def test_atomize_category_mappings_creates_one_action_per_mapping(tmp_path: Path
     assert all(action.parent_action_id == "action_multi" for action in plan.actions)
     assert all(len(action.parameters["mapping"]) == 1 for action in plan.actions)
     assert {
-        tuple(action.parameters["mapping"].items())[0]
+        next(iter(action.parameters["mapping"].items()))
         for action in plan.actions
     } == {
         ("alpha", "Alpha"),
