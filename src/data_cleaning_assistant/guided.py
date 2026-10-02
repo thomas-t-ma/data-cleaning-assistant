@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from .ai_planner import propose_ai_plan
+from .ai_provider import StructuredAIProvider
 from .actions import ActionDecision, CleaningPlan
 from .engine import profile_dataset
 from .io import load_dataset
@@ -45,6 +47,12 @@ class GuidedSession(BaseModel):
     audit_path: str | None = None
     recipe_path: str | None = None
     verification_path: str | None = None
+    planning_mode: str = "deterministic"
+    provider: str | None = None
+    model: str | None = None
+    ollama_url: str | None = None
+    think: bool = False
+    ai_provenance_path: str | None = None
     approved_action_count: int = 0
     executed_action_count: int = 0
 
@@ -90,6 +98,11 @@ def create_guided_session(
     *,
     output_path: str | Path | None = None,
     schema_path: str | Path | None = None,
+    planning_mode: str = "deterministic",
+    provider: str | None = None,
+    model: str | None = None,
+    ollama_url: str | None = None,
+    think: bool = False,
 ) -> GuidedSession:
     source = Path(input_path).expanduser().resolve()
     loaded = load_dataset(source)
@@ -148,6 +161,11 @@ def create_guided_session(
         schema_draft_path=str(draft_path),
         schema_path=confirmed_schema,
         cleaned_path=str(cleaned),
+        planning_mode=planning_mode,
+        provider=provider,
+        model=model,
+        ollama_url=ollama_url,
+        think=think,
     )
     save_guided_session(session)
     return session
@@ -172,14 +190,64 @@ def record_confirmed_schema(
     return session
 
 
-def prepare_guided_plan(session: GuidedSession) -> CleaningPlan:
+def prepare_guided_plan(
+    session: GuidedSession,
+    *,
+    provider: StructuredAIProvider | None = None,
+) -> CleaningPlan:
     source = _check_source(session)
     schema = (
         load_study_schema(session.schema_path)
         if session.schema_path is not None
         else None
     )
-    plan = propose_actions(source, schema=schema)
+
+    if session.planning_mode == "ai":
+        if provider is None or session.model is None:
+            raise ValueError(
+                "AI-assisted guided planning requires the configured local provider and model."
+            )
+        result = propose_ai_plan(
+            source,
+            provider=provider,
+            model=session.model,
+            include_rules=True,
+            schema=schema,
+        )
+        plan = result.plan
+        provenance_path = Path(session.workspace) / "ai_planning.json"
+        provenance = {
+            "provider": result.provider,
+            "model": result.model,
+            "review_call_count": result.review_call_count,
+            "consensus_disagreement_count": result.consensus_disagreement_count,
+            "covered_ai_action_count": result.covered_ai_action_count,
+            "context": result.context.model_dump(mode="json"),
+            "review_contexts": [
+                context.model_dump(mode="json")
+                for context in result.review_contexts
+            ],
+            "response": result.response.model_dump(mode="json"),
+            "rejected": [
+                item.model_dump(mode="json")
+                for item in result.rejected
+            ],
+        }
+        import json
+
+        provenance_path.write_text(
+            json.dumps(provenance, indent=2, default=str),
+            encoding="utf-8",
+        )
+        session.ai_provenance_path = str(provenance_path)
+        session.provider = result.provider
+        session.model = result.model
+    elif session.planning_mode == "deterministic":
+        plan = propose_actions(source, schema=schema)
+    else:
+        raise ValueError(
+            f"Unknown guided planning mode: {session.planning_mode!r}."
+        )
 
     plan_path = Path(session.workspace) / "cleaning_plan.json"
     plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
