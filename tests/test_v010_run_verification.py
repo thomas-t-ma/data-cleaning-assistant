@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -172,10 +173,10 @@ def test_verify_run_fails_if_audit_counts_are_internally_inconsistent(
     tmp_path: Path,
 ) -> None:
     source, cleaned, audit, recipe = _completed_run(tmp_path)
-    payload = __import__("json").loads(audit.read_text(encoding="utf-8"))
+    payload = json.loads(audit.read_text(encoding="utf-8"))
     payload["executions"][0]["affected_count"] += 1
     audit.write_text(
-        __import__("json").dumps(payload, indent=2),
+        json.dumps(payload, indent=2),
         encoding="utf-8",
     )
 
