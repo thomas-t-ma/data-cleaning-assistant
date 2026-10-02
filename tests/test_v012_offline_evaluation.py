@@ -3,14 +3,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from data_cleaning_assistant.cli import app
 from data_cleaning_assistant.evaluation import run_offline_evaluation
 
 
-def test_offline_evaluation_has_complete_safe_benchmark_baseline() -> None:
-    report = run_offline_evaluation()
+@pytest.fixture(scope="module")
+def offline_report():
+    return run_offline_evaluation()
+
+
+def test_offline_evaluation_has_complete_safe_benchmark_baseline(
+    offline_report,
+) -> None:
+    report = offline_report
 
     assert report.benchmark_case_count == 20
     assert report.benchmark_passed_cases == 20
@@ -28,8 +36,10 @@ def test_offline_evaluation_has_complete_safe_benchmark_baseline() -> None:
     assert report.semantic_review_candidates > 0
 
 
-def test_semantic_coverage_is_reported_without_treating_exposure_as_merge() -> None:
-    report = run_offline_evaluation()
+def test_semantic_coverage_is_reported_without_treating_exposure_as_merge(
+    offline_report,
+) -> None:
+    report = offline_report
     semantic = report.semantic_coverage
 
     assert semantic.total_cases == 40
