@@ -628,6 +628,13 @@ def schema_review_command(
             help="Optional path for the reviewed draft/provenance YAML",
         ),
     ] = None,
+    unresolved_only: Annotated[
+        bool,
+        typer.Option(
+            "--unresolved-only",
+            help="Review only suggestions still marked proposed",
+        ),
+    ] = False,
 ) -> None:
     """Review draft suggestions and compile only approvals into a real schema."""
     draft = load_schema_draft(draft_path)
@@ -638,8 +645,15 @@ def schema_review_command(
             "Generate a new schema draft."
         )
 
+    review_items = [
+        suggestion
+        for suggestion in draft.suggestions
+        if not unresolved_only
+        or suggestion.decision == SchemaSuggestionDecision.PROPOSED
+    ]
+
     console.print(
-        f"[bold]Review schema draft:[/bold] {len(draft.suggestions)} suggestion(s)."
+        f"[bold]Review schema draft:[/bold] {len(review_items)} suggestion(s)."
     )
     console.print(
         "[dim]Approving a suggestion adds it to the study dictionary; "
@@ -647,10 +661,10 @@ def schema_review_command(
     )
 
     position = 0
-    while position < len(draft.suggestions):
-        suggestion = draft.suggestions[position]
+    while position < len(review_items):
+        suggestion = review_items[position]
         console.rule(
-            f"Schema suggestion {position + 1} of {len(draft.suggestions)}"
+            f"Schema suggestion {position + 1} of {len(review_items)}"
         )
         console.print(f"[bold]{_schema_suggestion_text(suggestion)}[/bold]")
         console.print(
@@ -679,7 +693,7 @@ def schema_review_command(
                         "[yellow]There is no previous schema suggestion.[/yellow]"
                     )
                     continue
-                previous = draft.suggestions[position - 1]
+                previous = review_items[position - 1]
                 previous.decision = SchemaSuggestionDecision.PROPOSED
                 console.print(
                     "[cyan]Previous schema decision reset.[/cyan] "
@@ -1355,6 +1369,13 @@ def review_grouped_command(
         int,
         typer.Option("--sample", min=1, max=50, help="Maximum examples shown per action"),
     ] = 5,
+    unresolved_only: Annotated[
+        bool,
+        typer.Option(
+            "--unresolved-only",
+            help="Review only actions still marked proposed plus pending deferred judgments",
+        ),
+    ] = False,
 ) -> None:
     """Review proposed changes in plain-language groups before anything is applied."""
     plan = _load_plan(plan_path)
@@ -1365,8 +1386,16 @@ def review_grouped_command(
 
     tables = load_dataset(input_path).tables
     split_count, additional_actions = atomize_category_mappings(plan)
-    families = group_actions(tables, plan)
-    session_started = begin_review_session(plan)
+    families = group_actions(
+        tables,
+        plan,
+        include_decisions=(
+            {ActionDecision.PROPOSED}
+            if unresolved_only
+            else None
+        ),
+    )
+    session_started = begin_review_session(plan, resume=unresolved_only)
     multiple_tables = len(tables) > 1
 
     def save_and_report(*, partial: bool) -> None:
