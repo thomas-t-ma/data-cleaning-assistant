@@ -48,6 +48,28 @@ def test_guided_session_start_is_read_only_and_refuses_reuse(
         create_guided_session(source, workspace)
 
 
+
+def test_guided_clean_defaults_workspace_beside_dataset(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "study.csv"
+    _write_dataset(source)
+
+    result = CliRunner().invoke(
+        app,
+        ["guided-clean", str(source)],
+        # Pause immediately at the first schema suggestion.
+        input="q\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    workspace = tmp_path / "study_cleaning_run"
+    assert workspace.exists()
+    session = load_guided_session(workspace)
+    assert session.stage == GuidedStage.SCHEMA_REVIEW
+    assert session.workspace == str(workspace.resolve())
+
+
 def test_guided_clean_runs_review_apply_and_verification_end_to_end(
     tmp_path: Path,
 ) -> None:
