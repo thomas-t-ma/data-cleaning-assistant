@@ -2473,7 +2473,10 @@ def guided_clean_command(
         "[dim]The source dataset is read-only throughout review. "
         "A cleaned copy is written only after completed approval.[/dim]"
     )
-    _continue_guided_session(session, sample=sample)
+    try:
+        _continue_guided_session(session, sample=sample)
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 @app.command("guided-resume")
