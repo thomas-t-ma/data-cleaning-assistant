@@ -2518,7 +2518,7 @@ def guided_clean_command(
         provider_name = planning_provider.name
         provider_url = planning_provider.base_url
     elif url is not None or think:
-        raise typer.BadParameter("--url/--think require --model.")
+        raise typer.BadParameter("Ollama options require a model.")
 
     try:
         session = create_guided_session(
