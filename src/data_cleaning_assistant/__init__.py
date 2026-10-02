@@ -6,6 +6,7 @@ from .ai_planner import propose_ai_plan
 from .ai_provider import OllamaProvider
 from .benchmark import benchmark_cases, research_benchmark_cases, run_ai_benchmark
 from .engine import profile_dataset
+from .evaluation import OfflineEvaluationReport, run_offline_evaluation
 from .models import DatasetReport, Issue
 from .planner import propose_actions
 from .recipe import CleaningRecipe, load_recipe, recipe_to_plan
@@ -26,6 +27,7 @@ __all__ = [
     "DatasetReport",
     "DeferredReview",
     "Issue",
+    "OfflineEvaluationReport",
     "OllamaProvider",
     "RunVerificationReport",
     "SchemaDraft",
@@ -43,6 +45,7 @@ __all__ = [
     "recipe_to_plan",
     "research_benchmark_cases",
     "run_ai_benchmark",
+    "run_offline_evaluation",
     "verify_run",
 ]
-__version__ = "0.11.0"
+__version__ = "0.12.0"
