@@ -2414,13 +2414,16 @@ def _continue_guided_session(
 def guided_clean_command(
     input_path: Annotated[Path, typer.Argument(help="Dataset to clean")],
     workspace: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--workspace",
             "-w",
-            help="New directory that will contain all run artifacts",
+            help=(
+                "New directory for run artifacts; defaults beside the dataset "
+                "as <name>_cleaning_run"
+            ),
         ),
-    ],
+    ] = None,
     output: Annotated[
         Path | None,
         typer.Option(
@@ -2447,10 +2450,16 @@ def guided_clean_command(
     ] = 5,
 ) -> None:
     """Run the safe deterministic cleaning workflow as one guided session."""
+    source = input_path.expanduser().resolve()
+    selected_workspace = (
+        workspace
+        if workspace is not None
+        else source.with_name(f"{source.stem}_cleaning_run")
+    )
     try:
         session = create_guided_session(
-            input_path,
-            workspace,
+            source,
+            selected_workspace,
             output_path=output,
             schema_path=schema_path,
         )
