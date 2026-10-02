@@ -41,6 +41,7 @@ class CleaningAction(BaseModel):
     decision: ActionDecision = ActionDecision.PROPOSED
     reversible: bool = True
     origin: ActionOrigin = ActionOrigin.RULE
+    parent_action_id: str | None = None
 
 
 class DeferredReview(BaseModel):
