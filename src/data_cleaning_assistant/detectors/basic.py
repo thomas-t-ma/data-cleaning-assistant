@@ -10,7 +10,9 @@ import pandas as pd
 from ..inference import (
     CONTEXTUAL_MISSING_TOKENS,
     DATE_NAME_PATTERN,
+    EMAIL_NAME_PATTERN,
     MISSING_TOKENS,
+    PHONE_NAME_PATTERN,
     STRUCTURAL_MISSING_TOKENS,
     infer_numeric_date_order,
     infer_semantic_type,
@@ -304,6 +306,136 @@ def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]
     ]
 
 
+EMAIL_VALUE_PATTERN = re.compile(
+    r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    re.IGNORECASE,
+)
+
+
+def _phone_format(table: str, column: str, series: pd.Series) -> list[Issue]:
+    if PHONE_NAME_PATTERN.search(column) is None:
+        return []
+
+    values = [
+        str(value).strip()
+        for value in series.tolist()
+        if not is_missing_like(value)
+    ]
+    if not values:
+        return []
+
+    invalid: list[str] = []
+    negative_integer_like = 0
+    unusual_length = 0
+    for text in values:
+        if re.fullmatch(r"-\d+", text):
+            negative_integer_like += 1
+            invalid.append(text)
+            continue
+
+        digits = re.sub(r"\D", "", text)
+        if len(digits) < 7 or len(digits) > 15:
+            unusual_length += 1
+            invalid.append(text)
+
+    if not invalid:
+        return []
+
+    invalid_count = len(invalid)
+    invalid_ratio = invalid_count / len(values)
+    severity = Severity.MEDIUM if invalid_ratio >= 0.10 else Severity.LOW
+    description = (
+        f"{invalid_count:,} of {len(values):,} non-missing values do not look "
+        "structurally plausible for a phone field."
+    )
+    if negative_integer_like:
+        description += (
+            f" {negative_integer_like:,} are negative integer-like values. "
+            "That can indicate the field was stored or exported as a numeric "
+            "type rather than preserved as a phone identifier."
+        )
+
+    invalid_set = set(invalid)
+    mask = [
+        not is_missing_like(value) and str(value).strip() in invalid_set
+        for value in series.tolist()
+    ]
+    return [
+        Issue(
+            id=_id(),
+            type="phone_format_anomaly",
+            severity=severity,
+            table=table,
+            column=column,
+            title="Phone values look structurally unusual",
+            description=description,
+            confidence=min(0.99, max(0.80, invalid_ratio)),
+            affected_count=invalid_count,
+            row_indices_sample=_sample_rows(mask),
+            evidence={
+                "negative_integer_like_count": negative_integer_like,
+                "unusual_length_count": unusual_length,
+                "invalid_examples": invalid[:10],
+            },
+            suggested_action=(
+                "Review the source/export process for this field. Do not rewrite "
+                "phone values automatically without knowing the intended encoding."
+            ),
+            auto_fix_safe=False,
+        )
+    ]
+
+
+def _email_format(table: str, column: str, series: pd.Series) -> list[Issue]:
+    if EMAIL_NAME_PATTERN.search(column) is None:
+        return []
+
+    values = [
+        str(value).strip()
+        for value in series.tolist()
+        if not is_missing_like(value)
+    ]
+    if not values:
+        return []
+
+    invalid = [
+        value for value in values
+        if EMAIL_VALUE_PATTERN.fullmatch(value) is None
+    ]
+    if not invalid:
+        return []
+
+    invalid_set = set(invalid)
+    mask = [
+        not is_missing_like(value) and str(value).strip() in invalid_set
+        for value in series.tolist()
+    ]
+    ratio = len(invalid) / len(values)
+    return [
+        Issue(
+            id=_id(),
+            type="email_format_anomaly",
+            severity=Severity.MEDIUM if ratio >= 0.10 else Severity.LOW,
+            table=table,
+            column=column,
+            title="Email values look structurally unusual",
+            description=(
+                f"{len(invalid):,} of {len(values):,} non-missing values do not "
+                "match a basic email-address structure."
+            ),
+            confidence=min(0.98, max(0.80, ratio)),
+            affected_count=len(invalid),
+            row_indices_sample=_sample_rows(mask),
+            evidence={"invalid_examples": invalid[:10]},
+            suggested_action=(
+                "Review these addresses against the source. Formatting checks can "
+                "flag suspicious values but cannot determine the correct address."
+            ),
+            auto_fix_safe=False,
+        )
+    ]
+
+
 def _identifier_hint(table: str, column: str, series: pd.Series) -> list[Issue]:
     if not looks_like_identifier_name(column):
         return []
@@ -454,6 +586,8 @@ def detect_basic_issues(table: str, frame: pd.DataFrame) -> list[Issue]:
         issues.extend(_surrounding_whitespace(table, column, series))
         issues.extend(_mixed_numeric(table, column, series))
         issues.extend(_date_consistency(table, column, series))
+        issues.extend(_phone_format(table, column, series))
+        issues.extend(_email_format(table, column, series))
         issues.extend(_identifier_hint(table, column, series))
         issues.extend(_iqr_outliers(table, column, series))
 
