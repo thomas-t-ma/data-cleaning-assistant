@@ -115,7 +115,13 @@ def _new_value(action: CleaningAction, value: Any) -> tuple[bool, Any]:
     if action.type == ActionType.STANDARDIZE_DATES:
         if is_missing_like(value):
             return False, value
-        parsed = parse_date(value)
+        order = action.parameters.get("numeric_order")
+        numeric_order = (
+            str(order)
+            if order in {"month_first", "day_first"}
+            else None
+        )
+        parsed = parse_date(value, numeric_order=numeric_order)
         if parsed is None:
             return False, value
         fmt = str(action.parameters.get("format", "%Y-%m-%d"))
