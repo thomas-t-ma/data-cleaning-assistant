@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.14.0
+
+- Added an optional local FastAPI/uvicorn browser interface launched with `data-cleaner web`.
+- Added local upload, schema review, atomic cleaning review with previews, verified apply, and cleaned-file download.
+- Kept the browser as a thin adapter over the existing guided-session, plan, audit, recipe, and verification models rather than creating a separate cleaning engine.
+- Bound to loopback by default and require explicit `--allow-network` for non-loopback exposure.
+- Added trusted Host-header enforcement, security headers, filename/session path hardening, upload limits, and HTML escaping for dataset-derived values.
+- Preserved browser-session state on disk and in local browser storage for refresh/resume.
+- Added the optional `web` dependency extra so core CLI users do not need the web stack.
+- Added end-to-end browser/API regression coverage on Linux and Windows.
+
+## 0.13.0
+
+- Added persistent guided cleaning sessions with `guided-clean`, `guided-resume`, and `guided-status`.
+- Added a session manifest that owns source hash, stage, artifact paths, approvals, executions, and verification output.
+- Added explicit partial/completed review outcomes so quitting review can never flow into apply.
+- Added unresolved-only resume for schema and cleaning review while preserving prior review-event history and accumulated review time.
+- Automatically run end-to-end verification after every applied guided session.
+- Added a default sibling `<dataset>_cleaning_run` workspace for ordinary CLI use.
+
+## 0.12.0
+
+- Added `evaluate-offline`, a unified no-Ollama/no-network generalization scorecard.
+- Consolidated the existing core/research benchmarks and 40-case semantic stress corpus.
+- Reported required-effect recall, deterministic/semantic review burden, unsafe executable proposals, prohibited candidate exposure, and semantic detector coverage separately.
+- Established a release baseline covering all 20 built-in benchmark cases and 10 required effects with zero unsafe executable proposals and zero prohibited candidate exposures.
+
+## 0.11.0
+
+- Added non-authoritative `schema-draft` suggestions for high-confidence grain keys, category aliases, structural missing tokens, and parent/child relationships.
+- Added `schema-review` with explicit approve/reject/defer/backtracking before a real StudySchema can be materialized.
+- Deliberately made schema drafts incompatible with the authoritative StudySchema loader so inference cannot silently become cleaning authority.
+- Added reviewed-draft provenance and dataset validation for confirmed schemas.
+
+## 0.10.0
+
+- Added atomic per-mapping review and fail-closed canonical-target conflict detection.
+- Added grouped-review and deferred-AI backtracking plus auditable saved-plan amendments.
+- Added protected schema-aware canonical vocabularies that keep distinct canonical labels from collapsing.
+- Added first-class `verify-run` for source immutability, audit integrity, recipe replay, undo equivalence, repeated-touch accounting, and net-change reporting.
+- Added Windows Python 3.13 to CI alongside Ubuntu Python 3.11/3.12/3.13.
+
+
 ## 0.9.1
 
 - Redesigned `review-grouped` around plain-language human decisions instead of implementation fields such as action type, origin, raw parameters, and independent-preview terminology.
