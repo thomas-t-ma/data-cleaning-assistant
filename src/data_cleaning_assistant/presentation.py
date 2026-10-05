@@ -138,6 +138,8 @@ def _context_sentence(
         "datetime": "a date/time field",
         "numeric": "a numeric field",
         "identifier": "an identifier field",
+        "phone": "a phone/contact field",
+        "email": "an email field",
         "categorical": "a category field",
         "free_text": "a free-text field",
         "text": "a text field",
@@ -163,11 +165,27 @@ def action_explanation(
     count_text = f"{affected_count:,} value" + ("" if affected_count == 1 else "s")
 
     if action.type == ActionType.STANDARDIZE_DATES and column:
+        order = action.parameters.get("numeric_order")
+        if order == "month_first":
+            convention = (
+                " This column has unambiguous examples supporting month/day/year, "
+                "so ambiguous numeric dates will be interpreted the same way."
+            )
+        elif order == "day_first":
+            convention = (
+                " This column has unambiguous examples supporting day/month/year, "
+                "so ambiguous numeric dates will be interpreted the same way."
+            )
+        else:
+            convention = (
+                " Ambiguous numeric dates will remain unchanged because the column "
+                "does not establish one safe ordering."
+            )
         return HumanExplanation(
             title=f"Make {column} consistent",
             summary=(
                 f"{count_text.capitalize()} in {column} can be written in one date format "
-                "(YYYY-MM-DD). Values that cannot be parsed confidently will stay exactly as they are."
+                f"(YYYY-MM-DD).{convention}"
             ),
             context=_context_sentence(report, action.table, action.column),
             caution=(
