@@ -9,7 +9,6 @@ from urllib.request import urlopen
 
 from .ai_provider import OllamaProvider
 from .semantic_narrator import LocalSemanticNarrator
-from .web_app import create_app
 
 
 _DESKTOP_HOST = "127.0.0.1"
@@ -34,7 +33,9 @@ def _wait_until_ready(
         if server_errors:
             raise RuntimeError("The local desktop service failed to start.") from server_errors[0]
         if not server_thread.is_alive():
-            raise RuntimeError(\n                "The local desktop service stopped before it became ready."\n            )
+            raise RuntimeError(
+                "The local desktop service stopped before it became ready."
+            )
         try:
             with urlopen(health_url, timeout=0.35) as response:
                 if response.status == 200:
@@ -63,6 +64,8 @@ def run_local_desktop(
     try:
         import uvicorn
         import webview
+
+        from .web_app import create_app
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
             'Desktop dependencies are not installed. Install with: '
