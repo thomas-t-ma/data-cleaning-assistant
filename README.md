@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.14.0**.
+Current version: **v0.15.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,49 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.15.0 — spreadsheet review and dataset-aware explanations
+
+v0.15.0 redesigns the local browser review around the way researchers actually
+inspect tabular data. Raw transformation dictionaries are no longer the primary
+interface. Proposed edits are shown as spreadsheet-style snippets with familiar
+column headers, row numbers, neighboring fields, and highlighted **before → after**
+cells.
+
+Related mechanical changes are grouped into review families. A family can be
+approved or rejected in bulk after reviewing representative examples, while each
+underlying field remains available for individual review. Bulk approval still
+requires explicit confirmation and is recorded as a family-level review event.
+
+The deterministic presentation layer also rewrites implementation-oriented action
+names into plain English. For example, instead of showing
+`standardize_dates · Join_Date · 620 affected`, the browser can show:
+
+> **Make Join Date consistent**  
+> 620 values in Join Date can be written in one date format (YYYY-MM-DD).
+> Values that cannot be parsed confidently will stay exactly as they are.
+
+The explanation can cautiously use profiler evidence such as inferred column type,
+sample values, and neighboring field names to describe what the field appears to
+represent.
+
+### Optional local semantic narrator
+
+The browser can optionally ask a local Ollama model to make an explanation even
+more dataset-aware:
+
+```bash
+data-cleaner web --narrator-model YOUR_LOCAL_OLLAMA_MODEL
+```
+
+The narrator is advisory only. It receives bounded metadata, nearby column names,
+sample values, and deterministic before/after examples. Its response schema contains
+only a title, explanation, dataset context, and human caution. It cannot return
+mappings, missing tokens, date formats, transformation parameters, approvals, or
+new actions, and it cannot modify the cleaning plan. Narrations are cached locally
+inside the session workspace.
+
+The deterministic spreadsheet review remains the default and works without Ollama.
 
 ## v0.14.0 — local browser interface
 
