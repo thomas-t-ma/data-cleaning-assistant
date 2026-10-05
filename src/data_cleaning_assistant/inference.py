@@ -51,6 +51,14 @@ ID_NAME_PATTERN = re.compile(
 DATE_SHAPE_PATTERN = re.compile(
     r"^\s*(?:\d{1,4}[-/]\d{1,2}[-/]\d{1,4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})"
 )
+PHONE_NAME_PATTERN = re.compile(
+    r"(?:^|_)(?:phone|telephone|tel|mobile|cell)(?:_|$)|phone|telephone|mobile",
+    re.IGNORECASE,
+)
+EMAIL_NAME_PATTERN = re.compile(
+    r"(?:^|_)(?:email|e_mail)(?:_|$)|email",
+    re.IGNORECASE,
+)
 
 
 def is_null(value: Any) -> bool:
@@ -152,7 +160,79 @@ def parse_number(value: Any) -> float | None:
         return None
 
 
-def parse_date(value: Any) -> datetime | None:
+def infer_numeric_date_order(
+    series: pd.Series,
+    *,
+    min_directional_evidence: int = 3,
+) -> tuple[str | None, dict[str, int | float]]:
+    """Infer month-first/day-first order only from values that prove direction.
+
+    Ambiguous values such as 04/05/2025 never vote. A column is inferred only
+    when enough values support one direction and zero support the opposite.
+    """
+
+    month_first = 0
+    day_first = 0
+    ambiguous = 0
+    year_first = 0
+    invalid = 0
+
+    for value in meaningful_values(series):
+        text = str(value).strip()
+        match = re.fullmatch(
+            r"(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})",
+            text,
+        )
+        if match is None:
+            continue
+        first_text, second_text, third_text = match.groups()
+        first = int(first_text)
+        second = int(second_text)
+
+        if len(first_text) == 4:
+            year_first += 1
+            continue
+        if len(third_text) not in {2, 4}:
+            invalid += 1
+            continue
+
+        if first <= 12 and second > 12:
+            month_first += 1
+        elif first > 12 and second <= 12:
+            day_first += 1
+        elif first <= 12 and second <= 12:
+            ambiguous += 1
+        else:
+            invalid += 1
+
+    directional = month_first + day_first
+    evidence: dict[str, int | float] = {
+        "month_first_evidence": month_first,
+        "day_first_evidence": day_first,
+        "ambiguous_values": ambiguous,
+        "year_first_values": year_first,
+        "invalid_values": invalid,
+        "directional_evidence": directional,
+    }
+
+    if directional < min_directional_evidence:
+        evidence["confidence"] = 0.0
+        return None, evidence
+    if month_first and day_first:
+        evidence["confidence"] = max(month_first, day_first) / directional
+        return None, evidence
+
+    order = "month_first" if month_first else "day_first"
+    confidence = min(0.999, 0.95 + min(directional, 1000) / 20000)
+    evidence["confidence"] = confidence
+    return order, evidence
+
+
+def parse_date(
+    value: Any,
+    *,
+    numeric_order: str | None = None,
+) -> datetime | None:
     if is_null(value):
         return None
     if isinstance(value, datetime):
@@ -184,12 +264,19 @@ def parse_date(value: Any) -> datetime | None:
         # as 06/08/2025 -> 2025-06-08 on data entered as DD/MM/YYYY.
         if len(third_text) in {2, 4}:
             if first <= 12 and second <= 12:
-                return None
+                if numeric_order == "month_first":
+                    day_first = False
+                elif numeric_order == "day_first":
+                    day_first = True
+                else:
+                    return None
+            else:
+                day_first = first > 12
             try:
                 return date_parser.parse(
                     text,
                     fuzzy=False,
-                    dayfirst=first > 12,
+                    dayfirst=day_first,
                 )
             except (ValueError, OverflowError, TypeError):
                 return None
@@ -226,6 +313,16 @@ def infer_semantic_type(name: str, series: pd.Series) -> tuple[str, float, dict[
 
     if looks_like_identifier_name(name):
         return "identifier", 0.90, {"numeric_ratio": numeric_ratio, "date_ratio": date_ratio}
+    if PHONE_NAME_PATTERN.search(name):
+        return "phone", 0.95, {
+            "numeric_ratio": numeric_ratio,
+            "date_ratio": date_ratio,
+        }
+    if EMAIL_NAME_PATTERN.search(name):
+        return "email", 0.95, {
+            "numeric_ratio": numeric_ratio,
+            "date_ratio": date_ratio,
+        }
     if DATE_NAME_PATTERN.search(name) and date_ratio >= 0.50:
         return "date", max(0.75, date_ratio), {
             "numeric_ratio": numeric_ratio,
