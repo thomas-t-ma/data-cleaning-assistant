@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.0
+
+- Added a clearer desktop-first start screen centered on local processing, explicit review, and source preservation.
+- Exposed existing `.xlsm` engine support through the desktop/browser upload workflow.
+- Added Analyze → Review → Clean progress guidance and human-readable stage labels.
+- Added explicit local session deletion that removes app-owned uploaded copies and run artifacts.
+- Added confirmation before destructive session discard, including a download reminder for verified outputs.
+- Disabled duplicate Analyze submissions while an upload is being processed.
+- Added regression coverage for XLSM uploads, session deletion, and the revised first-run surface.
+
+
 ## 0.17.0
 
 - Added a desktop-first application shell using pywebview while preserving the existing local FastAPI interface and cleaning engine.
