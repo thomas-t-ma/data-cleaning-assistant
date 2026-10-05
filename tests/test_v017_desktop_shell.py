@@ -21,7 +21,7 @@ def test_desktop_main_uses_user_local_storage(monkeypatch, tmp_path: Path) -> No
 
     monkeypatch.setattr(desktop_app, "run_local_desktop", fake_run_local_desktop)
 
-    desktop_app.main()
+    desktop_app.main([])
 
     assert captured["data_root"] == (
         tmp_path / ".data-cleaner" / "desktop" / "sessions"
