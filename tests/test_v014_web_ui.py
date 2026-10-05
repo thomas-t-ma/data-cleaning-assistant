@@ -212,6 +212,27 @@ def test_web_session_delete_removes_app_owned_local_copies(tmp_path: Path) -> No
     assert missing.status_code == 404
 
 
+def test_web_session_delete_failure_is_reported_and_session_remains(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    app = create_app(tmp_path / "web")
+    client = TestClient(app)
+    session_id = _create_session(client)["id"]
+
+    def fail_delete(_session_id: str) -> None:
+        raise OSError("session files are locked")
+
+    monkeypatch.setattr(app.state.store, "delete", fail_delete)
+
+    deleted = client.delete(f"/api/sessions/{session_id}")
+    assert deleted.status_code == 400
+    assert "locked" in deleted.json()["detail"]
+
+    still_present = client.get(f"/api/sessions/{session_id}")
+    assert still_present.status_code == 200
+
+
 def test_local_web_rejects_untrusted_host_header(tmp_path: Path) -> None:
     client = TestClient(create_app(tmp_path / "web"))
 
