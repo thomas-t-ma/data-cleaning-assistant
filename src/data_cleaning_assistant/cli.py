@@ -2522,12 +2522,12 @@ def guided_status_command(
 @app.command("web")
 def web_command(
     data_dir: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--data-dir",
             help="Local directory for browser-session uploads and run artifacts",
         ),
-    ] = Path.home() / ".data-cleaner" / "web",
+    ] = None,
     host: Annotated[
         str,
         typer.Option(
@@ -2573,8 +2573,13 @@ def web_command(
         raise typer.Exit(code=2) from exc
 
     try:
+        selected_data_dir = (
+            data_dir
+            if data_dir is not None
+            else Path.home() / ".data-cleaner" / "web"
+        )
         run_local_web(
-            data_root=data_dir,
+            data_root=selected_data_dir,
             host=host,
             port=port,
             open_browser=open_browser,
