@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> None:
         run_local_desktop(
             data_root=Path.home() / ".data-cleaner" / "desktop" / "sessions",
         )
-    except Exception as exc:  # noqa: BLE001 - packaged GUI error boundary
+    except Exception as exc:
         _show_packaged_startup_error(exc)
         if sys.platform == "win32" and getattr(sys, "frozen", False):
             raise SystemExit(1) from None
