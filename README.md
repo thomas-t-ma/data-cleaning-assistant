@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.15.0**.
+Current version: **v0.16.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,22 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.16.0 — coherent date conventions and semantic warnings
+
+v0.16.0 improves correctness on mixed/ambiguous numeric dates and adds review-only
+semantic quality warnings.
+
+Numeric dates remain fail-closed at the individual-cell parser level. A whole column
+may establish a month-first or day-first convention only when at least three
+unambiguous values prove one direction and no values prove the opposite direction.
+That convention is persisted in the cleaning plan and may then be used for otherwise
+ambiguous rows in the same column. Conflicting date evidence disables the inference.
+
+The profiler also recognizes common phone and email fields before treating digit-heavy
+values as quantitative measurements. Suspicious phone/email structure creates a
+human-review warning rather than an executable correction. The browser surfaces such
+non-executable findings under **Needs your attention** with spreadsheet context.
 
 ## v0.15.0 — spreadsheet review and dataset-aware explanations
 
