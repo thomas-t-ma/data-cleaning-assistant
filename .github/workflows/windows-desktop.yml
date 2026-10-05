@@ -1,0 +1,55 @@
+name: windows-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+      - "src/data_cleaning_assistant/desktop_app.py"
+      - "src/data_cleaning_assistant/web_app.py"
+      - "src/data_cleaning_assistant/web_service.py"
+      - "packaging/windows/**"
+      - "scripts/build_windows.ps1"
+      - ".github/workflows/windows-desktop.yml"
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "src/data_cleaning_assistant/desktop_app.py"
+      - "src/data_cleaning_assistant/web_app.py"
+      - "src/data_cleaning_assistant/web_service.py"
+      - "packaging/windows/**"
+      - "scripts/build_windows.ps1"
+      - ".github/workflows/windows-desktop.yml"
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[desktop,desktop-build]"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build and self-test desktop package
+        shell: pwsh
+        run: ./scripts/build_windows.ps1 -BuildInstaller
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DataCleaningAssistant-Windows-x64
+          if-no-files-found: error
+          path: |
+            dist/DataCleaningAssistant-*-Windows-x64-portable.zip
+            dist/installer/DataCleaningAssistant-*-Windows-x64-Setup.exe
+            dist/SHA256SUMS.txt
