@@ -430,7 +430,7 @@ footer{margin-top:30px;color:var(--muted);font-size:12px}
 <header>
   <div>
     <h1>Data Cleaning Assistant</h1>
-    <p>Clean messy spreadsheets safely, locally, and with every change under your control.</p>
+    <p>Review your data the way you would review a spreadsheet—then clean it safely, locally, and with every change under your control.</p>
   </div>
   <span class="badge">Runs on this computer</span>
 </header>
