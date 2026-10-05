@@ -150,6 +150,16 @@ def create_app(
         except (FileNotFoundError, ValueError) as exc:
             raise _api_error(exc) from exc
 
+    @app.get("/api/sessions/{session_id}/warnings")
+    async def quality_warnings(session_id: str):
+        try:
+            return [
+                item.model_dump(mode="json")
+                for item in store.quality_warnings(session_id)
+            ]
+        except (FileNotFoundError, ValueError) as exc:
+            raise _api_error(exc) from exc
+
     @app.get("/api/sessions/{session_id}/schema")
     async def schema_suggestions(session_id: str):
         try:
@@ -421,6 +431,12 @@ footer{margin-top:30px;color:var(--muted);font-size:12px}
   <div id="sessionStatus" class="status"></div>
   <div id="summary" class="grid"></div>
 
+  <section id="warningsPanel" class="panel hidden">
+    <h2>Needs your attention</h2>
+    <p>These findings may matter, but the program does not know a safe automatic correction. Review them before relying on the cleaned dataset.</p>
+    <div id="warningsList"></div>
+  </section>
+
   <section id="schemaPanel" class="panel hidden">
     <h2>Confirm what the fields mean</h2>
     <p>These suggestions help the cleaner understand the structure of this dataset. Check them against what you know about the study.</p>
@@ -535,6 +551,17 @@ function renderSummary(state) {
     <div class="metric"><span>Cleanup decisions left</span><b>${state.action_unresolved}</b></div>
     <div class="metric"><span>Approved changes</span><b>${state.approved_actions}</b></div>`;
 }
+function warningCard(item) {
+  return `
+    <article class="${cardClass("", "schema-card")}">
+      <div class="meta">${escapeText(item.severity)} · ${item.affected_count.toLocaleString()} affected · ${escapeText(item.table)}${item.column ? " · "+escapeText(item.column) : ""}</div>
+      <h3>${escapeText(item.title)}</h3>
+      <p>${escapeText(item.description)}</p>
+      ${item.suggested_action ? '<div class="caution"><strong>Recommended check:</strong> '+escapeText(item.suggested_action)+'</div>' : ''}
+      ${item.preview ? renderSheet(item.preview) : ""}
+    </article>`;
+}
+
 function schemaCard(item) {
   return `
     <article class="${cardClass(item.decision, "schema-card")}">
@@ -576,7 +603,15 @@ async function refresh() {
   currentState = state;
   renderSummary(state);
   setStatus(`${state.source_name} · ${state.stage.replaceAll("_"," ")}`);
-  ["schemaPanel","actionsPanel","applyPanel","donePanel"].forEach(id => $(id).classList.add("hidden"));
+  ["warningsPanel","schemaPanel","actionsPanel","applyPanel","donePanel"].forEach(id => $(id).classList.add("hidden"));
+
+  if (state.warning_count > 0) {
+    const warnings = await api(`/api/sessions/${currentId}/warnings`);
+    if (warnings.length) {
+      $("warningsPanel").classList.remove("hidden");
+      $("warningsList").innerHTML = warnings.map(warningCard).join("");
+    }
+  }
 
   if (state.stage === "schema_review") {
     $("schemaPanel").classList.remove("hidden");
