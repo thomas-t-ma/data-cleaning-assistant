@@ -135,8 +135,8 @@ def _safe_upload_name(name: str) -> str:
     if not cleaned or cleaned in {".", ".."}:
         raise ValueError("Uploaded file must have a valid filename.")
     suffix = Path(cleaned).suffix.casefold()
-    if suffix not in {".csv", ".xlsx", ".parquet"}:
-        raise ValueError("Only CSV, XLSX, and Parquet datasets are supported.")
+    if suffix not in {".csv", ".xlsx", ".xlsm", ".parquet"}:
+        raise ValueError("Only CSV, XLSX, XLSM, and Parquet datasets are supported.")
     return cleaned
 
 
