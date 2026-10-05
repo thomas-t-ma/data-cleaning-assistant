@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.17.0
+
+- Added a desktop-first application shell using pywebview while preserving the existing local FastAPI interface and cleaning engine.
+- Added the `data-cleaner-desktop` launcher and optional `desktop` dependency set.
+- Desktop mode binds only to loopback and selects an available local port automatically.
+- Enabled cleaned-file downloads inside the embedded window and persistent local UI/session state.
+- Kept `data-cleaner web` as an advanced/development fallback rather than maintaining a separate native GUI implementation.
+- Removed research-specific wording from the general browser workflow so the default interface is domain-neutral.
+- Added a reproducible Windows x64 PyInstaller build, portable ZIP, SHA-256 checksums, and per-user Inno Setup installer.
+- Added packaged-app `--self-test` coverage so CI validates frozen imports and app construction without opening the GUI.
+- Added a dedicated Windows packaging workflow that publishes build artifacts from pull requests and main.
+- Require Edge/WebView2 on Windows instead of silently falling back to deprecated MSHTML, and check the WebView2 Runtime during setup.
+
+
 ## 0.16.0
 
 - Added column-level numeric date-order inference from directional evidence while preserving fail-closed ambiguous parsing by default.

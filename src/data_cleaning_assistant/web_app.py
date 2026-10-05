@@ -439,7 +439,7 @@ footer{margin-top:30px;color:var(--muted);font-size:12px}
 
   <section id="schemaPanel" class="panel hidden">
     <h2>Confirm what the fields mean</h2>
-    <p>These suggestions help the cleaner understand the structure of this dataset. Check them against what you know about the study.</p>
+    <p>These suggestions help the cleaner understand the structure of this dataset. Check them against what you know about the data.</p>
     <div id="schemaList"></div>
     <button id="schemaComplete" class="primary">Finish field review</button>
   </section>
@@ -469,7 +469,7 @@ footer{margin-top:30px;color:var(--muted);font-size:12px}
 </section>
 
 <footer>
-No cloud upload, telemetry, or external assets are used by this interface. Local-AI explanations, when enabled, are advisory only and cannot change the cleaning plan.
+No cloud upload, telemetry, or external assets are used by this interface. Optional local-AI explanations are advisory only and cannot change the cleaning plan.
 </footer>
 </main>
 
