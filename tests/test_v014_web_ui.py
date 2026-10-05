@@ -9,11 +9,11 @@ from data_cleaning_assistant.web_app import create_app, validate_bind_host
 
 def _dataset_bytes() -> bytes:
     return (
-        "SubjectID,Status,Outcome\n"
-        "S001,Active,Yes\n"
-        "S002,active,NA\n"
-        "S003,Active,No\n"
-    ).encode("utf-8")
+        b"SubjectID,Status,Outcome\n"
+        b"S001,Active,Yes\n"
+        b"S002,active,NA\n"
+        b"S003,Active,No\n"
+    )
 
 
 def _create_session(client: TestClient) -> dict:
