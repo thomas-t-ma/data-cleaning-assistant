@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -22,6 +23,7 @@ from .guided import (
     prepare_guided_plan,
     record_confirmed_schema,
     record_reviewed_plan,
+    save_guided_session,
 )
 from .io import load_dataset
 from .mapping_safety import approval_mapping_conflicts, atomize_category_mappings
@@ -76,6 +78,7 @@ class WebSessionState(BaseModel):
     executed_actions: int = 0
     cleaned_ready: bool = False
     verification_passed: bool | None = None
+    review_completed: bool = False
 
 
 def _safe_upload_name(name: str) -> str:
@@ -120,7 +123,6 @@ class LocalWebStore:
 
     def start_from_path(
         self,
-        session_id: str,
         source_path: str | Path,
         workspace: str | Path,
     ) -> GuidedSession:
@@ -167,9 +169,18 @@ class LocalWebStore:
             )
 
         verification_passed: bool | None = None
-        if session.verification_path and Path(session.verification_path).exists():
-            import json
+        review_completed = False
+        if session.reviewed_plan_path or session.plan_path:
+            plan_path = session.reviewed_plan_path or session.plan_path
+            review_plan = CleaningPlan.model_validate_json(
+                Path(plan_path).read_text(encoding="utf-8")
+            )
+            review_completed = (
+                review_plan.review_session is not None
+                and review_plan.review_session.outcome == "completed"
+            )
 
+        if session.verification_path and Path(session.verification_path).exists():
             payload = json.loads(
                 Path(session.verification_path).read_text(encoding="utf-8")
             )
@@ -188,6 +199,7 @@ class LocalWebStore:
             executed_actions=session.executed_action_count,
             cleaned_ready=Path(session.cleaned_path).exists(),
             verification_passed=verification_passed,
+            review_completed=review_completed,
         )
 
     def schema_suggestions(self, session_id: str) -> list[WebSchemaSuggestion]:
@@ -231,8 +243,6 @@ class LocalWebStore:
         reviewed_path = Path(session.workspace) / "schema_draft.reviewed.yaml"
         write_schema_draft(draft, reviewed_path)
         session.reviewed_schema_draft_path = str(reviewed_path)
-        from .guided import save_guided_session
-
         save_guided_session(session)
         return self.state(session_id)
 
