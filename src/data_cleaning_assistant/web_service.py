@@ -35,6 +35,7 @@ from .presentation import (
     action_context_payload,
     action_explanation,
     action_sheet_preview,
+    issue_sheet_preview,
     family_id,
     family_presentations,
     readable_name,
@@ -99,6 +100,18 @@ class WebActionFamily(BaseModel):
     members: list[WebFamilyMember] = Field(default_factory=list)
 
 
+class WebQualityWarning(BaseModel):
+    id: str
+    severity: str
+    table: str
+    column: str | None
+    title: str
+    description: str
+    affected_count: int
+    suggested_action: str | None = None
+    preview: SheetPreview | None = None
+
+
 class WebSessionState(BaseModel):
     id: str
     stage: str
@@ -114,6 +127,7 @@ class WebSessionState(BaseModel):
     verification_passed: bool | None = None
     review_completed: bool = False
     narrator_enabled: bool = False
+    warning_count: int = 0
 
 
 def _safe_upload_name(name: str) -> str:
@@ -238,6 +252,17 @@ class LocalWebStore:
             )
             verification_passed = bool(payload.get("passed"))
 
+        report = self._report(session)
+        represented_issue_ids: set[str] = set()
+        if session.reviewed_plan_path or session.plan_path:
+            for action in self._plan(session).actions:
+                represented_issue_ids.update(action.issue_ids)
+        warning_count = sum(
+            issue.severity.value != "info"
+            and issue.id not in represented_issue_ids
+            for issue in report.issues
+        )
+
         return WebSessionState(
             id=session_id,
             stage=session.stage.value,
@@ -253,7 +278,50 @@ class LocalWebStore:
             verification_passed=verification_passed,
             review_completed=review_completed,
             narrator_enabled=self.narrator is not None,
+            warning_count=warning_count,
         )
+
+    def quality_warnings(self, session_id: str) -> list[WebQualityWarning]:
+        session = self.load(session_id)
+        report = self._report(session)
+        tables = load_dataset(session.source_path).tables
+
+        represented_issue_ids: set[str] = set()
+        if session.reviewed_plan_path or session.plan_path:
+            plan = self._plan(session)
+            for action in plan.actions:
+                represented_issue_ids.update(action.issue_ids)
+
+        warnings: list[WebQualityWarning] = []
+        for issue in report.issues:
+            if issue.severity.value == "info":
+                continue
+            if issue.id in represented_issue_ids:
+                continue
+            warnings.append(
+                WebQualityWarning(
+                    id=issue.id,
+                    severity=issue.severity.value,
+                    table=issue.table,
+                    column=issue.column,
+                    title=issue.title,
+                    description=issue.description,
+                    affected_count=issue.affected_count,
+                    suggested_action=issue.suggested_action,
+                    preview=issue_sheet_preview(tables, issue),
+                )
+            )
+        warnings.sort(
+            key=lambda item: (
+                {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(
+                    item.severity,
+                    4,
+                ),
+                -item.affected_count,
+                item.title,
+            )
+        )
+        return warnings
 
     def schema_suggestions(self, session_id: str) -> list[WebSchemaSuggestion]:
         session = self.load(session_id)
