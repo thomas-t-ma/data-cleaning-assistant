@@ -155,7 +155,7 @@ def create_app(
         try:
             store.delete(session_id)
             return {"status": "deleted"}
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, OSError, ValueError) as exc:
             raise _api_error(exc) from exc
 
     @app.get("/api/sessions/{session_id}/warnings")
@@ -833,8 +833,9 @@ async function discardCurrentSession() {
   }
   try {
     await api(`/api/sessions/${currentId}`, {method:"DELETE"});
-  } catch (_) {
-    // If the session is already gone, clearing the local pointer is still correct.
+  } catch (err) {
+    setStatus("Could not remove the local session: " + err.message, true);
+    return;
   }
   localStorage.removeItem("dataCleanerSession");
   currentId = null;
