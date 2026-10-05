@@ -145,3 +145,10 @@ def run_local_desktop(
         server_thread.join(timeout=5.0)
         if server_thread.is_alive():
             server.force_exit = True
+
+
+def main() -> None:
+    """Launch the desktop application with user-local session storage."""
+    run_local_desktop(
+        data_root=Path.home() / ".data-cleaner" / "desktop" / "sessions",
+    )
