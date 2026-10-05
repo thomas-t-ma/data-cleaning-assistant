@@ -12,6 +12,7 @@ from ..inference import (
     DATE_NAME_PATTERN,
     MISSING_TOKENS,
     STRUCTURAL_MISSING_TOKENS,
+    infer_numeric_date_order,
     infer_semantic_type,
     is_contextual_missing_label,
     is_empty_cell,
@@ -259,6 +260,7 @@ def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]
     if len(values) < 3:
         return []
     parsed = [parse_date(value) for value in values]
+    numeric_order, order_evidence = infer_numeric_date_order(series)
     success = sum(value is not None for value in parsed)
     ratio = success / len(values)
     likely_date = DATE_NAME_PATTERN.search(column) is not None or ratio >= 0.60
@@ -290,7 +292,12 @@ def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]
             confidence=max(0.70, ratio),
             affected_count=len(values) - success,
             row_indices_sample=_sample_rows(full_mask),
-            evidence={"date_parse_ratio": ratio, "unparseable_examples": bad_values[:20]},
+            evidence={
+                "date_parse_ratio": ratio,
+                "unparseable_examples": bad_values[:20],
+                "numeric_order": numeric_order,
+                "numeric_order_evidence": order_evidence,
+            },
             suggested_action="Review malformed values before standardizing the date format.",
             auto_fix_safe=False,
         )
