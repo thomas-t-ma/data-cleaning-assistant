@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import socket
+import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -25,7 +27,7 @@ def _wait_until_ready(
     health_url: str,
     *,
     server_thread: threading.Thread,
-    server_errors: list[BaseException],
+    server_errors: list[Exception],
     timeout_seconds: float = 10.0,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
@@ -150,8 +152,35 @@ def run_local_desktop(
             server.force_exit = True
 
 
-def main() -> None:
+def _desktop_self_test() -> None:
+    """Validate imports and app construction without opening a GUI."""
+    try:
+        import webview  # noqa: F401
+
+        from .web_app import create_app
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Desktop self-test could not import the packaged GUI/web dependencies."
+        ) from exc
+
+    with tempfile.TemporaryDirectory(prefix="data-cleaner-self-test-") as temp_dir:
+        app = create_app(Path(temp_dir) / "sessions")
+        if app.title != "Data Cleaning Assistant":
+            raise RuntimeError("Desktop self-test created an unexpected application.")
+        port = _find_available_port()
+        if not 1 <= port <= 65535:
+            raise RuntimeError("Desktop self-test could not reserve a loopback port.")
+
+
+def main(argv: list[str] | None = None) -> None:
     """Launch the desktop application with user-local session storage."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args == ["--self-test"]:
+        _desktop_self_test()
+        return
+    if args:
+        raise SystemExit(f"Unknown desktop argument: {args[0]}")
+
     run_local_desktop(
         data_root=Path.home() / ".data-cleaner" / "desktop" / "sessions",
     )
