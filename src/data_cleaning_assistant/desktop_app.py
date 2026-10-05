@@ -99,12 +99,12 @@ def run_local_desktop(
         access_log=False,
     )
     server = uvicorn.Server(config)
-    server_errors: list[BaseException] = []
+    server_errors: list[Exception] = []
 
     def _serve() -> None:
         try:
             server.run()
-        except BaseException as exc:  # pragma: no cover - defensive thread boundary
+        except Exception as exc:  # pragma: no cover - defensive thread boundary
             server_errors.append(exc)
 
     server_thread = threading.Thread(
