@@ -131,6 +131,9 @@ def _date_action(issue) -> CleaningAction | None:
     if issue.column is None:
         return None
     parameters = {"format": "%Y-%m-%d", "unparseable": "keep"}
+    numeric_order = issue.evidence.get("numeric_order")
+    if numeric_order in {"month_first", "day_first"}:
+        parameters["numeric_order"] = numeric_order
     return CleaningAction(
         id=_stable_action_id(
             ActionType.STANDARDIZE_DATES,
@@ -143,7 +146,10 @@ def _date_action(issue) -> CleaningAction | None:
         column=issue.column,
         title="Standardize parseable date values",
         description=(
-            "Convert parseable dates to ISO YYYY-MM-DD while leaving unparseable values unchanged."
+            "Convert dates to ISO YYYY-MM-DD. If the column contains enough "
+            "unambiguous evidence for one numeric date convention, use that "
+            "column-level convention for otherwise ambiguous values; leave "
+            "values unchanged when the convention cannot be established safely."
         ),
         parameters=parameters,
         confidence=issue.confidence,
