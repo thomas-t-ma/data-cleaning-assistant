@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -175,6 +176,15 @@ class LocalWebStore:
 
     def load(self, session_id: str) -> GuidedSession:
         return load_guided_session(self.workspace(session_id))
+
+    def delete(self, session_id: str) -> None:
+        """Delete one local browser/desktop session and all of its app-owned copies."""
+        workspace = self.workspace(session_id)
+        session_root = workspace.parent
+        if session_root.parent != self.root:
+            raise ValueError("Invalid session identifier.")
+        if session_root.exists():
+            shutil.rmtree(session_root)
 
     def _report(self, session: GuidedSession) -> DatasetReport:
         return DatasetReport.model_validate_json(
