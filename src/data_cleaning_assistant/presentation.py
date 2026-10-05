@@ -10,7 +10,7 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from .actions import ActionDecision, ActionType, CleaningAction, CleaningPlan
+from .actions import ActionType, CleaningAction, CleaningPlan
 from .models import DatasetReport
 from .review import ActionFamily, group_actions
 from .schema_draft import SchemaSuggestion, SchemaSuggestionKind
@@ -164,7 +164,7 @@ def action_explanation(
 
     if action.type == ActionType.STANDARDIZE_DATES and column:
         return HumanExplanation(
-            title=f"Make {column} dates consistent",
+            title=f"Make {column} consistent",
             summary=(
                 f"{count_text.capitalize()} in {column} can be written in one date format "
                 "(YYYY-MM-DD). Values that cannot be parsed confidently will stay exactly as they are."
