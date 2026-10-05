@@ -2519,5 +2519,71 @@ def guided_status_command(
     typer.echo(f"Exact workspace: {session.workspace}")
 
 
+@app.command("web")
+def web_command(
+    data_dir: Annotated[
+        Path,
+        typer.Option(
+            "--data-dir",
+            help="Local directory for browser-session uploads and run artifacts",
+        ),
+    ] = Path.home() / ".data-cleaner" / "web",
+    host: Annotated[
+        str,
+        typer.Option(
+            "--host",
+            help="Bind host; loopback only unless --allow-network is explicit",
+        ),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", min=1, max=65535),
+    ] = 8765,
+    open_browser: Annotated[
+        bool,
+        typer.Option(
+            "--open-browser/--no-open-browser",
+            help="Open the local UI in the default browser",
+        ),
+    ] = True,
+    allow_network: Annotated[
+        bool,
+        typer.Option(
+            "--allow-network",
+            help="Explicitly permit binding to a non-loopback network interface",
+        ),
+    ] = False,
+    max_upload_mb: Annotated[
+        int,
+        typer.Option(
+            "--max-upload-mb",
+            min=1,
+            help="Maximum dataset upload size accepted by the local UI",
+        ),
+    ] = 1024,
+) -> None:
+    """Launch the local-only browser interface."""
+    try:
+        from .web_app import run_local_web
+    except ModuleNotFoundError as exc:
+        console.print(
+            "[red]The browser UI dependencies are not installed.[/red] "
+            'Install with: pip install -e ".[web]"'
+        )
+        raise typer.Exit(code=2) from exc
+
+    try:
+        run_local_web(
+            data_root=data_dir,
+            host=host,
+            port=port,
+            open_browser=open_browser,
+            allow_network=allow_network,
+            max_upload_mb=max_upload_mb,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 if __name__ == "__main__":
     app()
