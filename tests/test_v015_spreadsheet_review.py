@@ -98,7 +98,7 @@ def test_action_sheet_preview_looks_like_spreadsheet_context(
 def test_readable_name_preserves_common_acronyms() -> None:
     assert readable_name("Join_Date") == "Join Date"
     assert readable_name("DOB") == "DOB"
-    assert readable_name("employee_id") == "Employee Id"
+    assert readable_name("employee_id") == "Employee ID"
 
 
 class RecordingProvider:
