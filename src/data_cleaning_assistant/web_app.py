@@ -6,7 +6,7 @@ import shutil
 import threading
 import webbrowser
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
@@ -97,7 +97,7 @@ def create_app(
         return {"status": "ok", "mode": "local-only"}
 
     @app.post("/api/sessions")
-    async def create_session(file: UploadFile = File(...)):
+    async def create_session(file: Annotated[UploadFile, File()]):
         session_root: Path | None = None
         try:
             session_id, source_path, workspace = store.new_session_paths(
