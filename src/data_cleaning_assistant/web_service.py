@@ -27,8 +27,21 @@ from .guided import (
 )
 from .io import load_dataset
 from .mapping_safety import approval_mapping_conflicts, atomize_category_mappings
+from .models import DatasetReport
 from .planner import file_sha256
-from .review import action_target, record_review_event
+from .presentation import (
+    HumanExplanation,
+    SheetPreview,
+    action_context_payload,
+    action_explanation,
+    action_sheet_preview,
+    family_id,
+    family_presentations,
+    readable_name,
+    schema_explanation,
+    schema_sheet_previews,
+)
+from .review import action_target, group_actions, record_review_event
 from .schema_draft import (
     SchemaSuggestionDecision,
     load_schema_draft,
@@ -36,6 +49,7 @@ from .schema_draft import (
     write_schema_draft,
     write_study_schema,
 )
+from .semantic_narrator import ActionNarrator, SemanticNarration
 from .transforms import preview_action
 
 
@@ -45,9 +59,10 @@ class WebSchemaSuggestion(BaseModel):
     table: str
     column: str | None
     confidence: float
-    proposed: dict[str, Any]
-    rationale: str
     decision: str
+    explanation: HumanExplanation
+    previews: list[SheetPreview] = Field(default_factory=list)
+    technical_details: dict[str, Any] = Field(default_factory=dict)
 
 
 class WebActionPreview(BaseModel):
@@ -55,14 +70,33 @@ class WebActionPreview(BaseModel):
     type: str
     table: str
     column: str | None
-    title: str
-    description: str
-    parameters: dict[str, Any]
     confidence: float
     decision: str
     affected_count: int
-    sample_changes: list[dict[str, Any]] = Field(default_factory=list)
-    sample_rows: list[dict[str, Any]] = Field(default_factory=list)
+    explanation: HumanExplanation
+    preview: SheetPreview
+    technical_details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WebFamilyMember(BaseModel):
+    action_id: str
+    table: str
+    column: str | None
+    target_label: str
+    affected_count: int
+    decision: str
+    explanation: HumanExplanation
+    preview: SheetPreview
+
+
+class WebActionFamily(BaseModel):
+    id: str
+    action_type: str
+    member_count: int
+    affected_count: int
+    decision: str
+    explanation: HumanExplanation
+    members: list[WebFamilyMember] = Field(default_factory=list)
 
 
 class WebSessionState(BaseModel):
@@ -79,6 +113,7 @@ class WebSessionState(BaseModel):
     cleaned_ready: bool = False
     verification_passed: bool | None = None
     review_completed: bool = False
+    narrator_enabled: bool = False
 
 
 def _safe_upload_name(name: str) -> str:
@@ -94,9 +129,15 @@ def _safe_upload_name(name: str) -> str:
 class LocalWebStore:
     """Filesystem-backed adapter from the web UI to the guided-session engine."""
 
-    def __init__(self, root: str | Path) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        narrator: ActionNarrator | None = None,
+    ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.narrator = narrator
 
     def new_session_paths(
         self,
@@ -121,6 +162,19 @@ class LocalWebStore:
     def load(self, session_id: str) -> GuidedSession:
         return load_guided_session(self.workspace(session_id))
 
+    def _report(self, session: GuidedSession) -> DatasetReport:
+        return DatasetReport.model_validate_json(
+            Path(session.profile_path).read_text(encoding="utf-8")
+        )
+
+    def _plan(self, session: GuidedSession) -> CleaningPlan:
+        plan_path = session.reviewed_plan_path or session.plan_path
+        if plan_path is None:
+            raise ValueError("Cleaning plan is missing.")
+        return CleaningPlan.model_validate_json(
+            Path(plan_path).read_text(encoding="utf-8")
+        )
+
     def start_from_path(
         self,
         source_path: str | Path,
@@ -140,6 +194,13 @@ class LocalWebStore:
                 )
         return session
 
+    def _assert_review_source(self, session: GuidedSession) -> None:
+        if file_sha256(session.source_path) != session.source_sha256:
+            raise ValueError(
+                "The source dataset changed after this session started. "
+                "Start a new session before continuing."
+            )
+
     def state(self, session_id: str) -> WebSessionState:
         session = self.load(session_id)
         draft = load_schema_draft(
@@ -153,11 +214,9 @@ class LocalWebStore:
         actions = 0
         unresolved = 0
         approved = session.approved_action_count
+        review_completed = False
         if session.reviewed_plan_path or session.plan_path:
-            plan_path = session.reviewed_plan_path or session.plan_path
-            plan = CleaningPlan.model_validate_json(
-                Path(plan_path).read_text(encoding="utf-8")
-            )
+            plan = self._plan(session)
             actions = len(plan.actions)
             unresolved = sum(
                 item.decision == ActionDecision.PROPOSED
@@ -167,19 +226,12 @@ class LocalWebStore:
                 item.decision == ActionDecision.APPROVED
                 for item in plan.actions
             )
+            review_completed = (
+                plan.review_session is not None
+                and plan.review_session.outcome == "completed"
+            )
 
         verification_passed: bool | None = None
-        review_completed = False
-        if session.reviewed_plan_path or session.plan_path:
-            plan_path = session.reviewed_plan_path or session.plan_path
-            review_plan = CleaningPlan.model_validate_json(
-                Path(plan_path).read_text(encoding="utf-8")
-            )
-            review_completed = (
-                review_plan.review_session is not None
-                and review_plan.review_session.outcome == "completed"
-            )
-
         if session.verification_path and Path(session.verification_path).exists():
             payload = json.loads(
                 Path(session.verification_path).read_text(encoding="utf-8")
@@ -200,6 +252,7 @@ class LocalWebStore:
             cleaned_ready=Path(session.cleaned_path).exists(),
             verification_passed=verification_passed,
             review_completed=review_completed,
+            narrator_enabled=self.narrator is not None,
         )
 
     def schema_suggestions(self, session_id: str) -> list[WebSchemaSuggestion]:
@@ -207,6 +260,9 @@ class LocalWebStore:
         draft = load_schema_draft(
             session.reviewed_schema_draft_path or session.schema_draft_path
         )
+        tables = load_dataset(session.source_path).tables
+        report = self._report(session)
+
         return [
             WebSchemaSuggestion(
                 id=item.id,
@@ -214,9 +270,13 @@ class LocalWebStore:
                 table=item.table,
                 column=item.column,
                 confidence=item.confidence,
-                proposed=item.proposed,
-                rationale=item.rationale,
                 decision=item.decision.value,
+                explanation=schema_explanation(item, report=report),
+                previews=schema_sheet_previews(tables, item, sample_limit=5),
+                technical_details={
+                    "proposed": item.proposed,
+                    "evidence": item.evidence,
+                },
             )
             for item in draft.suggestions
         ]
@@ -230,6 +290,7 @@ class LocalWebStore:
         session = self.load(session_id)
         if session.stage != GuidedStage.SCHEMA_REVIEW:
             raise ValueError("This session is not in schema review.")
+        self._assert_review_source(session)
 
         path = Path(
             session.reviewed_schema_draft_path or session.schema_draft_path
@@ -250,6 +311,7 @@ class LocalWebStore:
         session = self.load(session_id)
         if session.stage != GuidedStage.SCHEMA_REVIEW:
             raise ValueError("This session is not in schema review.")
+        self._assert_review_source(session)
 
         reviewed_path = Path(
             session.reviewed_schema_draft_path or session.schema_draft_path
@@ -281,40 +343,110 @@ class LocalWebStore:
 
     def actions(self, session_id: str) -> list[WebActionPreview]:
         session = self.load(session_id)
-        plan_path = session.reviewed_plan_path or session.plan_path
-        if plan_path is None:
+        if not (session.reviewed_plan_path or session.plan_path):
             return []
-        plan = CleaningPlan.model_validate_json(
-            Path(plan_path).read_text(encoding="utf-8")
-        )
+        plan = self._plan(session)
         tables = load_dataset(session.source_path).tables
+        report = self._report(session)
 
         output: list[WebActionPreview] = []
         for action in plan.actions:
-            preview = preview_action(tables, action, sample_limit=4)
+            preview = preview_action(tables, action, sample_limit=5)
             output.append(
                 WebActionPreview(
                     id=action.id,
                     type=action.type.value,
                     table=action.table,
                     column=action.column,
-                    title=action.title,
-                    description=action.description,
-                    parameters=action.parameters,
                     confidence=action.confidence,
                     decision=action.decision.value,
                     affected_count=preview.affected_count,
-                    sample_changes=[
-                        item.model_dump(mode="json")
-                        for item in preview.sample_changes
-                    ],
-                    sample_rows=[
-                        item.model_dump(mode="json")
-                        for item in preview.sample_rows
-                    ],
+                    explanation=action_explanation(
+                        action,
+                        affected_count=preview.affected_count,
+                        report=report,
+                    ),
+                    preview=action_sheet_preview(
+                        tables,
+                        action,
+                        sample_limit=5,
+                    ),
+                    technical_details={
+                        "action_type": action.type.value,
+                        "parameters": action.parameters,
+                        "origin": action.origin.value,
+                    },
                 )
             )
         return output
+
+    def action_families(self, session_id: str) -> list[WebActionFamily]:
+        session = self.load(session_id)
+        if not (session.reviewed_plan_path or session.plan_path):
+            return []
+        plan = self._plan(session)
+        tables = load_dataset(session.source_path).tables
+        report = self._report(session)
+
+        grouped = group_actions(tables, plan)
+        presented = {
+            item.id: item
+            for item in family_presentations(
+                tables,
+                plan,
+                report=report,
+            )
+        }
+
+        output: list[WebActionFamily] = []
+        for family in grouped:
+            family_key = family_id(family)
+            presentation = presented[family_key]
+            members: list[WebFamilyMember] = []
+            for member in family.members:
+                action = member.action
+                members.append(
+                    WebFamilyMember(
+                        action_id=action.id,
+                        table=action.table,
+                        column=action.column,
+                        target_label=readable_name(action.column or action.table),
+                        affected_count=member.affected_count,
+                        decision=action.decision.value,
+                        explanation=action_explanation(
+                            action,
+                            affected_count=member.affected_count,
+                            report=report,
+                        ),
+                        preview=action_sheet_preview(
+                            tables,
+                            action,
+                            sample_limit=4,
+                        ),
+                    )
+                )
+            output.append(
+                WebActionFamily(
+                    id=family_key,
+                    action_type=family.action_type,
+                    member_count=len(family.members),
+                    affected_count=family.affected_count,
+                    decision=presentation.decision,
+                    explanation=presentation.explanation,
+                    members=members,
+                )
+            )
+        return output
+
+    def _save_reviewed_plan(
+        self,
+        session: GuidedSession,
+        plan: CleaningPlan,
+    ) -> Path:
+        reviewed_path = Path(session.workspace) / "reviewed_plan.json"
+        reviewed_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
+        record_reviewed_plan(session, reviewed_path)
+        return reviewed_path
 
     def decide_action(
         self,
@@ -325,18 +457,9 @@ class LocalWebStore:
         session = self.load(session_id)
         if session.stage != GuidedStage.CLEANING_REVIEW:
             raise ValueError("This session is not in cleaning review.")
-        if file_sha256(session.source_path) != session.source_sha256:
-            raise ValueError(
-                "The source dataset changed after this session started. "
-                "Start a new session before continuing."
-            )
+        self._assert_review_source(session)
 
-        source_plan_path = session.reviewed_plan_path or session.plan_path
-        if source_plan_path is None:
-            raise ValueError("Cleaning plan is missing.")
-        plan = CleaningPlan.model_validate_json(
-            Path(source_plan_path).read_text(encoding="utf-8")
-        )
+        plan = self._plan(session)
         matches = [item for item in plan.actions if item.id == action_id]
         if len(matches) != 1:
             raise ValueError(f"Unknown cleaning action: {action_id}")
@@ -372,22 +495,134 @@ class LocalWebStore:
             targets_preview=[action_target(action)],
         )
 
-        reviewed_path = Path(session.workspace) / "reviewed_plan.json"
-        reviewed_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
-        record_reviewed_plan(session, reviewed_path)
+        self._save_reviewed_plan(session, plan)
         return self.state(session_id)
+
+    def decide_family(
+        self,
+        session_id: str,
+        requested_family_id: str,
+        decision: ActionDecision,
+    ) -> WebSessionState:
+        session = self.load(session_id)
+        if session.stage != GuidedStage.CLEANING_REVIEW:
+            raise ValueError("This session is not in cleaning review.")
+        self._assert_review_source(session)
+
+        plan = self._plan(session)
+        tables = load_dataset(session.source_path).tables
+        matches = [
+            family
+            for family in group_actions(tables, plan)
+            if family_id(family) == requested_family_id
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"Unknown cleaning family: {requested_family_id}")
+        family = matches[0]
+        actions = [member.action for member in family.members]
+
+        if decision == ActionDecision.APPROVED:
+            conflicts = approval_mapping_conflicts(plan, actions)
+            if conflicts:
+                targets = ", ".join(
+                    f"{item.source!r} -> {list(item.targets)!r}"
+                    for item in conflicts
+                )
+                raise ValueError(
+                    "Bulk approval conflicts with another canonical mapping: "
+                    + targets
+                )
+
+        if plan.review_session is None:
+            plan.review_session = ReviewSession(started_at=datetime.now(UTC))
+        elif plan.review_session.outcome == "completed":
+            raise ValueError("Cleaning review is already completed.")
+
+        for action in actions:
+            action.decision = decision
+
+        record_review_event(
+            plan,
+            scope="web_family",
+            actions=actions,
+            affected_count=family.affected_count,
+            decision=decision.value,
+            duration_seconds=0.0,
+            bulk_confirmed=True,
+            targets_preview=[action_target(action) for action in actions],
+        )
+        self._save_reviewed_plan(session, plan)
+        return self.state(session_id)
+
+    def _action_by_id(
+        self,
+        session: GuidedSession,
+        action_id: str,
+    ) -> CleaningAction:
+        plan = self._plan(session)
+        matches = [action for action in plan.actions if action.id == action_id]
+        if len(matches) != 1:
+            raise ValueError(f"Unknown cleaning action: {action_id}")
+        return matches[0]
+
+    def narrate_action(
+        self,
+        session_id: str,
+        action_id: str,
+    ) -> SemanticNarration:
+        if self.narrator is None:
+            raise ValueError(
+                "Local semantic narration is not enabled for this web session."
+            )
+
+        session = self.load(session_id)
+        action = self._action_by_id(session, action_id)
+        tables = load_dataset(session.source_path).tables
+        report = self._report(session)
+        preview = preview_action(tables, action, sample_limit=5)
+        explanation = action_explanation(
+            action,
+            affected_count=preview.affected_count,
+            report=report,
+        )
+        payload = action_context_payload(
+            dataset_name=Path(session.source_path).name,
+            tables=tables,
+            action=action,
+            explanation=explanation,
+            report=report,
+        )
+
+        cache_path = Path(session.workspace) / "semantic_narrations.json"
+        cache: dict[str, Any] = {}
+        if cache_path.exists():
+            try:
+                raw = json.loads(cache_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    cache = raw
+            except json.JSONDecodeError:
+                cache = {}
+
+        cache_key = f"{self.narrator.model}:{action.id}"
+        cached = cache.get(cache_key)
+        if isinstance(cached, dict):
+            return SemanticNarration.model_validate(cached)
+
+        narration = self.narrator.narrate(payload)
+        cache[cache_key] = narration.model_dump(mode="json")
+        cache_path.write_text(
+            json.dumps(cache, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return narration
 
     def complete_review(self, session_id: str) -> WebSessionState:
         session = self.load(session_id)
         if session.stage != GuidedStage.CLEANING_REVIEW:
             raise ValueError("This session is not in cleaning review.")
-        plan_path = session.reviewed_plan_path or session.plan_path
-        if plan_path is None:
-            raise ValueError("Cleaning plan is missing.")
+        self._assert_review_source(session)
 
-        plan = CleaningPlan.model_validate_json(
-            Path(plan_path).read_text(encoding="utf-8")
-        )
+        plan = self._plan(session)
         unresolved = [
             action.id
             for action in plan.actions
@@ -408,9 +643,7 @@ class LocalWebStore:
             (now - plan.review_session.started_at).total_seconds(),
         )
 
-        reviewed_path = Path(session.workspace) / "reviewed_plan.json"
-        reviewed_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8")
-        record_reviewed_plan(session, reviewed_path)
+        self._save_reviewed_plan(session, plan)
         return self.state(session_id)
 
     def apply(self, session_id: str) -> WebSessionState:
