@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from data_cleaning_assistant.actions import ActionDecision, ActionType, CleaningAction
+from data_cleaning_assistant.actions import ActionType, CleaningAction
 from data_cleaning_assistant.engine import profile_dataset
 from data_cleaning_assistant.io import load_dataset
 from data_cleaning_assistant.presentation import (
@@ -53,7 +53,7 @@ def test_action_explanation_uses_dataset_language_not_action_codes(
         report=report,
     )
 
-    assert explanation.title == "Make Join Date dates consistent"
+    assert explanation.title == "Make Join Date consistent"
     assert "3 values in Join Date" in explanation.summary
     assert "YYYY-MM-DD" in explanation.summary
     assert explanation.context is not None
