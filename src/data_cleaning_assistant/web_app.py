@@ -625,6 +625,16 @@ function wireButtons() {
         const kind = button.dataset.kind;
         const id = button.dataset.id;
         const decision = button.dataset.decision;
+        if (
+          kind === "family"
+          && decision === "approved"
+          && !window.confirm(
+            "Approve every displayed change in this family? Review the examples first."
+          )
+        ) {
+          button.disabled = false;
+          return;
+        }
         const path = kind === "schema"
           ? `schema/${id}`
           : kind === "family"
