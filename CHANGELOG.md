@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.15.0
+
+- Replaced JSON-first browser review with spreadsheet-style previews showing row numbers, nearby columns, and highlighted before → after cells.
+- Added deterministic plain-English explanations that use dataset field names, inferred type, sample values, and context-aware cautions.
+- Preserved common field acronyms such as ID, DOB, MRN, DOI, and UUID in human-facing labels.
+- Added browser review families for actions sharing the same mechanical rule, with aggregate scope plus per-field examples and drill-down.
+- Added explicit browser confirmation before family-level bulk approval and recorded those decisions as bulk review events.
+- Added optional local Ollama semantic narration through `data-cleaner web --narrator-model MODEL`.
+- Constrained semantic narration to a structured title/explanation/context/caution response with zero transformation authority.
+- Sent only bounded metadata, neighboring columns, sample values, and deterministic before/after examples to the narrator; no whole dataframe is included.
+- Cached local semantic explanations per action/model inside the session workspace.
+- Added regression coverage for spreadsheet rendering, contextual copy, family review, narrator authority boundaries, and narration caching.
+
+
 ## 0.14.0
 
 - Added an optional local FastAPI/uvicorn browser interface launched with `data-cleaner web`.
