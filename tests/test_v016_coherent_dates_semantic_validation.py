@@ -25,6 +25,7 @@ def _employee_like_csv() -> str:
         "EMP4,11/27/2021,70000,d@example.com,-3476490784\n"
         "EMP5,1/5/2022,80000,e@example.com,-1586734256\n"
         "EMP6,6/30/2023,90000,f@example.com,-5409003485\n"
+        "EMP7,9/21/2022,95000,g@example.com,-4518376063\n"
     )
 
 
@@ -35,7 +36,7 @@ def test_numeric_date_order_uses_only_directional_evidence() -> None:
         ["4/2/2021", "7/10/2020", "11/27/2021", "6/30/2023"]
     )
     order, evidence = infer_numeric_date_order(month_first)
-    assert order == "month_first"
+    assert order is None
     assert evidence["month_first_evidence"] == 2
     assert evidence["ambiguous_values"] == 2
 
@@ -91,7 +92,7 @@ def test_employee_style_date_column_is_cleaned_coherently(tmp_path: Path) -> Non
     assert date_action.parameters["numeric_order"] == "month_first"
 
     preview = preview_action(loaded.tables, date_action)
-    assert preview.affected_count == 6
+    assert preview.affected_count == 7
 
     date_action.decision = ActionDecision.APPROVED
     cleaned, changeset = apply_plan(source, loaded.tables, plan)
@@ -103,6 +104,7 @@ def test_employee_style_date_column_is_cleaned_coherently(tmp_path: Path) -> Non
         "2021-11-27",
         "2022-01-05",
         "2023-06-30",
+        "2022-09-21",
     ]
     assert changeset.executions
 
@@ -152,8 +154,8 @@ def test_phone_column_is_semantic_warning_not_cleaning_action(
         if issue.type == "phone_format_anomaly"
     )
     assert phone_issue.column == "Phone"
-    assert phone_issue.affected_count == 6
-    assert phone_issue.evidence["negative_integer_like_count"] == 6
+    assert phone_issue.affected_count == 7
+    assert phone_issue.evidence["negative_integer_like_count"] == 7
     assert "stored or exported as a numeric type" in phone_issue.description
 
     plan = propose_actions(source)
@@ -189,6 +191,6 @@ def test_web_surfaces_phone_warning_with_spreadsheet_context(
         item for item in warnings.json()
         if item["title"] == "Phone values look structurally unusual"
     )
-    assert phone["affected_count"] == 6
+    assert phone["affected_count"] == 7
     assert phone["preview"]["target_columns"] == ["Phone"]
     assert phone["preview"]["rows"]
