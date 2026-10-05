@@ -163,6 +163,15 @@ def test_web_upload_validation_and_security_headers(tmp_path: Path) -> None:
     assert "empty" in empty.json()["detail"].casefold()
 
 
+def test_local_web_rejects_untrusted_host_header(tmp_path: Path) -> None:
+    client = TestClient(create_app(tmp_path / "web"))
+
+    response = client.get("/", headers={"host": "attacker.example"})
+
+    assert response.status_code == 400
+    assert "Invalid host header" in response.text
+
+
 def test_web_session_identifier_rejects_path_traversal(tmp_path: Path) -> None:
     client = TestClient(create_app(tmp_path / "web"))
 
