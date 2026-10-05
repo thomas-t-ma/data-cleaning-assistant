@@ -445,7 +445,10 @@ def action_sheet_preview(
         columns=columns,
         target_columns=[action.column],
         rows=rows,
-        caption=f"Example rows from {readable_name(action.table)}.",
+        caption=(
+            f"Example rows for {readable_name(action.column)} "
+            f"in {readable_name(action.table)}."
+        ),
     )
 
 
