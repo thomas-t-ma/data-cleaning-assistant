@@ -34,7 +34,7 @@ def _wait_until_ready(
         if server_errors:
             raise RuntimeError("The local desktop service failed to start.") from server_errors[0]
         if not server_thread.is_alive():
-            raise RuntimeError("The local desktop service stopped before it became ready.")
+            raise RuntimeError(\n                "The local desktop service stopped before it became ready."\n            )
         try:
             with urlopen(health_url, timeout=0.35) as response:
                 if response.status == 200:
