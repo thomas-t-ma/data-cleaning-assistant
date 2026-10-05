@@ -2,7 +2,7 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.13.0**.
+Current version: **v0.14.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
 
@@ -32,6 +32,34 @@ Examples of enforced restrictions:
 - likely typos such as `Peripheral Blod` vs `Peripheral Blood` receive conservative single-edit evidence only when exactly one sufficiently long non-numeric token differs by one character and all surrounding tokens match; numeric/short-token differences remain semantic review cases
 
 The default `ai-plan` mode is **hybrid**: deterministic proposals remain in the plan and validated AI suggestions are added when they contribute something new. Starting in v0.9.0, normal AI routing is **semantic-only**: only bounded category-equivalence candidates reach the model. Mechanical missing-token normalization, whitespace trimming, date standardization, numeric coercion, and duplicate removal remain deterministic human-review actions. If profiling produces no semantic AI-review candidates, Ollama is skipped entirely.
+
+## v0.14.0 — local browser interface
+
+v0.14.0 adds the first non-programmer browser interface while keeping the same
+guided-session, review, provenance, and verification engine underneath it. The web
+stack is optional so core CLI installs stay lightweight.
+
+```bash
+pip install -e ".[web]"
+data-cleaner web
+```
+
+The server binds to `127.0.0.1` by default and opens a local browser page. A
+researcher can upload a CSV, XLSX, or Parquet file to the local session store,
+review schema suggestions, inspect and approve/reject atomic cleaning actions,
+apply only after review is complete, automatically verify the result, and download
+the cleaned copy.
+
+The browser interface does not use external CDNs, telemetry, analytics, or cloud
+storage. It enforces a trusted Host header on local sessions and refuses non-loopback
+binding unless `--allow-network` is explicitly supplied. Dataset-derived text is
+escaped before rendering, source hashes are pinned before review decisions, and
+every applied run still passes through the existing end-to-end replay/undo
+verification gate.
+
+Browser sessions persist on disk under `~/.data-cleaner/web` by default, and the
+current session ID is retained locally in the browser so a page refresh can resume
+the same run.
 
 ## v0.13.0 — guided cleaning sessions
 
