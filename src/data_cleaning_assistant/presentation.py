@@ -81,12 +81,30 @@ def display_value(value: Any) -> str:
 
 def readable_name(name: str) -> str:
     cleaned = name.replace("_", " ").replace("-", " ").strip()
-    words = " ".join(cleaned.split())
+    words = cleaned.split()
     if not words:
         return "this field"
-    if words.isupper() and len(words) <= 8:
-        return words
-    return words.title()
+
+    acronyms = {
+        "id": "ID",
+        "dob": "DOB",
+        "mrn": "MRN",
+        "url": "URL",
+        "uri": "URI",
+        "uuid": "UUID",
+        "doi": "DOI",
+        "icd": "ICD",
+    }
+    output: list[str] = []
+    for word in words:
+        lowered = word.casefold()
+        if lowered in acronyms:
+            output.append(acronyms[lowered])
+        elif word.isupper() and len(word) <= 8:
+            output.append(word)
+        else:
+            output.append(word.title())
+    return " ".join(output)
 
 
 def _profile_for(
