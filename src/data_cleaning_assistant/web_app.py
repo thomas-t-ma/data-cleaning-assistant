@@ -48,7 +48,7 @@ def validate_bind_host(host: str, *, allow_network: bool) -> None:
         return
     if not allow_network:
         raise ValueError(
-            "Refusing to expose dataset data over the network. "
+            "Refusing to expose data over the network. "
             "Use a loopback host (127.0.0.1/localhost) or explicitly pass "
             "--allow-network."
         )
@@ -589,9 +589,22 @@ function renderSteps(state) {
     step.classList.toggle("done", number < active || state.stage === "verified");
   });
 }
+function stageLabel(state) {
+  if (state.stage === "schema_review") return "Understand fields";
+  if (state.stage === "cleaning_review") {
+    return state.review_completed ? "Ready to clean" : "Review changes";
+  }
+  if (state.stage === "verified") return "Complete";
+  if (state.stage === "verification_failed") return "Needs attention";
+  if (state.stage === "no_changes" || state.stage === "no_executable_changes") {
+    return "No changes needed";
+  }
+  if (state.stage === "no_approved_changes") return "Review complete";
+  return state.stage.replaceAll("_", " ");
+}
 function renderSummary(state) {
   $("summary").innerHTML = `
-    <div class="metric"><span>Stage</span><b>${escapeText(state.stage.replaceAll("_"," "))}</b></div>
+    <div class="metric"><span>Stage</span><b>${escapeText(stageLabel(state))}</b></div>
     <div class="metric"><span>Field questions left</span><b>${state.schema_unresolved}</b></div>
     <div class="metric"><span>Cleanup decisions left</span><b>${state.action_unresolved}</b></div>
     <div class="metric"><span>Approved changes</span><b>${state.approved_actions}</b></div>`;
@@ -648,7 +661,7 @@ async function refresh() {
   currentState = state;
   renderSummary(state);
   renderSteps(state);
-  setStatus(`${state.source_name} · ${state.stage.replaceAll("_"," ")}`);
+  setStatus(`${state.source_name} · ${stageLabel(state)}`);
   ["warningsPanel","schemaPanel","actionsPanel","applyPanel","donePanel"].forEach(id => $(id).classList.add("hidden"));
 
   if (state.warning_count > 0) {
@@ -807,11 +820,15 @@ async function discardCurrentSession() {
     location.reload();
     return;
   }
-  if (
-    currentState
-    && !["verified","no_changes","no_approved_changes","no_executable_changes"].includes(currentState.stage)
-    && !window.confirm("Discard this cleaning session and remove its local working copy?")
-  ) {
+  const finished = currentState && [
+    "verified","no_changes","no_approved_changes","no_executable_changes"
+  ].includes(currentState.stage);
+  const message = currentState?.stage === "verified"
+    ? "Remove this finished session from local app storage? Download the cleaned file first if you want to keep it."
+    : finished
+      ? "Remove this finished session from local app storage and start another?"
+      : "Discard this cleaning session and remove its local working copy?";
+  if (!window.confirm(message)) {
     return;
   }
   try {
