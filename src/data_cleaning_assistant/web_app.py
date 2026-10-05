@@ -31,6 +31,16 @@ def _loopback_host(host: str) -> bool:
         return False
 
 
+def _browser_host(host: str) -> str:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if address.version == 6:
+        return f"[{host}]"
+    return host
+
+
 def validate_bind_host(host: str, *, allow_network: bool) -> None:
     if _loopback_host(host):
         return
@@ -248,15 +258,20 @@ def run_local_web(
 
     import uvicorn
 
-    trusted_hosts = ["*"] if allow_network and not _loopback_host(host) else None
+    if _loopback_host(host):
+        trusted_hosts = list(
+            dict.fromkeys([host, _browser_host(host), "127.0.0.1", "localhost", "[::1]"])
+        )
+    else:
+        trusted_hosts = ["*"] if allow_network else None
+
     app = create_app(
         data_root,
         max_upload_mb=max_upload_mb,
         trusted_hosts=trusted_hosts,
     )
     if open_browser and _loopback_host(host):
-        browser_host = "127.0.0.1" if host == "0.0.0.0" else host
-        url = f"http://{browser_host}:{port}/"
+        url = f"http://{_browser_host(host)}:{port}/"
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
