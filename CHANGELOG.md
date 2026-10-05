@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.16.0
+
+- Added column-level numeric date-order inference from directional evidence while preserving fail-closed ambiguous parsing by default.
+- Require at least three unambiguous examples and zero contradictory examples before a month-first/day-first convention gains column authority.
+- Persist inferred numeric date order in cleaning action parameters and explain it in the human review UI.
+- Added phone and email semantic field inference so contact identifiers are not treated as quantitative measurements.
+- Added review-only phone/email structural anomaly detectors; these never generate executable fixes.
+- Added a browser **Needs your attention** panel for important profiler findings that intentionally have no automatic action.
+- Excluded phone/email identifiers from numeric outlier analysis.
+- Added regression coverage based on employee-style M/D/YYYY data and negative phone-number patterns.
+
+
 ## 0.15.0
 
 - Replaced JSON-first browser review with spreadsheet-style previews showing row numbers, nearby columns, and highlighted before → after cells.
