@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.17.0
+
+- Added a desktop-first application shell using pywebview while preserving the existing local FastAPI interface and cleaning engine.
+- Added the `data-cleaner-desktop` launcher and optional `desktop` dependency set.
+- Desktop mode binds only to loopback and selects an available local port automatically.
+- Enabled cleaned-file downloads inside the embedded window and persistent local UI/session state.
+- Kept `data-cleaner web` as an advanced/development fallback rather than maintaining a separate native GUI implementation.
+- Removed research-specific wording from the general browser workflow so the default interface is domain-neutral.
+
+
 ## 0.16.0
 
 - Added column-level numeric date-order inference from directional evidence while preserving fail-closed ambiguous parsing by default.
