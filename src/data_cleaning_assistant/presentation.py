@@ -11,7 +11,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from .actions import ActionType, CleaningAction, CleaningPlan
-from .models import DatasetReport
+from .models import DatasetReport, Issue
 from .review import ActionFamily, group_actions
 from .schema_draft import SchemaSuggestion, SchemaSuggestionKind
 from .transforms import preview_action
@@ -562,6 +562,53 @@ def schema_sheet_previews(
         )
     ]
 
+
+
+
+def issue_sheet_preview(
+    tables: dict[str, pd.DataFrame],
+    issue: Issue,
+    *,
+    sample_limit: int = 5,
+) -> SheetPreview | None:
+    if issue.table not in tables:
+        return None
+    frame = tables[issue.table]
+    target_columns = (
+        [issue.column]
+        if issue.column is not None and issue.column in frame.columns
+        else []
+    )
+    columns = _selected_columns(frame, target_columns, max_columns=6)
+    positions = [
+        int(position)
+        for position in issue.row_indices_sample[:sample_limit]
+        if 0 <= int(position) < len(frame)
+    ]
+    if not positions:
+        positions = list(range(min(len(frame), sample_limit)))
+
+    rows = [
+        SheetRow(
+            row_number=position + 2,
+            cells={
+                column: SheetCell(text=display_value(frame.iloc[position][column]))
+                for column in columns
+            },
+        )
+        for position in positions
+    ]
+    return SheetPreview(
+        table=issue.table,
+        columns=columns,
+        target_columns=target_columns,
+        rows=rows,
+        caption=(
+            f"Example rows related to {readable_name(issue.column)}."
+            if issue.column
+            else f"Example rows from {readable_name(issue.table)}."
+        ),
+    )
 
 def family_id(family: ActionFamily) -> str:
     payload = json.dumps(
