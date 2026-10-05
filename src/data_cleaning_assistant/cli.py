@@ -2561,6 +2561,16 @@ def web_command(
             help="Maximum dataset upload size accepted by the local UI",
         ),
     ] = 1024,
+    narrator_model: Annotated[
+        str | None,
+        typer.Option(
+            "--narrator-model",
+            help=(
+                "Optional local Ollama model used only to rewrite explanations "
+                "in dataset-aware language; it cannot change the cleaning plan"
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Launch the local-only browser interface."""
     try:
@@ -2585,6 +2595,7 @@ def web_command(
             open_browser=open_browser,
             allow_network=allow_network,
             max_upload_mb=max_upload_mb,
+            narrator_model=narrator_model,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
