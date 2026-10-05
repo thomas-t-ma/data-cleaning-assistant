@@ -465,7 +465,7 @@ def _identifier_hint(table: str, column: str, series: pd.Series) -> list[Issue]:
 
 def _iqr_outliers(table: str, column: str, series: pd.Series) -> list[Issue]:
     inferred, _, ratios = infer_semantic_type(column, series)
-    if inferred == "identifier" or ratios["numeric_ratio"] < 0.90:
+    if inferred in {"identifier", "phone", "email"} or ratios["numeric_ratio"] < 0.90:
         return []
     numbers_with_rows = [
         (idx, parse_number(value))
