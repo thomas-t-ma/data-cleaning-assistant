@@ -142,6 +142,7 @@ def run_local_desktop(
             zoomable=True,
         )
         webview.start(
+            gui="edgechromium" if sys.platform == "win32" else None,
             private_mode=False,
             storage_path=str(storage_path),
         )
@@ -172,6 +173,27 @@ def _desktop_self_test() -> None:
             raise RuntimeError("Desktop self-test could not reserve a loopback port.")
 
 
+def _show_packaged_startup_error(exc: Exception) -> None:
+    """Show a native error dialog for failures in a windowed Windows build."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+
+    import ctypes
+
+    message = (
+        "Data Cleaning Assistant could not start.\n\n"
+        f"{exc}\n\n"
+        "Microsoft Edge WebView2 Runtime is required on Windows. "
+        "Windows 11 normally includes it."
+    )
+    ctypes.windll.user32.MessageBoxW(
+        None,
+        message,
+        "Data Cleaning Assistant",
+        0x10,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     """Launch the desktop application with user-local session storage."""
     args = list(sys.argv[1:] if argv is None else argv)
@@ -181,6 +203,12 @@ def main(argv: list[str] | None = None) -> None:
     if args:
         raise SystemExit(f"Unknown desktop argument: {args[0]}")
 
-    run_local_desktop(
-        data_root=Path.home() / ".data-cleaner" / "desktop" / "sessions",
-    )
+    try:
+        run_local_desktop(
+            data_root=Path.home() / ".data-cleaner" / "desktop" / "sessions",
+        )
+    except Exception as exc:
+        _show_packaged_startup_error(exc)
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            raise SystemExit(1) from None
+        raise
