@@ -10,6 +10,7 @@ from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 
 from .actions import ActionDecision
@@ -51,6 +52,7 @@ def create_app(
     data_root: str | Path,
     *,
     max_upload_mb: int = 1024,
+    trusted_hosts: list[str] | None = None,
 ) -> FastAPI:
     store = LocalWebStore(data_root)
     app = FastAPI(
@@ -61,10 +63,15 @@ def create_app(
     )
     app.state.store = store
     app.state.max_upload_bytes = max_upload_mb * 1024 * 1024
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=trusted_hosts
+        or ["127.0.0.1", "localhost", "[::1]", "testserver"],
+    )
 
     @app.middleware("http")
-    async def security_headers(request, call_next):
-        response = await call_next(request)
+    async def security_headers(_request, call_next):
+        response = await call_next(_request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -112,7 +119,7 @@ def create_app(
             if total == 0:
                 raise ValueError("Uploaded dataset is empty.")
 
-            store.start_from_path(session_id, source_path, workspace)
+            store.start_from_path(source_path, workspace)
             return store.state(session_id).model_dump(mode="json")
         except (FileNotFoundError, OSError, TypeError, ValueError) as exc:
             if session_root is not None and session_root.exists():
@@ -241,7 +248,12 @@ def run_local_web(
 
     import uvicorn
 
-    app = create_app(data_root, max_upload_mb=max_upload_mb)
+    trusted_hosts = ["*"] if allow_network and not _loopback_host(host) else None
+    app = create_app(
+        data_root,
+        max_upload_mb=max_upload_mb,
+        trusted_hosts=trusted_hosts,
+    )
     if open_browser and _loopback_host(host):
         browser_host = "127.0.0.1" if host == "0.0.0.0" else host
         url = f"http://{browser_host}:{port}/"
@@ -358,11 +370,17 @@ No cloud upload, telemetry, or external assets are used by this interface. Keep 
 </main>
 
 <script>
-let currentId = null;
+let currentId = localStorage.getItem("dataCleanerSession");
 const $ = id => document.getElementById(id);
 
 function escapeText(value) {
-  return value == null ? "" : String(value);
+  if (value == null) return "";
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 async function api(url, options={}) {
   const res = await fetch(url, options);
@@ -417,8 +435,8 @@ async function refresh() {
     $("schemaComplete").disabled = state.schema_unresolved !== 0;
   } else if (state.stage === "cleaning_review") {
     const items = await api(`/api/sessions/${currentId}/actions`);
-    const completed = items.length > 0 && state.action_unresolved === 0;
-    if (!completed) {
+    const readyForCompletion = state.action_unresolved === 0 && !state.review_completed;
+    if (!state.review_completed) {
       $("actionsPanel").classList.remove("hidden");
       $("actionsList").innerHTML = items.map(item => {
         const preview = item.sample_changes.length ? item.sample_changes : item.sample_rows;
@@ -432,7 +450,7 @@ async function refresh() {
           ${decisionButtons("action", item.id, item.decision)}
         </article>`;
       }).join("");
-      $("reviewComplete").disabled = state.action_unresolved !== 0;
+      $("reviewComplete").disabled = !readyForCompletion;
     } else {
       $("applyPanel").classList.remove("hidden");
     }
@@ -483,6 +501,7 @@ $("uploadForm").onsubmit = async event => {
   try {
     const state = await api("/api/sessions", {method:"POST", body:data});
     currentId = state.id;
+    localStorage.setItem("dataCleanerSession", currentId);
     $("start").classList.add("hidden");
     $("session").classList.remove("hidden");
     await refresh();
@@ -514,7 +533,24 @@ $("applyButton").onclick = async () => {
     setStatus(err.message, true);
   }
 };
-$("newSession").onclick = () => location.reload();
+$("newSession").onclick = () => {
+  localStorage.removeItem("dataCleanerSession");
+  location.reload();
+};
+
+(async () => {
+  if (!currentId) return;
+  try {
+    $("start").classList.add("hidden");
+    $("session").classList.remove("hidden");
+    await refresh();
+  } catch (_) {
+    localStorage.removeItem("dataCleanerSession");
+    currentId = null;
+    $("start").classList.remove("hidden");
+    $("session").classList.add("hidden");
+  }
+})();
 </script>
 </body>
 </html>
