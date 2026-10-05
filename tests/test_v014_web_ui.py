@@ -61,9 +61,14 @@ def test_local_web_end_to_end_verified_download(tmp_path: Path) -> None:
         )
         assert response.status_code == 200, response.text
 
+    before_complete = client.get(f"/api/sessions/{session_id}").json()
+    assert before_complete["action_unresolved"] == 0
+    assert before_complete["review_completed"] is False
+
     complete = client.post(f"/api/sessions/{session_id}/review/complete")
     assert complete.status_code == 200, complete.text
     assert complete.json()["action_unresolved"] == 0
+    assert complete.json()["review_completed"] is True
 
     applied = client.post(f"/api/sessions/{session_id}/apply")
     assert applied.status_code == 200, applied.text
@@ -140,6 +145,8 @@ def test_web_upload_validation_and_security_headers(tmp_path: Path) -> None:
     assert "Data Cleaning Assistant" in home.text
     assert "Content-Security-Policy" in home.headers
     assert "cdn" not in home.text.casefold()
+    assert '.replaceAll("<", "&lt;")' in home.text
+    assert 'localStorage.getItem("dataCleanerSession")' in home.text
 
     invalid = client.post(
         "/api/sessions",
