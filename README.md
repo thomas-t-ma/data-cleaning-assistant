@@ -2,9 +2,31 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.16.0**.
+Current version: **v0.17.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.17.0 — desktop-first application shell
+
+The recommended everyday interface is now a desktop application rather than a
+terminal-launched browser tab. It embeds the same local HTML/FastAPI interface in a
+native window, so the cleaning engine, safety gates, previews, audit trail, and
+verification path remain identical.
+
+Install the desktop extra and launch it with:
+
+```bash
+pip install -e ".[desktop]"
+data-cleaner-desktop
+```
+
+The desktop window talks only to a randomly selected loopback port on this computer.
+No cloud service is introduced. Browser mode remains available through
+`data-cleaner web` for development, debugging, remote/admin workflows, or users who
+prefer a normal browser.
+
+This split is intentional: the product experience is desktop-first, while the UI
+implementation stays web-based so it remains portable and fast to improve.
 
 ## Current capabilities
 
