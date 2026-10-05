@@ -36,3 +36,29 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function HasWebView2Runtime: Boolean;
+var
+  Version: String;
+  Key: String;
+begin
+  Key := 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+  Result :=
+    (RegQueryStringValue(HKLM32, Key, 'pv', Version) and
+      (Version <> '') and (Version <> '0.0.0.0')) or
+    (RegQueryStringValue(HKCU, Key, 'pv', Version) and
+      (Version <> '') and (Version <> '0.0.0.0'));
+end;
+
+function InitializeSetup: Boolean;
+begin
+  Result := HasWebView2Runtime;
+  if not Result then
+    MsgBox(
+      'Data Cleaning Assistant requires Microsoft Edge WebView2 Runtime.' + #13#10 + #13#10 +
+      'Windows 11 normally includes it. Install the Evergreen WebView2 Runtime, then run this setup again.',
+      mbError,
+      MB_OK
+    );
+end;
