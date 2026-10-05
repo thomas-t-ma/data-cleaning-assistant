@@ -25,6 +25,7 @@ from .guided import (
 )
 from .io import load_dataset
 from .mapping_safety import approval_mapping_conflicts, atomize_category_mappings
+from .planner import file_sha256
 from .review import action_target, record_review_event
 from .schema_draft import (
     SchemaSuggestionDecision,
@@ -314,6 +315,11 @@ class LocalWebStore:
         session = self.load(session_id)
         if session.stage != GuidedStage.CLEANING_REVIEW:
             raise ValueError("This session is not in cleaning review.")
+        if file_sha256(session.source_path) != session.source_sha256:
+            raise ValueError(
+                "The source dataset changed after this session started. "
+                "Start a new session before continuing."
+            )
 
         source_plan_path = session.reviewed_plan_path or session.plan_path
         if source_plan_path is None:
