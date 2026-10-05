@@ -155,6 +155,13 @@ def create_app(
         except (FileNotFoundError, ValueError) as exc:
             raise _api_error(exc) from exc
 
+    @app.post("/api/sessions/{session_id}/schema/complete")
+    async def complete_schema(session_id: str):
+        try:
+            return store.complete_schema(session_id).model_dump(mode="json")
+        except (FileNotFoundError, ValueError) as exc:
+            raise _api_error(exc) from exc
+
     @app.post("/api/sessions/{session_id}/schema/{suggestion_id}")
     async def schema_decision(
         session_id: str,
@@ -168,13 +175,6 @@ def create_app(
                 SchemaSuggestionDecision(payload.decision),
             )
             return state.model_dump(mode="json")
-        except (FileNotFoundError, ValueError) as exc:
-            raise _api_error(exc) from exc
-
-    @app.post("/api/sessions/{session_id}/schema/complete")
-    async def complete_schema(session_id: str):
-        try:
-            return store.complete_schema(session_id).model_dump(mode="json")
         except (FileNotFoundError, ValueError) as exc:
             raise _api_error(exc) from exc
 
