@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
+
+from openpyxl import Workbook
 
 from fastapi.testclient import TestClient
 
@@ -14,6 +17,18 @@ def _dataset_bytes() -> bytes:
         b"S002,active,NA\n"
         b"S003,Active,No\n"
     )
+
+
+def _xlsm_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Employees"
+    sheet.append(["Employee_ID", "Status"])
+    sheet.append(["E001", "Active"])
+    sheet.append(["E002", "active"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
 
 
 def _create_session(client: TestClient) -> dict:
@@ -147,13 +162,28 @@ def test_web_upload_validation_and_security_headers(tmp_path: Path) -> None:
     assert "cdn" not in home.text.casefold()
     assert '.replaceAll("<", "&lt;")' in home.text
     assert 'localStorage.getItem("dataCleanerSession")' in home.text
+    assert ".xlsm" in home.text
+    assert "Your data stays on this computer" in home.text
+    assert "Discard session" in home.text
+
+    xlsm = client.post(
+        "/api/sessions",
+        files={
+            "file": (
+                "employees.xlsm",
+                _xlsm_bytes(),
+                "application/vnd.ms-excel.sheet.macroEnabled.12",
+            )
+        },
+    )
+    assert xlsm.status_code == 200, xlsm.text
 
     invalid = client.post(
         "/api/sessions",
         files={"file": ("notes.txt", b"hello", "text/plain")},
     )
     assert invalid.status_code == 400
-    assert "Only CSV, XLSX, and Parquet" in invalid.json()["detail"]
+    assert "Only CSV, XLSX, XLSM, and Parquet" in invalid.json()["detail"]
 
     empty = client.post(
         "/api/sessions",
@@ -161,6 +191,46 @@ def test_web_upload_validation_and_security_headers(tmp_path: Path) -> None:
     )
     assert empty.status_code == 400
     assert "empty" in empty.json()["detail"].casefold()
+
+
+def test_web_session_delete_removes_app_owned_local_copies(tmp_path: Path) -> None:
+    app = create_app(tmp_path / "web")
+    client = TestClient(app)
+    state = _create_session(client)
+    session_id = state["id"]
+    session = app.state.store.load(session_id)
+    session_root = Path(session.workspace).parent
+
+    assert session_root.exists()
+
+    deleted = client.delete(f"/api/sessions/{session_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+    assert not session_root.exists()
+
+    missing = client.get(f"/api/sessions/{session_id}")
+    assert missing.status_code == 404
+
+
+def test_web_session_delete_failure_is_reported_and_session_remains(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    app = create_app(tmp_path / "web")
+    client = TestClient(app)
+    session_id = _create_session(client)["id"]
+
+    def fail_delete(_session_id: str) -> None:
+        raise OSError("session files are locked")
+
+    monkeypatch.setattr(app.state.store, "delete", fail_delete)
+
+    deleted = client.delete(f"/api/sessions/{session_id}")
+    assert deleted.status_code == 400
+    assert "locked" in deleted.json()["detail"]
+
+    still_present = client.get(f"/api/sessions/{session_id}")
+    assert still_present.status_code == 200
 
 
 def test_local_web_rejects_untrusted_host_header(tmp_path: Path) -> None:

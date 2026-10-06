@@ -48,7 +48,7 @@ def validate_bind_host(host: str, *, allow_network: bool) -> None:
         return
     if not allow_network:
         raise ValueError(
-            "Refusing to expose research data over the network. "
+            "Refusing to expose data over the network. "
             "Use a loopback host (127.0.0.1/localhost) or explicitly pass "
             "--allow-network."
         )
@@ -148,6 +148,14 @@ def create_app(
         try:
             return store.state(session_id).model_dump(mode="json")
         except (FileNotFoundError, ValueError) as exc:
+            raise _api_error(exc) from exc
+
+    @app.delete("/api/sessions/{session_id}")
+    async def delete_session(session_id: str) -> dict[str, str]:
+        try:
+            store.delete(session_id)
+            return {"status": "deleted"}
+        except (FileNotFoundError, OSError, ValueError) as exc:
             raise _api_error(exc) from exc
 
     @app.get("/api/sessions/{session_id}/warnings")
@@ -364,6 +372,18 @@ h3{font-size:17px;margin:0 0 7px}
 h4{font-size:15px;margin:0 0 7px}
 p{margin:6px 0;color:var(--muted)}
 .badge{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:white;font-size:12px}
+.trust-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}
+.trust{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fafcfd}
+.trust strong{display:block;color:var(--ink);margin-bottom:3px}
+.session-top{display:flex;justify-content:space-between;gap:14px;align-items:center;margin:4px 0 12px}
+.steps{display:flex;gap:8px;flex-wrap:wrap}
+.step{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;font-weight:650}
+.step b{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#e6eaee;color:#66737f;font-size:12px}
+.step.active{color:var(--ink)}
+.step.active b{background:var(--accent);color:white}
+.step.done b{background:#cfe8e1;color:#24594e}
+button.compact{padding:8px 11px;font-size:13px}
+.file-help{font-size:12px;color:var(--muted);margin-top:7px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:var(--shadow);margin:16px 0}
 .family{border:1px solid var(--line);border-radius:16px;padding:18px;margin:16px 0;background:#fff}
 .member{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
@@ -402,7 +422,7 @@ input[type=file]{display:block;width:100%;padding:16px;border:1px dashed #aeb9c3
 .schema-card{border:1px solid var(--line);border-radius:13px;padding:16px;margin:12px 0}
 details summary{cursor:pointer;color:#53616c;font-size:13px}
 footer{margin-top:30px;color:var(--muted);font-size:12px}
-@media(max-width:650px){header{display:block}h1{font-size:27px}.panel{padding:16px}}
+@media(max-width:650px){header{display:block}h1{font-size:27px}.panel{padding:16px}.trust-grid{grid-template-columns:1fr}.session-top{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
@@ -410,24 +430,38 @@ footer{margin-top:30px;color:var(--muted);font-size:12px}
 <header>
   <div>
     <h1>Data Cleaning Assistant</h1>
-    <p>Review your data the way you would review a spreadsheet—not a configuration file.</p>
+    <p>Review your data the way you would review a spreadsheet—then clean it safely, locally, and with every change under your control.</p>
   </div>
   <span class="badge">Runs on this computer</span>
 </header>
 
 <section id="start" class="panel">
-  <h2>Start a cleaning session</h2>
-  <p>Select a CSV, XLSX, or Parquet dataset. The file stays with this local server.</p>
+  <h2>Choose a dataset</h2>
+  <p>Select a CSV, Excel, or Parquet file. Your data stays on this computer and the original file is never overwritten.</p>
+  <div class="trust-grid">
+    <div class="trust"><strong>Stays local</strong><span>No cloud upload or telemetry.</span></div>
+    <div class="trust"><strong>Review first</strong><span>Nothing changes until you approve it.</span></div>
+    <div class="trust"><strong>Original preserved</strong><span>Cleaning is written to a separate verified copy.</span></div>
+  </div>
   <form id="uploadForm">
-    <input id="fileInput" name="file" type="file" accept=".csv,.xlsx,.parquet" required>
+    <input id="fileInput" name="file" type="file" accept=".csv,.xlsx,.xlsm,.parquet" required>
+    <div class="file-help">Supported: CSV · Excel (.xlsx, .xlsm) · Parquet</div>
     <div class="row" style="margin-top:14px">
-      <button class="primary" type="submit">Analyze dataset</button>
+      <button id="analyzeButton" class="primary" type="submit">Analyze dataset</button>
       <span id="uploadNote" class="meta"></span>
     </div>
   </form>
 </section>
 
 <section id="session" class="hidden">
+  <div class="session-top">
+    <div id="progressSteps" class="steps">
+      <span class="step done" data-step="1"><b>1</b> Analyze</span>
+      <span class="step active" data-step="2"><b>2</b> Review</span>
+      <span class="step" data-step="3"><b>3</b> Clean</span>
+    </div>
+    <button id="discardSession" class="secondary compact">Discard session</button>
+  </div>
   <div id="sessionStatus" class="status"></div>
   <div id="summary" class="grid"></div>
 
@@ -544,9 +578,33 @@ function renderSheet(preview) {
     </div>
     ${preview.caption ? '<div class="caption">'+escapeText(preview.caption)+'</div>' : ''}`;
 }
+function renderSteps(state) {
+  const reviewStages = new Set(["schema_review", "cleaning_review"]);
+  const cleanStages = new Set(["verified", "verification_failed"]);
+  let active = reviewStages.has(state.stage) && !state.review_completed ? 2 : 3;
+  if (cleanStages.has(state.stage)) active = 3;
+  document.querySelectorAll("#progressSteps .step").forEach(step => {
+    const number = Number(step.dataset.step);
+    step.classList.toggle("active", number === active);
+    step.classList.toggle("done", number < active || state.stage === "verified");
+  });
+}
+function stageLabel(state) {
+  if (state.stage === "schema_review") return "Understand fields";
+  if (state.stage === "cleaning_review") {
+    return state.review_completed ? "Ready to clean" : "Review changes";
+  }
+  if (state.stage === "verified") return "Complete";
+  if (state.stage === "verification_failed") return "Needs attention";
+  if (state.stage === "no_changes" || state.stage === "no_executable_changes") {
+    return "No changes needed";
+  }
+  if (state.stage === "no_approved_changes") return "Review complete";
+  return state.stage.replaceAll("_", " ");
+}
 function renderSummary(state) {
   $("summary").innerHTML = `
-    <div class="metric"><span>Stage</span><b>${escapeText(state.stage.replaceAll("_"," "))}</b></div>
+    <div class="metric"><span>Stage</span><b>${escapeText(stageLabel(state))}</b></div>
     <div class="metric"><span>Field questions left</span><b>${state.schema_unresolved}</b></div>
     <div class="metric"><span>Cleanup decisions left</span><b>${state.action_unresolved}</b></div>
     <div class="metric"><span>Approved changes</span><b>${state.approved_actions}</b></div>`;
@@ -602,7 +660,8 @@ async function refresh() {
   const state = await api(`/api/sessions/${currentId}`);
   currentState = state;
   renderSummary(state);
-  setStatus(`${state.source_name} · ${state.stage.replaceAll("_"," ")}`);
+  renderSteps(state);
+  setStatus(`${state.source_name} · ${stageLabel(state)}`);
   ["warningsPanel","schemaPanel","actionsPanel","applyPanel","donePanel"].forEach(id => $(id).classList.add("hidden"));
 
   if (state.warning_count > 0) {
@@ -717,6 +776,7 @@ $("uploadForm").onsubmit = async event => {
   if (!file) return;
   const data = new FormData();
   data.append("file", file);
+  $("analyzeButton").disabled = true;
   $("uploadNote").textContent = "Analyzing locally…";
   try {
     const state = await api("/api/sessions", {method:"POST", body:data});
@@ -726,6 +786,7 @@ $("uploadForm").onsubmit = async event => {
     $("session").classList.remove("hidden");
     await refresh();
   } catch (err) {
+    $("analyzeButton").disabled = false;
     $("uploadNote").textContent = err.message;
   }
 };
@@ -753,10 +814,35 @@ $("applyButton").onclick = async () => {
     setStatus(err.message, true);
   }
 };
-$("newSession").onclick = () => {
+async function discardCurrentSession() {
+  if (!currentId) {
+    localStorage.removeItem("dataCleanerSession");
+    location.reload();
+    return;
+  }
+  const finished = currentState && [
+    "verified","no_changes","no_approved_changes","no_executable_changes"
+  ].includes(currentState.stage);
+  const message = currentState?.stage === "verified"
+    ? "Remove this finished session from local app storage? Download the cleaned file first if you want to keep it."
+    : finished
+      ? "Remove this finished session from local app storage and start another?"
+      : "Discard this cleaning session and remove its local working copy?";
+  if (!window.confirm(message)) {
+    return;
+  }
+  try {
+    await api(`/api/sessions/${currentId}`, {method:"DELETE"});
+  } catch (err) {
+    setStatus("Could not remove the local session: " + err.message, true);
+    return;
+  }
   localStorage.removeItem("dataCleanerSession");
+  currentId = null;
   location.reload();
-};
+}
+$("discardSession").onclick = discardCurrentSession;
+$("newSession").onclick = discardCurrentSession;
 
 (async () => {
   if (!currentId) return;

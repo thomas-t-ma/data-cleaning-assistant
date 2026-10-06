@@ -2,9 +2,28 @@
 
 A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.17.0**.
+Current version: **v0.18.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.18.0 — first-run UX and local-session privacy
+
+v0.18 makes the desktop workflow more understandable for ordinary spreadsheet users
+without removing the underlying review controls.
+
+- The start screen now explains the three core guarantees: data stays local, every
+  change is reviewed first, and the original file is preserved.
+- Desktop/browser upload now exposes the engine's existing macro-enabled Excel
+  support (`.xlsm`) alongside CSV, XLSX, and Parquet.
+- Session stages use human-facing labels and a simple Analyze → Review → Clean
+  progress indicator instead of exposing internal workflow names.
+- An active session can be explicitly discarded. Discarding removes the app-owned
+  uploaded source copy and run artifacts from local session storage instead of
+  leaving orphaned data behind.
+- Finished sessions require confirmation before local removal, and verified sessions
+  remind the user to download the cleaned copy first.
+- Upload analysis disables the Analyze button while work is in progress to prevent
+  accidental duplicate submissions.
 
 ## v0.17.0 — desktop-first application shell
 
