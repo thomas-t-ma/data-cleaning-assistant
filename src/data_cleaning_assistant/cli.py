@@ -2250,6 +2250,9 @@ def _guided_status_table(session: GuidedSession) -> Table:
     table.add_row("Stage", session.stage.value)
     table.add_row("Source", session.source_path)
     table.add_row("Workspace", session.workspace)
+    table.add_row("Planning mode", session.planning_mode)
+    if session.model:
+        table.add_row("Model", session.model)
     table.add_row("Approved actions", str(session.approved_action_count))
     table.add_row("Executed actions", str(session.executed_action_count))
     table.add_row("Cleaned output", session.cleaned_path)
@@ -2259,6 +2262,8 @@ def _guided_status_table(session: GuidedSession) -> Table:
         table.add_row("Plan", session.plan_path)
     if session.reviewed_plan_path:
         table.add_row("Reviewed plan", session.reviewed_plan_path)
+    if session.ai_provenance_path:
+        table.add_row("AI provenance", session.ai_provenance_path)
     if session.verification_path:
         table.add_row("Verification", session.verification_path)
     return table
@@ -2281,6 +2286,7 @@ def _continue_guided_session(
     session: GuidedSession,
     *,
     sample: int,
+    provider=None,
 ) -> None:
     source = Path(session.source_path)
     workspace = Path(session.workspace)
@@ -2320,7 +2326,22 @@ def _continue_guided_session(
         )
 
     if session.stage == GuidedStage.PLANNING:
-        plan = prepare_guided_plan(session)
+        planning_provider = provider
+        if session.planning_mode == "ai" and planning_provider is None:
+            if session.provider not in {None, "ollama"}:
+                raise ValueError(
+                    f"Guided resume does not know how to reconnect provider "
+                    f"{session.provider!r}."
+                )
+            planning_provider = OllamaProvider(
+                session.ollama_url,
+                think=session.think,
+            )
+            resolve_model(planning_provider, session.model)
+        plan = prepare_guided_plan(
+            session,
+            provider=planning_provider,
+        )
         if session.stage == GuidedStage.NO_CHANGES:
             console.print(
                 "[green]No reviewable cleaning changes were found.[/green] "
@@ -2439,6 +2460,31 @@ def guided_clean_command(
             help="Optional already-confirmed StudySchema; otherwise a draft is reviewed",
         ),
     ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            "-m",
+            help=(
+                "Optional installed Ollama model for bounded semantic review; "
+                "omit for deterministic-only planning"
+            ),
+        ),
+    ] = None,
+    url: Annotated[
+        str | None,
+        typer.Option(
+            "--url",
+            help="Ollama base URL used with --model",
+        ),
+    ] = None,
+    think: Annotated[
+        bool,
+        typer.Option(
+            "--think/--no-think",
+            help="Enable Ollama thinking mode when --model is used",
+        ),
+    ] = False,
     sample: Annotated[
         int,
         typer.Option(
@@ -2449,19 +2495,42 @@ def guided_clean_command(
         ),
     ] = 5,
 ) -> None:
-    """Run the safe deterministic cleaning workflow as one guided session."""
+    """Run the safe cleaning workflow as one guided session."""
     source = input_path.expanduser().resolve()
     selected_workspace = (
         workspace
         if workspace is not None
         else source.with_name(f"{source.stem}_cleaning_run")
     )
+
+    planning_provider = None
+    selected_model = None
+    planning_mode = "deterministic"
+    provider_name = None
+    provider_url = None
+    if model is not None:
+        planning_provider = OllamaProvider(url, think=think)
+        try:
+            selected_model = resolve_model(planning_provider, model)
+        except (AIProviderError, ValueError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        planning_mode = "ai"
+        provider_name = planning_provider.name
+        provider_url = planning_provider.base_url
+    elif url is not None or think:
+        raise typer.BadParameter("Ollama options require a model.")
+
     try:
         session = create_guided_session(
             source,
             selected_workspace,
             output_path=output,
             schema_path=schema_path,
+            planning_mode=planning_mode,
+            provider=provider_name,
+            model=selected_model,
+            ollama_url=provider_url,
+            think=think,
         )
     except (FileExistsError, FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -2474,8 +2543,12 @@ def guided_clean_command(
         "A cleaned copy is written only after completed approval.[/dim]"
     )
     try:
-        _continue_guided_session(session, sample=sample)
-    except (FileNotFoundError, ValueError) as exc:
+        _continue_guided_session(
+            session,
+            sample=sample,
+            provider=planning_provider,
+        )
+    except (AIProviderError, FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
@@ -2499,7 +2572,7 @@ def guided_resume_command(
     try:
         session = load_guided_session(workspace)
         _continue_guided_session(session, sample=sample)
-    except (FileNotFoundError, ValueError) as exc:
+    except (AIProviderError, FileNotFoundError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
