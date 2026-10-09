@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.0
+
+- Redesigned the first-run desktop/browser experience around a simple Analyze → Review → Clean progression.
+- Added prominent local-only, review-first, and original-preservation explanations before a dataset is selected.
+- Replaced internal stage names with plain-language progress labels such as **Understand fields**, **Review changes**, and **Ready to clean**.
+- Added XLSM uploads to the desktop/browser workflow, matching the Excel support already present in the core engine.
+- Added explicit session discard/removal so users can delete the app-owned uploaded copy and run artifacts from local storage.
+- Fail closed when local session deletion fails: the UI keeps the session visible instead of pretending sensitive local files were removed.
+- Added regression coverage for XLSM upload, session deletion, deletion failure, privacy copy, and first-run UI elements.
+- Removed remaining research-specific product positioning from the general-purpose interface and documentation.
+
+
 ## 0.17.0
 
 - Added a desktop-first application shell using pywebview while preserving the existing local FastAPI interface and cleaning engine.
