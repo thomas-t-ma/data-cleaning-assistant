@@ -814,6 +814,22 @@ def evaluate_offline_command(
     )
     console.print(summary)
 
+    suite_table = Table(title="Coverage by suite")
+    suite_table.add_column("Suite")
+    suite_table.add_column("Cases", justify="right")
+    suite_table.add_column("Required effects", justify="right")
+    suite_table.add_column("Unsafe executable", justify="right")
+    suite_table.add_column("Prohibited exposure", justify="right")
+    for suite_summary in report.suite_summaries:
+        suite_table.add_row(
+            suite_summary.suite,
+            f"{suite_summary.passed_cases}/{suite_summary.case_count}",
+            f"{suite_summary.required_hits}/{suite_summary.required_total}",
+            str(suite_summary.unsafe_executable_proposals),
+            str(suite_summary.prohibited_candidate_exposures),
+        )
+    console.print(suite_table)
+
     semantic = report.semantic_coverage
     semantic_table = Table(title="Semantic detector coverage (no model decisions)")
     semantic_table.add_column("Category")
@@ -1049,7 +1065,7 @@ def ai_benchmark_command(
     ] = 1,
     suite: Annotated[
         str,
-        typer.Option("--suite", help="Benchmark suite: core, research, or all"),
+        typer.Option("--suite", help="Benchmark suite: core, research, general, or all"),
     ] = "core",
     output: Annotated[
         Path,
@@ -1070,8 +1086,10 @@ def ai_benchmark_command(
     """Benchmark a local model on synthetic cleaning cases with hidden answer keys."""
     provider = OllamaProvider(url, think=think)
     normalized_suite = suite.strip().casefold()
-    if normalized_suite not in {"core", "research", "all"}:
-        raise typer.BadParameter("--suite must be one of: core, research, all.")
+    if normalized_suite not in {"core", "research", "general", "all"}:
+        raise typer.BadParameter(
+            "--suite must be one of: core, research, general, all."
+        )
     try:
         selected_model = resolve_model(provider, model)
     except (AIProviderError, ValueError) as exc:
