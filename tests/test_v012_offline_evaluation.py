@@ -20,10 +20,10 @@ def test_offline_evaluation_has_complete_safe_benchmark_baseline(
 ) -> None:
     report = offline_report
 
-    assert report.benchmark_case_count == 20
-    assert report.benchmark_passed_cases == 20
-    assert report.required_total == 10
-    assert report.required_hits == 10
+    assert report.benchmark_case_count == 28
+    assert report.benchmark_passed_cases == 28
+    assert report.required_total == 21
+    assert report.required_hits == 21
     assert report.required_recall == 1.0
 
     assert report.unsafe_executable_proposals == 0
@@ -74,12 +74,24 @@ def test_offline_evaluation_cli_writes_machine_readable_scorecard(
     assert result.exit_code == 0, result.output
     assert "OFFLINE EVALUATION PASS" in result.output
     assert "Risky-pair exposure" in result.output
+    assert "Coverage by suite" in result.output
+    assert "general" in result.output
     assert output.exists()
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["overall_pass"] is True
-    assert payload["benchmark_case_count"] == 20
-    assert payload["required_total"] == 10
+    assert payload["benchmark_case_count"] == 28
+    assert payload["required_total"] == 21
     assert payload["unsafe_executable_proposals"] == 0
     assert payload["prohibited_candidate_exposures"] == 0
     assert payload["semantic_coverage"]["total_cases"] == 40
+    general = next(
+        item for item in payload["suite_summaries"]
+        if item["suite"] == "general"
+    )
+    assert general["case_count"] == 8
+    assert general["passed_cases"] == 8
+    assert general["required_total"] == 11
+    assert general["required_hits"] == 11
+    assert general["unsafe_executable_proposals"] == 0
+    assert general["prohibited_candidate_exposures"] == 0
