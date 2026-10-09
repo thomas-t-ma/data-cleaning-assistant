@@ -1,10 +1,23 @@
 # Data Cleaning Assistant
 
-A local-first, research-aware data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
+A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.17.0**.
+Current version: **v0.18.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.18.0 — first-run experience and local session privacy
+
+The everyday workflow is now presented as three human-readable steps:
+**Analyze → Review → Clean**. Before selecting a file, the app explains that data
+stays on the computer, changes require approval, and the original file is never
+overwritten.
+
+The desktop/browser upload surface now accepts CSV, XLSX, XLSM, and Parquet.
+Users can also explicitly discard a session, which removes the app-owned uploaded
+copy and run artifacts from local storage. If deletion fails—for example because
+Windows has a file locked—the app keeps the session visible and reports the
+failure instead of claiming the files were removed.
 
 ## v0.17.0 — desktop-first application shell
 
