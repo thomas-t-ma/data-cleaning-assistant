@@ -121,18 +121,49 @@ def _evaluate_benchmark_case(
     )
 
     notes: list[str] = []
-    if required_hits < len(case.required):
-        notes.append(
-            f"Missed {len(case.required) - required_hits} required effect(s)."
+    missed_required = [
+        effect
+        for effect in case.required
+        if not any(effect.matches_action(action) for action in plan.actions)
+        and not any(
+            effect.matches_action(candidate.action)
+            for candidate in semantic_candidates
         )
-    if unsafe_executable:
-        notes.append(
-            f"{unsafe_executable} forbidden effect(s) appeared as executable proposals."
+    ]
+    if missed_required:
+        labels = ", ".join(
+            f"{effect.type.value}:{effect.column or '(table)'}"
+            for effect in missed_required
         )
-    if prohibited_exposure:
-        notes.append(
-            f"{prohibited_exposure} prohibited effect(s) were exposed as AI candidates."
+        notes.append(f"Missed required effect(s): {labels}.")
+
+    unsafe_matches = [
+        effect
+        for effect in case.forbidden
+        if any(effect.matches_action(action) for action in plan.actions)
+    ]
+    if unsafe_matches:
+        labels = ", ".join(
+            f"{effect.type.value}:{effect.column or '(table)'}"
+            for effect in unsafe_matches
         )
+        notes.append(f"Forbidden executable effect(s): {labels}.")
+
+    prohibited_matches = [
+        effect
+        for effect in case.must_not_expose
+        if any(
+            effect.matches_action(candidate.action)
+            for candidate in all_candidates
+        )
+    ]
+    if prohibited_matches:
+        labels = ", ".join(
+            f"{effect.type.value}:{effect.column or '(table)'}"
+            for effect in prohibited_matches
+        )
+        notes.append(f"Prohibited candidate exposure(s): {labels}.")
+
     if risky_semantic:
         notes.append(
             f"{risky_semantic} risky pair(s) were surfaced for semantic review."
