@@ -509,15 +509,255 @@ def research_benchmark_cases() -> list[BenchmarkCase]:
     ]
 
 
+
+def general_benchmark_cases() -> list[BenchmarkCase]:
+    """Cross-domain cases for ordinary business and personal data exports."""
+    return [
+        BenchmarkCase(
+            id="general_hr_employee_export",
+            description=(
+                "An employee export should normalize a coherent month-first hire-date column "
+                "and an explicit N/A salary token without treating phone numbers as measurements."
+            ),
+            csv_text=(
+                "Employee_ID,Join_Date,Salary,Phone\n"
+                "EMP001,11/27/2021,55000,-1651623197\n"
+                "EMP002,6/30/2023,N/A,-1898471390\n"
+                "EMP003,9/21/2022,62000,-5596363211\n"
+                "EMP004,4/2/2021,58000,-3476490784\n"
+                "EMP005,7/10/2020,60000,-1586734256\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.STANDARDIZE_DATES,
+                    column="Join_Date",
+                    parameters=None,
+                ),
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_MISSING,
+                    column="Salary",
+                    parameters={"values": ["N/A"]},
+                ),
+            ],
+            must_not_expose=[
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="Phone",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="general_sales_order_export",
+            description=(
+                "A sales export should standardize mixed order dates and remove only "
+                "surrounding whitespace from a status label."
+            ),
+            csv_text=(
+                "Order_ID,Order_Date,Status,Amount\n"
+                "ORD001,2026-01-01,Shipped,125.50\n"
+                "ORD002,01/13/2026, Shipped ,89.00\n"
+                "ORD003,02/14/2026,Pending,210.00\n"
+                "ORD004,03/18/2026,Delivered,44.25\n"
+                "ORD005,04/22/2026,Delivered,71.00\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.STANDARDIZE_DATES,
+                    column="Order_Date",
+                    parameters=None,
+                ),
+                BenchmarkEffect(
+                    type=ActionType.TRIM_WHITESPACE,
+                    column="Status",
+                    parameters={},
+                ),
+            ],
+        ),
+        BenchmarkCase(
+            id="general_survey_free_response",
+            description=(
+                "Survey context labels such as Unknown must remain explicit, and a comment "
+                "field must not be collapsed into categories merely because answers repeat."
+            ),
+            csv_text=(
+                "Respondent_ID,Satisfaction,Comment\n"
+                "R001,Satisfied,Great service\n"
+                "R002,Unknown,Great service\n"
+                "R003,Dissatisfied,Great servce\n"
+                "R004,Satisfied,Great service\n"
+                "R005,Satisfied,Would use again\n"
+            ),
+            must_not_expose=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_MISSING,
+                    column="Satisfaction",
+                    parameters=None,
+                ),
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="Comment",
+                    parameters=None,
+                ),
+            ],
+        ),
+        BenchmarkCase(
+            id="general_inventory_export",
+            description=(
+                "Inventory quantities may be numeric-like with an explicit text exception, "
+                "while a zero-padded SKU must remain an identifier."
+            ),
+            csv_text=(
+                "SKU,Quantity,Warehouse\n"
+                "00123,10,A\n"
+                "00456,12,A\n"
+                "00789,backorder,B\n"
+                "00999,8,B\n"
+                "00111,15,B\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="Quantity",
+                    parameters={"unparseable": "keep"},
+                )
+            ],
+            must_not_expose=[
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="SKU",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="general_finance_statement_export",
+            description=(
+                "A finance export should normalize statement dates and parseable balances "
+                "without inventing a value for an explicit pending balance."
+            ),
+            csv_text=(
+                "Account_ID,Statement_Date,Balance\n"
+                "ACC001,2026-01-01,100.50\n"
+                "ACC002,01/15/2026,200\n"
+                "ACC003,02/20/2026,pending\n"
+                "ACC004,03/18/2026,150.25\n"
+                "ACC005,04/22/2026,180\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.STANDARDIZE_DATES,
+                    column="Statement_Date",
+                    parameters=None,
+                ),
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="Balance",
+                    parameters={"unparseable": "keep"},
+                ),
+            ],
+        ),
+        BenchmarkCase(
+            id="general_education_roster",
+            description=(
+                "A student roster should standardize enrollment dates and harmless "
+                "surrounding whitespace without coercing the student identifier."
+            ),
+            csv_text=(
+                "Student_ID,Enrollment_Date,Standing\n"
+                "S001,2025-08-15, Good \n"
+                "S002,8/20/2025,Good\n"
+                "S003,8/21/2025,Probation\n"
+                "S004,8/22/2025,Good\n"
+                "S005,8/23/2025,Good\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.STANDARDIZE_DATES,
+                    column="Enrollment_Date",
+                    parameters=None,
+                ),
+                BenchmarkEffect(
+                    type=ActionType.TRIM_WHITESPACE,
+                    column="Standing",
+                    parameters={},
+                ),
+            ],
+            must_not_expose=[
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="Student_ID",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="general_crm_contact_export",
+            description=(
+                "A CRM export should clean surrounding status whitespace while keeping "
+                "phone-like values out of quantitative numeric-cleaning logic."
+            ),
+            csv_text=(
+                "Contact_ID,Email,Phone,Lead_Status\n"
+                "C001,alice@example.com,-1651623197, New \n"
+                "C002,bob@example.com,-1898471390,Qualified\n"
+                "C003,not-an-email,-5596363211,Contacted\n"
+                "C004,dana@example.com,-3476490784,Qualified\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.TRIM_WHITESPACE,
+                    column="Lead_Status",
+                    parameters={},
+                )
+            ],
+            must_not_expose=[
+                BenchmarkEffect(
+                    type=ActionType.COERCE_NUMERIC,
+                    column="Phone",
+                    parameters=None,
+                )
+            ],
+        ),
+        BenchmarkCase(
+            id="general_logistics_carrier_typo",
+            description=(
+                "A clear one-character carrier-name typo should reach bounded semantic "
+                "normalization rather than requiring a domain-specific hard-coded rule."
+            ),
+            csv_text=(
+                "Shipment_ID,Carrier,Ship_Date\n"
+                "SH001,DHL Express,2026-05-01\n"
+                "SH002,DHL Express,2026-05-02\n"
+                "SH003,DHL Expres,2026-05-03\n"
+                "SH004,DHL Express,2026-05-04\n"
+            ),
+            required=[
+                BenchmarkEffect(
+                    type=ActionType.NORMALIZE_CATEGORIES,
+                    column="Carrier",
+                    parameters={"mapping": {"DHL Expres": "DHL Express"}},
+                )
+            ],
+        ),
+    ]
+
+
 def benchmark_cases(suite: str = "core") -> list[BenchmarkCase]:
     normalized = suite.strip().casefold()
     if normalized == "core":
         return core_benchmark_cases()
     if normalized == "research":
         return research_benchmark_cases()
+    if normalized == "general":
+        return general_benchmark_cases()
     if normalized == "all":
-        return core_benchmark_cases() + research_benchmark_cases()
-    raise ValueError("Benchmark suite must be one of: core, research, all.")
+        return (
+            core_benchmark_cases()
+            + research_benchmark_cases()
+            + general_benchmark_cases()
+        )
+    raise ValueError("Benchmark suite must be one of: core, research, general, all.")
 
 
 def _matches_any(action: CleaningAction, effects: list[BenchmarkEffect]) -> bool:
