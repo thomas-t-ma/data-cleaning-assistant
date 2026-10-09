@@ -2,9 +2,36 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.18.0**.
+Current version: **v0.19.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.19.0 — cross-domain generalization gauntlet
+
+The offline scorecard now includes eight ordinary-domain fixtures in addition to
+the established core and research suites: employee/HR, sales, survey, inventory,
+finance, education, CRM/contact, and shipping/logistics exports.
+
+The release baseline is **28/28 benchmark cases** and **21/21 required effects**
+with zero unsafe executable proposals and zero prohibited candidate exposures.
+
+Two generic engine gaps exposed by the new suite were fixed:
+
+- date-named fields with fully parseable but inconsistent/noncanonical date
+  formatting are now reviewable for ISO standardization, while timestamp/time
+  values remain protected from formatting-only date conversion;
+- small fields explicitly shaped like free responses (for example Comment or
+  Notes) are protected from fuzzy category merging even when repeated responses
+  make them look superficially categorical.
+
+Run the scorecard without Ollama or network access:
+
+```bash
+data-cleaner evaluate-offline
+```
+
+The CLI reports core, research, and general-purpose results separately so a
+domain-specific improvement cannot hide a regression elsewhere.
 
 ## v0.18.0 — first-run experience and local session privacy
 
