@@ -282,13 +282,16 @@ def test_research_benchmark_cases_have_real_candidate_surface(tmp_path: Path) ->
 def test_benchmark_suite_selection_is_stable() -> None:
     core = benchmark_cases("core")
     research = benchmark_cases("research")
+    general = benchmark_cases("general")
     combined = benchmark_cases("all")
 
     assert len(core) == 8
     assert len(research) >= 10
+    assert len(general) == 8
     assert [case.id for case in combined] == [
         *[case.id for case in core],
         *[case.id for case in research],
+        *[case.id for case in general],
     ]
 
 
