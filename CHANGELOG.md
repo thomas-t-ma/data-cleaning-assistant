@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.19.0
+
+- Added an eight-case cross-domain generalization suite covering HR, sales, surveys, inventory, finance, education, CRM/contact exports, and logistics.
+- Expanded the offline baseline from 20 to 28 benchmark cases and from 10 to 21 required effects while preserving zero unsafe executable proposals and zero prohibited candidate exposures.
+- Added per-suite scorecard reporting so core, research, and general-purpose coverage are visible independently.
+- Added `ai-benchmark --suite general` and included the general suite in `--suite all`.
+- Improved benchmark failure diagnostics to name the exact missed or prohibited effect.
+- Detect parseable but noncanonical/mixed formatting in date-named fields, not only malformed date values.
+- Preserve timestamp/time information by limiting the new formatting-only date rule to date-only fields.
+- Strengthened free-response detection for small Comment/Notes-style columns so repeated prose cannot leak into fuzzy category merging.
+- Added direct regression tests for mixed parseable date formats, small free-response fields, and cross-domain suite composition.
+
+
 ## 0.18.0
 
 - Redesigned the first-run desktop/browser experience around a simple Analyze → Review → Clean progression.

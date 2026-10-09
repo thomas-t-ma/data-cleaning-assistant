@@ -261,27 +261,70 @@ def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]
     ]
     if len(values) < 3:
         return []
-    parsed = [parse_date(value) for value in values]
+
     numeric_order, order_evidence = infer_numeric_date_order(series)
+    parsed = [
+        parse_date(value, numeric_order=numeric_order)
+        for value in values
+    ]
     success = sum(value is not None for value in parsed)
     ratio = success / len(values)
     likely_date = DATE_NAME_PATTERN.search(column) is not None or ratio >= 0.60
-    if not likely_date or success == len(values) or success == 0:
+    if not likely_date or success == 0:
         return []
 
-    bad_values = sorted(
-        {
-            str(value)
-            for value, parsed_value in zip(values, parsed)
-            if parsed_value is None
-        }
+    unparseable = [
+        str(value)
+        for value, parsed_value in zip(values, parsed, strict=False)
+        if parsed_value is None
+    ]
+    noncanonical = [
+        str(value)
+        for value, parsed_value in zip(values, parsed, strict=False)
+        if parsed_value is not None
+        and str(value).strip() != parsed_value.date().isoformat()
+    ]
+
+    # If every value already uses canonical YYYY-MM-DD, there is nothing to do.
+    if not unparseable and not noncanonical:
+        return []
+
+    # Broadening from malformed dates to merely noncanonical dates is limited to
+    # date-named fields and date-only values. This avoids silently stripping time
+    # information from timestamp/time fields.
+    date_named = re.search(r"date|dob|birth", column, re.IGNORECASE) is not None
+    has_time_component = any(
+        parsed_value is not None
+        and (
+            parsed_value.hour
+            or parsed_value.minute
+            or parsed_value.second
+            or parsed_value.microsecond
+        )
+        for parsed_value in parsed
     )
+    if not unparseable and (not date_named or has_time_component):
+        return []
+
+    affected_values = set(unparseable) | set(noncanonical)
     full_mask = [
         not is_missing_like(value)
         and not is_contextual_missing_label(value)
-        and parse_date(value) is None
+        and str(value).strip() in affected_values
         for value in series.tolist()
     ]
+
+    if unparseable:
+        description = (
+            f"{ratio:.1%} of non-null values could be interpreted as dates. "
+            "Recognized dates can be standardized while unparseable values remain unchanged."
+        )
+    else:
+        description = (
+            "All non-null values could be interpreted as dates, but the column uses "
+            "noncanonical or mixed date formatting."
+        )
+
     return [
         Issue(
             id=_id(),
@@ -289,22 +332,25 @@ def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]
             severity=Severity.MEDIUM,
             table=table,
             column=column,
-            title="Date-like column contains unparseable values",
-            description=f"{ratio:.1%} of non-null values could be interpreted as dates.",
+            title="Date-like column uses inconsistent or noncanonical formatting",
+            description=description,
             confidence=max(0.70, ratio),
-            affected_count=len(values) - success,
+            affected_count=sum(full_mask),
             row_indices_sample=_sample_rows(full_mask),
             evidence={
                 "date_parse_ratio": ratio,
-                "unparseable_examples": bad_values[:20],
+                "unparseable_examples": sorted(set(unparseable))[:20],
+                "noncanonical_examples": sorted(set(noncanonical))[:20],
                 "numeric_order": numeric_order,
                 "numeric_order_evidence": order_evidence,
             },
-            suggested_action="Review malformed values before standardizing the date format.",
+            suggested_action=(
+                "Review the examples before standardizing recognized dates to YYYY-MM-DD; "
+                "unparseable values remain unchanged."
+            ),
             auto_fix_safe=False,
         )
     ]
-
 
 EMAIL_VALUE_PATTERN = re.compile(
     r"^[^@\s]+@[^@\s]+\.[^@\s]+$",

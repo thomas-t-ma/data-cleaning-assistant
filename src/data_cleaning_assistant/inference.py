@@ -121,21 +121,34 @@ def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
     if len(values) < 3:
         return False
 
-    unique_ratio = len(set(values)) / len(values)
-    if len(set(values)) <= 10 or unique_ratio < 0.60:
-        return False
-
+    unique_count = len(set(values))
+    unique_ratio = unique_count / len(values)
     word_counts = [len(value.split()) for value in values]
-    long_response_ratio = sum(
-        len(value) >= 40 or words >= 8
-        for value, words in zip(values, word_counts, strict=False)
-    ) / len(values)
     name_hint = re.search(
         r"\b(comment|comments|note|notes|description|details|explain|"
         r"specify|please\s+paste|free[- ]?text)\b",
         name,
         re.IGNORECASE,
     ) is not None
+
+    # Explicit free-response field names are strong structural evidence even
+    # in small exports where repeated answers make cardinality look categorical.
+    # Require prose-shaped values as a second guard so fields such as
+    # "comment_code" with short Yes/No codes are not automatically excluded.
+    prose_like_ratio = sum(
+        len(value) >= 12 or words >= 2
+        for value, words in zip(values, word_counts, strict=False)
+    ) / len(values)
+    if name_hint and unique_ratio >= 0.40 and prose_like_ratio >= 0.60:
+        return True
+
+    if unique_count <= 10 or unique_ratio < 0.60:
+        return False
+
+    long_response_ratio = sum(
+        len(value) >= 40 or words >= 8
+        for value, words in zip(values, word_counts, strict=False)
+    ) / len(values)
 
     # High-diversity prose should not be treated as a category codebook even
     # when a few repeated short answers happen to differ only by case.

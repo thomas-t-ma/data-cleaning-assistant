@@ -30,6 +30,16 @@ class OfflineCaseResult(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class OfflineSuiteSummary(BaseModel):
+    suite: str
+    case_count: int
+    passed_cases: int
+    required_total: int
+    required_hits: int
+    unsafe_executable_proposals: int
+    prohibited_candidate_exposures: int
+
+
 class SemanticCoverageSummary(BaseModel):
     total_cases: int
     safe_cases: int
@@ -59,6 +69,7 @@ class OfflineEvaluationReport(BaseModel):
     coverage_pass: bool
     overall_pass: bool
     semantic_coverage: SemanticCoverageSummary
+    suite_summaries: list[OfflineSuiteSummary] = Field(default_factory=list)
     cases: list[OfflineCaseResult] = Field(default_factory=list)
 
 
@@ -110,18 +121,49 @@ def _evaluate_benchmark_case(
     )
 
     notes: list[str] = []
-    if required_hits < len(case.required):
-        notes.append(
-            f"Missed {len(case.required) - required_hits} required effect(s)."
+    missed_required = [
+        effect
+        for effect in case.required
+        if not any(effect.matches_action(action) for action in plan.actions)
+        and not any(
+            effect.matches_action(candidate.action)
+            for candidate in semantic_candidates
         )
-    if unsafe_executable:
-        notes.append(
-            f"{unsafe_executable} forbidden effect(s) appeared as executable proposals."
+    ]
+    if missed_required:
+        labels = ", ".join(
+            f"{effect.type.value}:{effect.column or '(table)'}"
+            for effect in missed_required
         )
-    if prohibited_exposure:
-        notes.append(
-            f"{prohibited_exposure} prohibited effect(s) were exposed as AI candidates."
+        notes.append(f"Missed required effect(s): {labels}.")
+
+    unsafe_matches = [
+        effect
+        for effect in case.forbidden
+        if any(effect.matches_action(action) for action in plan.actions)
+    ]
+    if unsafe_matches:
+        labels = ", ".join(
+            f"{effect.type.value}:{effect.column or '(table)'}"
+            for effect in unsafe_matches
         )
+        notes.append(f"Forbidden executable effect(s): {labels}.")
+
+    prohibited_matches = [
+        effect
+        for effect in case.must_not_expose
+        if any(
+            effect.matches_action(candidate.action)
+            for candidate in all_candidates
+        )
+    ]
+    if prohibited_matches:
+        labels = ", ".join(
+            f"{effect.type.value}:{effect.column or '(table)'}"
+            for effect in prohibited_matches
+        )
+        notes.append(f"Prohibited candidate exposure(s): {labels}.")
+
     if risky_semantic:
         notes.append(
             f"{risky_semantic} risky pair(s) were surfaced for semantic review."
@@ -219,7 +261,7 @@ def run_offline_evaluation() -> OfflineEvaluationReport:
     with TemporaryDirectory(prefix="data-cleaner-evaluation-") as temp_dir:
         root = Path(temp_dir)
 
-        for suite in ("core", "research"):
+        for suite in ("core", "research", "general"):
             suite_dir = root / suite
             suite_dir.mkdir(parents=True, exist_ok=True)
             for case in benchmark_cases(suite):
@@ -253,6 +295,25 @@ def run_offline_evaluation() -> OfflineEvaluationReport:
     coverage_pass = required_hits == required_total
     overall_pass = safety_pass and coverage_pass
 
+    suite_summaries: list[OfflineSuiteSummary] = []
+    for suite in ("core", "research", "general"):
+        suite_results = [item for item in results if item.suite == suite]
+        suite_summaries.append(
+            OfflineSuiteSummary(
+                suite=suite,
+                case_count=len(suite_results),
+                passed_cases=sum(item.passed for item in suite_results),
+                required_total=sum(item.required_total for item in suite_results),
+                required_hits=sum(item.required_hits for item in suite_results),
+                unsafe_executable_proposals=sum(
+                    item.unsafe_executable_proposals for item in suite_results
+                ),
+                prohibited_candidate_exposures=sum(
+                    item.prohibited_candidate_exposures for item in suite_results
+                ),
+            )
+        )
+
     return OfflineEvaluationReport(
         benchmark_case_count=len(results),
         benchmark_passed_cases=passed_cases,
@@ -276,5 +337,6 @@ def run_offline_evaluation() -> OfflineEvaluationReport:
         coverage_pass=coverage_pass,
         overall_pass=overall_pass,
         semantic_coverage=semantic_coverage,
+        suite_summaries=suite_summaries,
         cases=results,
     )
