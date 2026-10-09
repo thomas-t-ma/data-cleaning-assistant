@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -135,8 +136,8 @@ def _safe_upload_name(name: str) -> str:
     if not cleaned or cleaned in {".", ".."}:
         raise ValueError("Uploaded file must have a valid filename.")
     suffix = Path(cleaned).suffix.casefold()
-    if suffix not in {".csv", ".xlsx", ".parquet"}:
-        raise ValueError("Only CSV, XLSX, and Parquet datasets are supported.")
+    if suffix not in {".csv", ".xlsx", ".xlsm", ".parquet"}:
+        raise ValueError("Only CSV, XLSX, XLSM, and Parquet datasets are supported.")
     return cleaned
 
 
@@ -175,6 +176,15 @@ class LocalWebStore:
 
     def load(self, session_id: str) -> GuidedSession:
         return load_guided_session(self.workspace(session_id))
+
+    def delete(self, session_id: str) -> None:
+        """Delete one local browser/desktop session and all app-owned copies."""
+        workspace = self.workspace(session_id)
+        session_root = workspace.parent
+        if session_root.parent != self.root:
+            raise ValueError("Invalid session identifier.")
+        if session_root.exists():
+            shutil.rmtree(session_root)
 
     def _report(self, session: GuidedSession) -> DatasetReport:
         return DatasetReport.model_validate_json(
