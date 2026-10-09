@@ -60,4 +60,4 @@ __all__ = [
     "run_offline_evaluation",
     "verify_run",
 ]
-__version__ = "0.18.0"
+__version__ = "0.19.0"
