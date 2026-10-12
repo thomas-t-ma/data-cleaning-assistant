@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -7,7 +9,7 @@ from pydantic import BaseModel, Field
 from .inference import is_null
 from .io import load_dataset
 from .planner import propose_actions
-from .transforms import apply_plan
+from .transforms import apply_plan, write_cleaned_dataset
 
 
 class GoldenDifference(BaseModel):
@@ -205,12 +207,27 @@ def run_golden_validation(
         approve_all=True,
     )
 
-    metrics, differences = _compare_tables(
-        source_loaded.tables,
-        actual_tables,
-        expected_loaded.tables,
-        difference_limit=difference_limit,
-    )
+    # Golden validation must judge the artifact a user would actually receive,
+    # not transient in-memory dtypes. For example, numeric coercion may turn
+    # "10" into integer 10 internally, but a CSV round-trip represents both as
+    # the same textual value. Serialize through the normal writer and reload.
+    expected_suffix = Path(expected_path).suffix
+    with TemporaryDirectory(prefix="data-cleaner-golden-") as temp_dir:
+        actual_path = Path(temp_dir) / f"actual{expected_suffix}"
+        write_cleaned_dataset(
+            source_path,
+            source_loaded.tables,
+            actual_tables,
+            actual_path,
+        )
+        actual_loaded = load_dataset(actual_path)
+
+        metrics, differences = _compare_tables(
+            source_loaded.tables,
+            actual_loaded.tables,
+            expected_loaded.tables,
+            difference_limit=difference_limit,
+        )
     metrics.planned_actions = len(plan.actions)
     metrics.executed_actions = len(changeset.executions)
 
