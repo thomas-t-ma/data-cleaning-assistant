@@ -104,3 +104,35 @@ def test_validate_golden_cli_writes_machine_readable_report(tmp_path: Path) -> N
     assert payload["passed"] is True
     assert payload["metrics"]["expected_changed_cells"] == 6
     assert payload["metrics"]["remaining_different_cells"] == 0
+
+
+def test_golden_validation_compares_serialized_numeric_output(tmp_path: Path) -> None:
+    source = tmp_path / "inventory.csv"
+    golden = tmp_path / "inventory.golden.csv"
+    source.write_text(
+        "SKU,Quantity\n"
+        "00123,10\n"
+        "00456,12\n"
+        "00789,backorder\n"
+        "00999,8\n"
+        "00111,15\n",
+        encoding="utf-8",
+    )
+    golden.write_text(
+        "SKU,Quantity\n"
+        "00123,10\n"
+        "00456,12\n"
+        "00789,backorder\n"
+        "00999,8\n"
+        "00111,15\n",
+        encoding="utf-8",
+    )
+
+    report = run_golden_validation(source, golden)
+
+    assert report.passed is True
+    assert report.metrics.planned_actions == 1
+    assert report.metrics.executed_actions == 1
+    assert report.metrics.expected_changed_cells == 0
+    assert report.metrics.actual_changed_cells == 0
+    assert report.metrics.remaining_different_cells == 0
