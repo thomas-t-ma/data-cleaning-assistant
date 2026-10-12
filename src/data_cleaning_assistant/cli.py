@@ -17,6 +17,7 @@ from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
 from .engine import profile_dataset
 from .evaluation import run_offline_evaluation
+from .golden_validation import run_golden_validation
 from .guided import (
     GuidedSession,
     GuidedStage,
@@ -765,6 +766,107 @@ def schema_review_command(
         f"Rejected: [bold]{rejected}[/bold] · "
         f"Unresolved: [bold]{proposed}[/bold]"
     )
+
+
+@app.command("validate-golden")
+def validate_golden_command(
+    source_path: Annotated[
+        Path,
+        typer.Argument(help="Dirty/source dataset to evaluate"),
+    ],
+    expected_path: Annotated[
+        Path,
+        typer.Argument(help="Human-approved expected cleaned dataset"),
+    ],
+    json_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--json-output",
+            help="Optional machine-readable golden validation report",
+        ),
+    ] = None,
+    difference_limit: Annotated[
+        int,
+        typer.Option(
+            "--difference-limit",
+            min=1,
+            max=500,
+            help="Maximum mismatches retained in the report",
+        ),
+    ] = 50,
+) -> None:
+    """Compare all deterministic cleaner proposals with a golden cleaned output."""
+    try:
+        report = run_golden_validation(
+            source_path,
+            expected_path,
+            difference_limit=difference_limit,
+        )
+    except (FileNotFoundError, KeyError, OSError, TypeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    metrics = report.metrics
+    table = Table(title="Golden-pair validation")
+    table.add_column("Metric")
+    table.add_column("Result", justify="right")
+    table.add_row("Planned actions", str(metrics.planned_actions))
+    table.add_row("Executed actions", str(metrics.executed_actions))
+    table.add_row("Expected changed cells", f"{metrics.expected_changed_cells:,}")
+    table.add_row("Actual changed cells", f"{metrics.actual_changed_cells:,}")
+    table.add_row(
+        "Matched expected changes",
+        f"{metrics.matched_expected_changes:,}",
+    )
+    table.add_row("Missed expected changes", f"{metrics.missed_expected_changes:,}")
+    table.add_row("Unexpected changes", f"{metrics.unexpected_changes:,}")
+    table.add_row("Wrong replacements", f"{metrics.wrong_replacements:,}")
+    table.add_row(
+        "Remaining different cells",
+        f"{metrics.remaining_different_cells:,}",
+    )
+    table.add_row("Structural mismatches", str(metrics.structural_mismatches))
+    console.print(table)
+
+    if report.planned_action_summaries:
+        console.print(
+            "[bold]Proposed action surface:[/bold] "
+            + ", ".join(report.planned_action_summaries)
+        )
+
+    if report.differences:
+        diff_table = Table(title="First golden mismatches")
+        diff_table.add_column("Kind")
+        diff_table.add_column("Location")
+        diff_table.add_column("Source")
+        diff_table.add_column("Expected")
+        diff_table.add_column("Actual")
+        for item in report.differences:
+            location = item.table
+            if item.row_position is not None:
+                location += f" row {item.row_position}"
+            if item.column is not None:
+                location += f" · {item.column}"
+            diff_table.add_row(
+                item.kind,
+                location,
+                repr(item.source),
+                repr(item.expected),
+                repr(item.actual),
+            )
+        console.print(diff_table)
+
+    if json_output is not None:
+        output = json_output.expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[green]Golden report:[/green] {output}")
+
+    if report.passed:
+        console.print("\n[bold green]GOLDEN VALIDATION PASS[/bold green]")
+        return
+
+    console.print("\n[bold red]GOLDEN VALIDATION FAIL[/bold red]")
+    raise typer.Exit(code=2)
 
 
 @app.command("evaluate-offline")

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.20.0
+
+- Added golden-pair real-world validation: run the deterministic cleaner against a dirty dataset and compare the serialized result with a human-approved expected cleaned file.
+- Added `data-cleaner validate-golden DIRTY EXPECTED` with optional machine-readable JSON output.
+- Classify mismatches as missed expected changes, unexpected changes, wrong replacements, or structural mismatches.
+- Report planned/executed actions, expected vs actual changed-cell counts, matched expected edits, and the proposed action surface.
+- Compare after the normal output serialization/reload path so CSV numeric coercions are judged by the artifact a user actually receives rather than transient in-memory dtypes.
+- Added an employee-style golden regression mirroring the real-world partial-date-normalization failure that motivated coherent column-level date inference.
+- Added a stale-golden regression that proves incomplete expected outputs are surfaced as precise unexpected changes.
+- Added numeric CSV round-trip coverage for golden validation.
+
+
 ## 0.19.0
 
 - Added an eight-case cross-domain generalization suite covering HR, sales, surveys, inventory, finance, education, CRM/contact exports, and logistics.

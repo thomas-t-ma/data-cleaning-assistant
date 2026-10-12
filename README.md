@@ -2,9 +2,34 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.19.0**.
+Current version: **v0.20.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.20.0 — real-world golden-pair validation
+
+Synthetic benchmarks are useful, but they are not enough. v0.20 adds a local
+golden-pair validator for real messy datasets where a competent human has
+reviewed the expected cleaned result.
+
+```bash
+data-cleaner validate-golden dirty.csv expected_clean.csv \
+  --json-output golden_report.json
+```
+
+The command runs the deterministic cleaner in evaluation mode, serializes the
+result through the normal output writer, reloads it, and compares every aligned
+cell with the human-approved golden file. It reports:
+
+- matched expected changes;
+- missed expected changes;
+- unexpected cleaner edits;
+- wrong replacement values;
+- structural mismatches;
+- planned and executed action counts.
+
+This is intentionally local-only. Real validation datasets do not need to be
+committed to the repository or uploaded to a service.
 
 ## v0.19.0 — cross-domain generalization gauntlet
 
