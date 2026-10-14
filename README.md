@@ -2,9 +2,34 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.21.0**.
+Current version: **v0.22.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.22.0 — practical Excel preservation
+
+Excel support is intentionally kept narrow. The project is not trying to become
+a spreadsheet editor; the goal is to accept ordinary workbooks without damaging
+workbook features that happen to surround the tabular data being cleaned.
+
+The preservation regression suite now verifies that:
+
+- cleaning one worksheet does not disturb unrelated worksheets;
+- formulas are preserved when neighboring data cells are edited;
+- ordinary presentation metadata such as header formatting, freeze panes,
+  column widths, and sheet tab metadata survives;
+- blank and duplicate worksheet headers are not rewritten merely because data
+  cells are cleaned;
+- row deletion fails closed on formula-bearing sheets where structural edits
+  could alter formula references.
+
+Preserved Excel writes are also staged through a temporary sibling file and only
+published after a complete successful save. A failed safety check therefore does
+not leave a source copy or partial workbook behind under a misleading
+`*.cleaned.xlsx` name.
+
+This validation did **not** reveal a need for broader Excel-specific product
+scope. CSV/basic Excel remains the intended center of gravity.
 
 ## v0.21.0 — source-inspired real-world corpus
 
