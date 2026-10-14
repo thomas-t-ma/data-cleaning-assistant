@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.21.0
+
+- Added a six-case source-inspired real-world validation corpus spanning sales/orders, survey/free text, wholesale/inventory, finance, CRM/contact, and public-service exports.
+- Added `data-cleaner validate-corpus` with optional machine-readable JSON output. The command validates golden output, protected-column safety, and expected review-only findings entirely offline.
+- Corpus rows are generated specifically for this project; public UCI/NYC datasets provide schema and value-shape inspiration without redistributing third-party records.
+- Added safe timestamp normalization to `YYYY-MM-DD HH:MM:SS` while preserving time components.
+- Extended numeric date-order inference to timestamp prefixes and continue refusing ambiguous month/day timestamps unless the column contains enough directional evidence.
+- Added narrowly scoped parsing for common currency prefixes, thousands separators, and accounting-parenthesis negatives.
+- Added explicit formatted-numeric detection so currency/accounting fields become reviewable without coercing every plain digit-string column.
+- Expanded identifier-name protection to common code/key/SKU/ZIP/postal/postcode fields, preventing numeric coercion of leading-zero identifiers.
+- Expanded date/time semantic naming to common event fields such as created, updated, submitted, closed, opened, and completed.
+- Golden-pair validation now supports expected row removal such as approved exact-duplicate deletion instead of treating every row-count change as a structural failure.
+- Added direct regressions for ambiguous timestamp safety, currency/accounting parsing, code/postal identifier protection, expected duplicate removal, and the corpus CLI.
+- Release corpus baseline: **6/6 cases pass** with no executable actions on protected columns and all declared review-only contact findings present.
+
+
 ## 0.20.0
 
 - Added golden-pair real-world validation: run the deterministic cleaner against a dirty dataset and compare the serialized result with a human-approved expected cleaned file.
