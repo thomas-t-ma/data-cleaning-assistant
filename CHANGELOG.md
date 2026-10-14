@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.22.0
+
+- Added a deliberately narrow Excel preservation validation pass focused on ordinary `.xlsx` workflows rather than spreadsheet-specific feature expansion.
+- Verified that cleaning one sheet preserves unrelated sheets, formulas in neighboring cells, header font/fill, freeze panes, column widths, and sheet tab metadata.
+- Verified that blank and duplicate worksheet headers remain unchanged when cleaning data cells.
+- Added a fail-closed regression for duplicate-row deletion on formula-bearing worksheets, where row removal could alter formula references.
+- Changed preserved Excel writes to publish atomically through a temporary sibling file. Failed safety checks or workbook-save errors now leave no misleading cleaned-output artifact at the requested destination.
+- Confirmed the existing copy-and-edit workbook strategy is sufficient for basic Excel compatibility; no broader spreadsheet-engine scope was added.
+
+
 ## 0.21.0
 
 - Added a six-case source-inspired real-world validation corpus spanning sales/orders, survey/free text, wholesale/inventory, finance, CRM/contact, and public-service exports.
