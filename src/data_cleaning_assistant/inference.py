@@ -177,7 +177,8 @@ def has_explicit_numeric_format(value: Any) -> bool:
 
     if text[0] in CURRENCY_SYMBOLS:
         return True
-    if len(text) >= 2 and text[0] in "+-" and text[1:].lstrip()[:1] in CURRENCY_SYMBOLS:
+    after_sign = text[1:].lstrip()[:1] if len(text) >= 2 else ""
+    if text[0] in "+-" and after_sign and after_sign in CURRENCY_SYMBOLS:
         return True
     if (
         text.startswith("(")
