@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "0.20.0"
+  #define MyAppVersion "0.21.0"
 #endif
 
 #define MyAppName "Data Cleaning Assistant"
