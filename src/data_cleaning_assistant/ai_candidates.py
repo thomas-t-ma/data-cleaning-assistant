@@ -383,19 +383,39 @@ def build_ai_candidates(
                 )
 
         elif issue.type == "malformed_or_mixed_dates":
+            target_format = str(
+                issue.evidence.get("target_format", "%Y-%m-%d")
+            )
+            if target_format not in {
+                "%Y-%m-%d",
+                "%Y-%m-%d %H:%M:%S",
+            }:
+                target_format = "%Y-%m-%d"
+            parameters: dict[str, Any] = {
+                "format": target_format,
+                "unparseable": "keep",
+            }
+            numeric_order = issue.evidence.get("numeric_order")
+            if numeric_order in {"month_first", "day_first"}:
+                parameters["numeric_order"] = numeric_order
+            target_label = (
+                "YYYY-MM-DD HH:MM:SS"
+                if target_format == "%Y-%m-%d %H:%M:%S"
+                else "YYYY-MM-DD"
+            )
             candidates.append(
                 _make_candidate(
                     action_type=ActionType.STANDARDIZE_DATES,
                     table=issue.table,
                     column=issue.column,
-                    parameters={"format": "%Y-%m-%d", "unparseable": "keep"},
+                    parameters=parameters,
                     issue=issue,
                     evidence=issue.evidence,
                     question=(
-                        "Should parseable dates be standardized to YYYY-MM-DD while every "
-                        "unparseable value is left unchanged?"
+                        f"Should parseable date/time values be standardized to "
+                        f"{target_label} while every unparseable value is left unchanged?"
                     ),
-                    title="AI-reviewed date standardization",
+                    title="AI-reviewed date/time standardization",
                 )
             )
 
