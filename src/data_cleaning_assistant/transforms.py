@@ -5,6 +5,7 @@ import shutil
 from copy import copy, deepcopy
 from datetime import date, datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from openpyxl import load_workbook
@@ -436,13 +437,35 @@ def _write_excel_preserving_source(
     inserted_rows: dict[str, list[RowSnapshot]] | None = None,
 ) -> Path:
     keep_vba = source_path.suffix.lower() == ".xlsm"
-    shutil.copy2(source_path, output)
-    try:
-        workbook = load_workbook(output, keep_vba=keep_vba, data_only=False)
 
-            for table_name, original in original_tables.items():
-            if table_name not in cleaned_tables or table_name not in workbook.sheetnames:
-                raise ValueError(f"Cannot preserve Excel sheet {table_name!r}: sheet mapping changed.")
+    # Build beside the destination and publish only after a complete save. This
+    # prevents a failed formula-safety check or write error from leaving behind
+    # a misleading file at the requested cleaned-output path.
+    with NamedTemporaryFile(
+        prefix=f".{output.stem}.",
+        suffix=output.suffix,
+        dir=output.parent,
+        delete=False,
+    ) as handle:
+        working = Path(handle.name)
+
+    try:
+        shutil.copy2(source_path, working)
+        workbook = load_workbook(
+            working,
+            keep_vba=keep_vba,
+            data_only=False,
+        )
+
+        for table_name, original in original_tables.items():
+            if (
+                table_name not in cleaned_tables
+                or table_name not in workbook.sheetnames
+            ):
+                raise ValueError(
+                    f"Cannot preserve Excel sheet {table_name!r}: "
+                    "sheet mapping changed."
+                )
 
             cleaned = cleaned_tables[table_name]
             worksheet = workbook[table_name]
@@ -451,23 +474,43 @@ def _write_excel_preserving_source(
             if sheet_insertions:
                 if _sheet_has_formulas(worksheet):
                     raise ValueError(
-                        f"Refusing row insertion in sheet {table_name!r} because it contains formulas."
+                        f"Refusing row insertion in sheet {table_name!r} "
+                        "because it contains formulas."
                     )
-                for snapshot in sorted(sheet_insertions, key=lambda row: row.row_position):
+                for snapshot in sorted(
+                    sheet_insertions,
+                    key=lambda row: row.row_position,
+                ):
                     excel_row = snapshot.row_position + 2
                     worksheet.insert_rows(excel_row, 1)
-                    style_source = excel_row - 1 if excel_row > 2 else excel_row + 1
-                    _copy_row_style(worksheet, style_source, excel_row)
+                    style_source = (
+                        excel_row - 1
+                        if excel_row > 2
+                        else excel_row + 1
+                    )
+                    _copy_row_style(
+                        worksheet,
+                        style_source,
+                        excel_row,
+                    )
 
-                # Row reinsertion is used by audit-based undo. The cleaned dataframe is
-                # already the authoritative restored data, and formula-bearing sheets
-                # were rejected above, so rewrite values while retaining cell styles.
-                for output_row, (_, row) in enumerate(cleaned.iterrows(), start=2):
-                    for column_number, column in enumerate(cleaned.columns, start=1):
+                # Row reinsertion is used by audit-based undo. The cleaned
+                # dataframe is already authoritative, and formula-bearing sheets
+                # were rejected above, so values can be rewritten while styles
+                # remain attached to their cells.
+                for output_row, (_, row) in enumerate(
+                    cleaned.iterrows(),
+                    start=2,
+                ):
+                    for column_number, column in enumerate(
+                        cleaned.columns,
+                        start=1,
+                    ):
                         value = row[column]
-                        worksheet.cell(row=output_row, column=column_number).value = (
-                            None if is_null(value) else value
-                        )
+                        worksheet.cell(
+                            row=output_row,
+                            column=column_number,
+                        ).value = None if is_null(value) else value
                 continue
 
             cleaned_index = set(cleaned.index)
@@ -479,37 +522,49 @@ def _write_excel_preserving_source(
 
             if deleted_positions and _sheet_has_formulas(worksheet):
                 raise ValueError(
-                    f"Refusing row deletion in sheet {table_name!r} because it contains formulas. "
-                    "Removing worksheet rows can change formula references. Review the workbook or "
-                    "export to CSV/Parquet for row deletion."
+                    f"Refusing row deletion in sheet {table_name!r} "
+                    "because it contains formulas. Removing worksheet rows can "
+                    "change formula references. Review the workbook or export "
+                    "to CSV/Parquet for row deletion."
                 )
 
             for position in sorted(deleted_positions, reverse=True):
                 worksheet.delete_rows(position + 2, 1)
 
-            for output_row, original_index in enumerate(cleaned.index, start=2):
+            for output_row, original_index in enumerate(
+                cleaned.index,
+                start=2,
+            ):
                 if original_index not in original.index:
                     raise ValueError(
-                        "Excel preservation currently supports cell edits and audited row reinsertion, "
-                        "not arbitrary inserted rows."
+                        "Excel preservation currently supports cell edits and "
+                        "audited row reinsertion, not arbitrary inserted rows."
                     )
-                for column_number, column in enumerate(cleaned.columns, start=1):
+                for column_number, column in enumerate(
+                    cleaned.columns,
+                    start=1,
+                ):
                     desired = cleaned.at[original_index, column]
                     before = original.at[original_index, column]
                     if _values_equal(before, desired):
                         continue
 
-                    cell = worksheet.cell(row=output_row, column=column_number)
+                    cell = worksheet.cell(
+                        row=output_row,
+                        column=column_number,
+                    )
                     if cell.data_type == "f":
                         raise ValueError(
-                            f"Refusing to overwrite formula cell {table_name}!{cell.coordinate}."
+                            "Refusing to overwrite formula cell "
+                            f"{table_name}!{cell.coordinate}."
                         )
                     cell.value = None if is_null(desired) else desired
 
-        workbook.save(output)
+        workbook.save(working)
+        working.replace(output)
         return output
     except Exception:
-        output.unlink(missing_ok=True)
+        working.unlink(missing_ok=True)
         raise
 
 
