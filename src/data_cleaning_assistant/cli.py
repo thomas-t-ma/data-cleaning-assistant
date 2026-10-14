@@ -15,6 +15,7 @@ from .ai_context import build_ai_context
 from .ai_planner import build_review_contexts, propose_ai_plan, resolve_model
 from .ai_provider import AIProviderError, OllamaProvider
 from .benchmark import run_ai_benchmark
+from .corpus_validation import run_realworld_corpus_validation
 from .engine import profile_dataset
 from .evaluation import run_offline_evaluation
 from .golden_validation import run_golden_validation
@@ -811,6 +812,12 @@ def validate_golden_command(
     table.add_column("Result", justify="right")
     table.add_row("Planned actions", str(metrics.planned_actions))
     table.add_row("Executed actions", str(metrics.executed_actions))
+    table.add_row("Expected removed rows", f"{metrics.expected_removed_rows:,}")
+    table.add_row("Actual removed rows", f"{metrics.actual_removed_rows:,}")
+    table.add_row(
+        "Source-aligned cell metrics",
+        "yes" if metrics.source_alignment_available else "no (row layout changed)",
+    )
     table.add_row("Expected changed cells", f"{metrics.expected_changed_cells:,}")
     table.add_row("Actual changed cells", f"{metrics.actual_changed_cells:,}")
     table.add_row(
@@ -866,6 +873,81 @@ def validate_golden_command(
         return
 
     console.print("\n[bold red]GOLDEN VALIDATION FAIL[/bold red]")
+    raise typer.Exit(code=2)
+
+
+@app.command("validate-corpus")
+def validate_corpus_command(
+    json_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--json-output",
+            help="Optional machine-readable real-world corpus report",
+        ),
+    ] = None,
+) -> None:
+    """Run the built-in source-inspired golden validation corpus offline."""
+    report = run_realworld_corpus_validation()
+
+    table = Table(title="Source-inspired real-world validation corpus")
+    table.add_column("Domain")
+    table.add_column("Case")
+    table.add_column("Golden")
+    table.add_column("Protected")
+    table.add_column("Review findings")
+    table.add_column("Result")
+    for item in report.cases:
+        table.add_row(
+            item.domain,
+            item.case_id,
+            "PASS" if item.golden_pass else "FAIL",
+            "PASS" if item.protected_columns_pass else "FAIL",
+            "PASS" if item.review_findings_pass else "FAIL",
+            "PASS" if item.passed else "FAIL",
+        )
+    console.print(table)
+    console.print(
+        f"\nCases passed: [bold]{report.passed_cases}/{report.case_count}[/bold]"
+    )
+
+    failures = [item for item in report.cases if not item.passed]
+    if failures:
+        details = Table(title="Corpus failures")
+        details.add_column("Case")
+        details.add_column("Details")
+        for item in failures:
+            messages: list[str] = []
+            if not item.golden_pass:
+                metrics = item.golden_metrics
+                messages.append(
+                    "golden mismatch "
+                    f"(remaining={metrics.remaining_different_cells}, "
+                    f"structural={metrics.structural_mismatches})"
+                )
+            if item.forbidden_columns_exposed:
+                messages.append(
+                    "protected action surface: "
+                    + ", ".join(item.forbidden_columns_exposed)
+                )
+            if item.missing_review_findings:
+                messages.append(
+                    "missing review findings: "
+                    + ", ".join(item.missing_review_findings)
+                )
+            details.add_row(item.case_id, "; ".join(messages))
+        console.print(details)
+
+    if json_output is not None:
+        output = json_output.expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[green]Corpus report:[/green] {output}")
+
+    if report.passed:
+        console.print("\n[bold green]REAL-WORLD CORPUS PASS[/bold green]")
+        return
+
+    console.print("\n[bold red]REAL-WORLD CORPUS FAIL[/bold red]")
     raise typer.Exit(code=2)
 
 

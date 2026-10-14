@@ -130,10 +130,19 @@ def _missing_action(issue) -> CleaningAction | None:
 def _date_action(issue) -> CleaningAction | None:
     if issue.column is None:
         return None
-    parameters = {"format": "%Y-%m-%d", "unparseable": "keep"}
+    target_format = str(issue.evidence.get("target_format", "%Y-%m-%d"))
+    if target_format not in {"%Y-%m-%d", "%Y-%m-%d %H:%M:%S"}:
+        target_format = "%Y-%m-%d"
+    parameters = {"format": target_format, "unparseable": "keep"}
     numeric_order = issue.evidence.get("numeric_order")
     if numeric_order in {"month_first", "day_first"}:
         parameters["numeric_order"] = numeric_order
+
+    target_label = (
+        "ISO YYYY-MM-DD HH:MM:SS"
+        if target_format == "%Y-%m-%d %H:%M:%S"
+        else "ISO YYYY-MM-DD"
+    )
     return CleaningAction(
         id=_stable_action_id(
             ActionType.STANDARDIZE_DATES,
@@ -144,12 +153,12 @@ def _date_action(issue) -> CleaningAction | None:
         type=ActionType.STANDARDIZE_DATES,
         table=issue.table,
         column=issue.column,
-        title="Standardize parseable date values",
+        title="Standardize parseable date/time values",
         description=(
-            "Convert dates to ISO YYYY-MM-DD. If the column contains enough "
-            "unambiguous evidence for one numeric date convention, use that "
-            "column-level convention for otherwise ambiguous values; leave "
-            "values unchanged when the convention cannot be established safely."
+            f"Convert recognized values to {target_label}. If the column contains "
+            "enough unambiguous evidence for one numeric date convention, use that "
+            "column-level convention for otherwise ambiguous values; leave values "
+            "unchanged when the convention cannot be established safely."
         ),
         parameters=parameters,
         confidence=issue.confidence,

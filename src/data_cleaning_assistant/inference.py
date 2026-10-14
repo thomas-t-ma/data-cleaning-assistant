@@ -39,18 +39,24 @@ CONTEXTUAL_MISSING_TOKENS = {
 MISSING_TOKENS = STRUCTURAL_MISSING_TOKENS | CONTEXTUAL_MISSING_TOKENS
 
 DATE_NAME_PATTERN = re.compile(
-    r"(^|_)(date|dob|birth|time|timestamp|dt)(_|$)|date|dob|birth|timestamp",
+    r"(^|_)(date|dob|birth|time|timestamp|dt|created|updated|submitted|"
+    r"closed|opened|completed)(_|$)|date|dob|birth|timestamp",
     re.IGNORECASE,
 )
 ID_NAME_PATTERN = re.compile(
-    r"(?:^|_)(?:id|mrn|subject|patient|participant|accession|specimen|sample)(?:_|$)"
+    r"(?:^|_)(?:id|mrn|subject|patient|participant|accession|specimen|sample|"
+    r"sku|code|key|zip|zipcode|postal|postcode)(?:_|$)"
     r"|(?:patient|subject|participant|accession|specimen|sample).*id$"
-    r"|(?:^|_)(?:mrn|identifier)$",
+    r"|(?:^|_)(?:mrn|identifier|postalcode|zipcode)$",
     re.IGNORECASE,
 )
 DATE_SHAPE_PATTERN = re.compile(
     r"^\s*(?:\d{1,4}[-/]\d{1,2}[-/]\d{1,4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})"
 )
+NUMERIC_DATE_PREFIX_PATTERN = re.compile(
+    r"^\s*(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})(?=$|[T\s])"
+)
+CURRENCY_SYMBOLS = "$£€¥₹"
 PHONE_NAME_PATTERN = re.compile(
     r"(?:^|_)(?:phone|telephone|tel|mobile|cell)(?:_|$)|phone|telephone|mobile",
     re.IGNORECASE,
@@ -157,20 +163,75 @@ def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
     return name_hint and unique_ratio >= 0.60
 
 
+def has_explicit_numeric_format(value: Any) -> bool:
+    """Return True for unambiguous numeric presentation artifacts.
+
+    This is intentionally narrower than "looks numeric". Plain digit strings
+    are excluded so identifiers and zero-padded codes do not become cleanup
+    targets merely because they can be parsed as numbers.
+    """
+    if is_null(value) or not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+
+    if text[0] in CURRENCY_SYMBOLS:
+        return True
+    after_sign = text[1:].lstrip()[:1] if len(text) >= 2 else ""
+    if text[0] in "+-" and after_sign and after_sign in CURRENCY_SYMBOLS:
+        return True
+    if (
+        text.startswith("(")
+        and text.endswith(")")
+        and re.fullmatch(
+            rf"\(\s*[{re.escape(CURRENCY_SYMBOLS)}]?\s*[\d,]+(?:\.\d+)?\s*\)",
+            text,
+        )
+    ):
+        return True
+    return re.fullmatch(
+        r"[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?",
+        text,
+    ) is not None
+
+
 def parse_number(value: Any) -> float | None:
     if is_null(value) or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
         number = float(value)
         return number if math.isfinite(number) else None
-    text = str(value).strip().replace(",", "")
+
+    text = str(value).strip()
     if not text or normalize_text(text) in STRUCTURAL_MISSING_TOKENS:
         return None
+
+    accounting_negative = text.startswith("(") and text.endswith(")")
+    if accounting_negative:
+        text = text[1:-1].strip()
+
+    # Support common currency prefixes without teaching the parser to strip
+    # arbitrary letters or codes.
+    sign = ""
+    if text[:1] in {"+", "-"}:
+        sign, text = text[0], text[1:].lstrip()
+    if text[:1] in CURRENCY_SYMBOLS:
+        text = text[1:].lstrip()
+    elif not sign and len(text) >= 2 and text[0] in CURRENCY_SYMBOLS and text[1] in {"+", "-"}:
+        sign, text = text[1], text[2:].lstrip()
+
+    text = text.replace(",", "")
+    if sign:
+        text = sign + text
+
     try:
         number = float(text)
-        return number if math.isfinite(number) else None
     except ValueError:
         return None
+    if accounting_negative:
+        number = -abs(number)
+    return number if math.isfinite(number) else None
 
 
 def infer_numeric_date_order(
@@ -192,10 +253,7 @@ def infer_numeric_date_order(
 
     for value in meaningful_values(series):
         text = str(value).strip()
-        match = re.fullmatch(
-            r"(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})",
-            text,
-        )
+        match = NUMERIC_DATE_PREFIX_PATTERN.match(text)
         if match is None:
             continue
         first_text, second_text, third_text = match.groups()
@@ -256,10 +314,7 @@ def parse_date(
     if not text or not DATE_SHAPE_PATTERN.search(text):
         return None
 
-    numeric = re.fullmatch(
-        r"(\d{1,4})[-/](\d{1,2})[-/](\d{1,4})",
-        text,
-    )
+    numeric = NUMERIC_DATE_PREFIX_PATTERN.match(text)
     if numeric:
         first_text, second_text, third_text = numeric.groups()
         first = int(first_text)

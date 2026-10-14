@@ -25,6 +25,9 @@ class GoldenDifference(BaseModel):
 class GoldenValidationMetrics(BaseModel):
     planned_actions: int = 0
     executed_actions: int = 0
+    source_alignment_available: bool = True
+    expected_removed_rows: int = 0
+    actual_removed_rows: int = 0
     expected_changed_cells: int = 0
     actual_changed_cells: int = 0
     matched_expected_changes: int = 0
@@ -120,10 +123,10 @@ def _compare_tables(
                 )
             continue
 
-        if (
-            source_frame.shape != actual_frame.shape
-            or source_frame.shape != expected_frame.shape
-        ):
+        # The output must structurally match the golden file. The source is
+        # allowed to have extra rows because duplicate-row removal is a valid
+        # cleaning action.
+        if actual_frame.shape != expected_frame.shape:
             metrics.structural_mismatches += 1
             if len(differences) < difference_limit:
                 differences.append(
@@ -137,15 +140,51 @@ def _compare_tables(
                 )
             continue
 
-        for row_position in range(len(source_frame)):
-            for column in source_frame.columns:
-                source_value = source_frame.iloc[row_position][column]
+        source_aligned = source_frame.shape == expected_frame.shape
+        if not source_aligned:
+            metrics.source_alignment_available = False
+            if len(source_frame) < len(expected_frame):
+                metrics.structural_mismatches += 1
+                if len(differences) < difference_limit:
+                    differences.append(
+                        GoldenDifference(
+                            table=source_name,
+                            kind="expected_row_insertion",
+                            source=list(source_frame.shape),
+                            actual=list(actual_frame.shape),
+                            expected=list(expected_frame.shape),
+                        )
+                    )
+                continue
+            metrics.expected_removed_rows += len(source_frame) - len(expected_frame)
+            metrics.actual_removed_rows += len(source_frame) - len(actual_frame)
+
+        for row_position in range(len(expected_frame)):
+            for column in expected_frame.columns:
                 actual_value = actual_frame.iloc[row_position][column]
                 expected_value = expected_frame.iloc[row_position][column]
+                actual_matches_expected = _value_equal(actual_value, expected_value)
 
+                if not source_aligned:
+                    if actual_matches_expected:
+                        continue
+                    metrics.remaining_different_cells += 1
+                    if len(differences) < difference_limit:
+                        differences.append(
+                            GoldenDifference(
+                                table=source_name,
+                                row_position=row_position,
+                                column=str(column),
+                                kind="output_mismatch_after_row_change",
+                                expected=expected_value,
+                                actual=actual_value,
+                            )
+                        )
+                    continue
+
+                source_value = source_frame.iloc[row_position][column]
                 expected_changed = not _value_equal(source_value, expected_value)
                 actual_changed = not _value_equal(source_value, actual_value)
-                actual_matches_expected = _value_equal(actual_value, expected_value)
 
                 if expected_changed:
                     metrics.expected_changed_cells += 1
@@ -182,7 +221,6 @@ def _compare_tables(
                     )
 
     return metrics, differences
-
 
 def run_golden_validation(
     source_path: str,
