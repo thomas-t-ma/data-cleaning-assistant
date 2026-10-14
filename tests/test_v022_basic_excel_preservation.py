@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import copy
 from pathlib import Path
 
 import pytest
@@ -150,7 +149,7 @@ def test_excel_duplicate_row_removal_fails_closed_when_sheet_has_formulas(
             output,
         )
 
-    assert not output.exists() or output.stat().st_size > 0
+    assert not output.exists()
 
 
 def test_excel_writer_preserves_blank_and_duplicate_headers_when_other_cells_change(
