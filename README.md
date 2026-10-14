@@ -2,9 +2,46 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.20.0**.
+Current version: **v0.21.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.21.0 — source-inspired real-world corpus
+
+The project now includes a deterministic validation corpus spanning six ordinary
+data domains:
+
+- sales/orders;
+- survey and free text;
+- wholesale/inventory;
+- finance/account statements;
+- CRM/contact exports;
+- public-service/service-request data.
+
+The schemas and value shapes are inspired by public UCI datasets and NYC 311,
+but the corpus rows are generated specifically for this project. No third-party
+records are bundled or redistributed.
+
+Run the entire corpus locally:
+
+```bash
+data-cleaner validate-corpus
+data-cleaner validate-corpus --json-output realworld_corpus_report.json
+```
+
+Each case checks three independent properties: the serialized cleaned file must
+match its golden output, protected identifier/free-text columns must receive no
+executable cleaning action, and declared review-only anomalies (such as malformed
+phone/email values) must still surface.
+
+The release baseline is **6/6 corpus cases passing**.
+
+The corpus exposed several general gaps that v0.21 fixes: timestamp normalization
+now preserves time, ambiguous numeric timestamp order still fails closed without
+directional evidence, common currency/accounting formats can be safely parsed for
+reviewable numeric coercion, and code/SKU/ZIP/postal/key fields receive stronger
+identifier protection. Golden validation also understands approved row removal,
+such as exact duplicate deletion.
 
 ## v0.20.0 — real-world golden-pair validation
 
