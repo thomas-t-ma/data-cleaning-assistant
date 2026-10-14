@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
+from data_cleaning_assistant.cli import app
 from data_cleaning_assistant.engine import profile_dataset
 from data_cleaning_assistant.golden_validation import run_golden_validation
 from data_cleaning_assistant.inference import (
@@ -129,3 +132,21 @@ def test_golden_validator_accepts_expected_duplicate_row_removal(tmp_path: Path)
     assert report.metrics.source_alignment_available is False
     assert report.metrics.expected_removed_rows == 1
     assert report.metrics.actual_removed_rows == 1
+
+
+def test_validate_corpus_cli_writes_machine_readable_report(tmp_path: Path) -> None:
+    output = tmp_path / "realworld_corpus_report.json"
+
+    result = CliRunner().invoke(
+        app,
+        ["validate-corpus", "--json-output", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "REAL-WORLD CORPUS PASS" in result.output
+    assert "6/6" in result.output
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["passed"] is True
+    assert payload["case_count"] == 6
+    assert payload["passed_cases"] == 6
