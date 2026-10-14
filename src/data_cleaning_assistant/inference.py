@@ -39,7 +39,8 @@ CONTEXTUAL_MISSING_TOKENS = {
 MISSING_TOKENS = STRUCTURAL_MISSING_TOKENS | CONTEXTUAL_MISSING_TOKENS
 
 DATE_NAME_PATTERN = re.compile(
-    r"(^|_)(date|dob|birth|time|timestamp|dt)(_|$)|date|dob|birth|timestamp",
+    r"(^|_)(date|dob|birth|time|timestamp|dt|created|updated|submitted|"
+    r"closed|opened|completed)(_|$)|date|dob|birth|timestamp",
     re.IGNORECASE,
 )
 ID_NAME_PATTERN = re.compile(
