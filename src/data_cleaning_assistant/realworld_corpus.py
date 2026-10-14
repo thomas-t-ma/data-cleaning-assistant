@@ -35,20 +35,20 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             source_url="https://archive.ics.uci.edu/dataset/352/online+retail",
             dirty_csv=(
                 "InvoiceNo,StockCode,Description,Quantity,InvoiceDate,UnitPrice,CustomerID,Country\n"
-                "536365,85123A,WHITE HANGING HEART T-LIGHT HOLDER,6,12/1/2025 08:26,2.55,17850, United Kingdom \n"
-                "536366,71053,WHITE METAL LANTERN,6,2025-12-01 09:15:00,£3.39,17850,United Kingdom\n"
-                "536367,84406B,CREAM CUPID HEARTS COAT HANGER,8,Dec 1 2025 10:30,2.75,13047,United Kingdom\n"
-                "536368,84029G,KNITTED UNION FLAG HOT WATER BOTTLE,6,12/02/2025 11:05,3.39,13047,United Kingdom\n"
-                "536369,84029E,RED WOOLLY HOTTIE WHITE HEART.,6,2025-12-02 11:08:00,£3.39,13047,United Kingdom\n"
-                "536369,84029E,RED WOOLLY HOTTIE WHITE HEART.,6,2025-12-02 11:08:00,£3.39,13047,United Kingdom\n"
+                "536365,85123A,WHITE HANGING HEART T-LIGHT HOLDER,6,12/13/2025 08:26,2.55,17850, United Kingdom \n"
+                "536366,71053,WHITE METAL LANTERN,6,2025-12-13 09:15:00,£3.39,17850,United Kingdom\n"
+                "536367,84406B,CREAM CUPID HEARTS COAT HANGER,8,Dec 13 2025 10:30,2.75,13047,United Kingdom\n"
+                "536368,84029G,KNITTED UNION FLAG HOT WATER BOTTLE,6,12/14/2025 11:05,3.39,13047,United Kingdom\n"
+                "536369,84029E,RED WOOLLY HOTTIE WHITE HEART.,6,12/15/2025 11:08,£3.39,13047,United Kingdom\n"
+                "536369,84029E,RED WOOLLY HOTTIE WHITE HEART.,6,12/15/2025 11:08,£3.39,13047,United Kingdom\n"
             ),
             golden_csv=(
                 "InvoiceNo,StockCode,Description,Quantity,InvoiceDate,UnitPrice,CustomerID,Country\n"
-                "536365,85123A,WHITE HANGING HEART T-LIGHT HOLDER,6,2025-12-01 08:26:00,2.55,17850,United Kingdom\n"
-                "536366,71053,WHITE METAL LANTERN,6,2025-12-01 09:15:00,3.39,17850,United Kingdom\n"
-                "536367,84406B,CREAM CUPID HEARTS COAT HANGER,8,2025-12-01 10:30:00,2.75,13047,United Kingdom\n"
-                "536368,84029G,KNITTED UNION FLAG HOT WATER BOTTLE,6,2025-12-02 11:05:00,3.39,13047,United Kingdom\n"
-                "536369,84029E,RED WOOLLY HOTTIE WHITE HEART.,6,2025-12-02 11:08:00,3.39,13047,United Kingdom\n"
+                "536365,85123A,WHITE HANGING HEART T-LIGHT HOLDER,6,2025-12-13 08:26:00,2.55,17850,United Kingdom\n"
+                "536366,71053,WHITE METAL LANTERN,6,2025-12-13 09:15:00,3.39,17850,United Kingdom\n"
+                "536367,84406B,CREAM CUPID HEARTS COAT HANGER,8,2025-12-13 10:30:00,2.75,13047,United Kingdom\n"
+                "536368,84029G,KNITTED UNION FLAG HOT WATER BOTTLE,6,2025-12-14 11:05:00,3.39,13047,United Kingdom\n"
+                "536369,84029E,RED WOOLLY HOTTIE WHITE HEART.,6,2025-12-15 11:08:00,3.39,13047,United Kingdom\n"
             ),
             forbidden_action_columns=("StockCode", "CustomerID"),
         ),
@@ -63,19 +63,19 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             source_url="https://data.cityofnewyork.us/resource/erm2-nwe9",
             dirty_csv=(
                 "Respondent_ID,Submitted_At,Satisfaction,Comment,Followup_Email\n"
-                "R001,10/01/2026 09:05,Satisfied,Great service,alice@example.com\n"
-                "R002,2026-10-01 09:10:00, Satisfied ,Great service,bob@example.com\n"
-                "R003,Oct 1 2026 09:12,Dissatisfied,Great servce,not-an-email\n"
-                "R004,10/01/2026 09:15,Satisfied,Great service,dana@example.com\n"
-                "R005,2026-10-01 09:20:00,Satisfied,Would use again,eli@example.com\n"
+                "R001,10/13/2026 09:05,Satisfied,Great service,alice@example.com\n"
+                "R002,2026-10-13 09:10:00, Satisfied ,Great service,bob@example.com\n"
+                "R003,Oct 13 2026 09:12,Dissatisfied,Great servce,not-an-email\n"
+                "R004,10/14/2026 09:15,Satisfied,Great service,dana@example.com\n"
+                "R005,10/15/2026 09:20,Satisfied,Would use again,eli@example.com\n"
             ),
             golden_csv=(
                 "Respondent_ID,Submitted_At,Satisfaction,Comment,Followup_Email\n"
-                "R001,2026-10-01 09:05:00,Satisfied,Great service,alice@example.com\n"
-                "R002,2026-10-01 09:10:00,Satisfied,Great service,bob@example.com\n"
-                "R003,2026-10-01 09:12:00,Dissatisfied,Great servce,not-an-email\n"
-                "R004,2026-10-01 09:15:00,Satisfied,Great service,dana@example.com\n"
-                "R005,2026-10-01 09:20:00,Satisfied,Would use again,eli@example.com\n"
+                "R001,2026-10-13 09:05:00,Satisfied,Great service,alice@example.com\n"
+                "R002,2026-10-13 09:10:00,Satisfied,Great service,bob@example.com\n"
+                "R003,2026-10-13 09:12:00,Dissatisfied,Great servce,not-an-email\n"
+                "R004,2026-10-14 09:15:00,Satisfied,Great service,dana@example.com\n"
+                "R005,2026-10-15 09:20:00,Satisfied,Would use again,eli@example.com\n"
             ),
             expected_review_issues={"Followup_Email": ("email_format_anomaly",)},
             forbidden_action_columns=("Respondent_ID", "Comment", "Followup_Email"),
@@ -118,21 +118,21 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             source_url="https://archive.ics.uci.edu/dataset/222/bank+marketing",
             dirty_csv=(
                 "Account_ID,Statement_Date,Amount,Balance,Memo,Reference\n"
-                "A001,10/1/2026,$1250.00,4300.50,Monthly deposit,REF-0001\n"
-                "A002,2026-10-02,1250.00,5550.50,Monthly deposit,REF-0002\n"
-                "A003,Oct 3 2026,(85.50),5465.00,Card purchase,REF-0003\n"
-                "A004,10/4/2026,$42.00,5423.00,Card purchse,REF-0004\n"
-                "A005,2026-10-05,500.00,5923.00,Transfer in,REF-0005\n"
-                "A006,10/6/2026,75.25,5998.25,Transfer in,REF-0006\n"
+                "A001,10/13/2026,$1250.00,4300.50,Monthly deposit,REF-0001\n"
+                "A002,2026-10-13,1250.00,5550.50,Monthly deposit,REF-0002\n"
+                "A003,Oct 14 2026,(85.50),5465.00,Card purchase,REF-0003\n"
+                "A004,10/14/2026,$42.00,5423.00,Card purchse,REF-0004\n"
+                "A005,10/15/2026,500.00,5923.00,Transfer in,REF-0005\n"
+                "A006,10/16/2026,75.25,5998.25,Transfer in,REF-0006\n"
             ),
             golden_csv=(
                 "Account_ID,Statement_Date,Amount,Balance,Memo,Reference\n"
-                "A001,2026-10-01,1250.00,4300.50,Monthly deposit,REF-0001\n"
-                "A002,2026-10-02,1250.00,5550.50,Monthly deposit,REF-0002\n"
-                "A003,2026-10-03,-85.50,5465.00,Card purchase,REF-0003\n"
-                "A004,2026-10-04,42.00,5423.00,Card purchse,REF-0004\n"
-                "A005,2026-10-05,500.00,5923.00,Transfer in,REF-0005\n"
-                "A006,2026-10-06,75.25,5998.25,Transfer in,REF-0006\n"
+                "A001,2026-10-13,1250.00,4300.50,Monthly deposit,REF-0001\n"
+                "A002,2026-10-13,1250.00,5550.50,Monthly deposit,REF-0002\n"
+                "A003,2026-10-14,-85.50,5465.00,Card purchase,REF-0003\n"
+                "A004,2026-10-14,42.00,5423.00,Card purchse,REF-0004\n"
+                "A005,2026-10-15,500.00,5923.00,Transfer in,REF-0005\n"
+                "A006,2026-10-16,75.25,5998.25,Transfer in,REF-0006\n"
             ),
             forbidden_action_columns=("Account_ID", "Memo", "Reference"),
         ),
@@ -147,19 +147,19 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             source_url="https://archive.ics.uci.edu/dataset/222/bank+marketing",
             dirty_csv=(
                 "Client_ID,Contact_Date,Job,Marital,Balance,Email,Phone,Lead_Status\n"
-                "C001,10/1/2026,management,married,2143,alice@example.com,-1651623197, New \n"
-                "C002,2026-10-02, management ,single,29,bob@example.com,-1898471390,Qualified\n"
-                "C003,Oct 3 2026,technician,married,2,not-an-email,-5596363211,Contacted\n"
-                "C004,10/4/2026,Management,divorced,1506,dana@example.com,-3476490784,Qualified\n"
-                "C005,2026-10-05,services,married,231,eli@example.com,-1586734256,New\n"
+                "C001,10/13/2026,management,married,2143,alice@example.com,-1651623197, New \n"
+                "C002,2026-10-13, management ,single,29,bob@example.com,-1898471390,Qualified\n"
+                "C003,Oct 14 2026,technician,married,2,not-an-email,-5596363211,Contacted\n"
+                "C004,10/14/2026,Management,divorced,1506,dana@example.com,-3476490784,Qualified\n"
+                "C005,10/15/2026,management,married,231,eli@example.com,-1586734256,New\n"
             ),
             golden_csv=(
                 "Client_ID,Contact_Date,Job,Marital,Balance,Email,Phone,Lead_Status\n"
-                "C001,2026-10-01,management,married,2143,alice@example.com,-1651623197,New\n"
-                "C002,2026-10-02,management,single,29,bob@example.com,-1898471390,Qualified\n"
-                "C003,2026-10-03,technician,married,2,not-an-email,-5596363211,Contacted\n"
-                "C004,2026-10-04,management,divorced,1506,dana@example.com,-3476490784,Qualified\n"
-                "C005,2026-10-05,services,married,231,eli@example.com,-1586734256,New\n"
+                "C001,2026-10-13,management,married,2143,alice@example.com,-1651623197,New\n"
+                "C002,2026-10-13,management,single,29,bob@example.com,-1898471390,Qualified\n"
+                "C003,2026-10-14,technician,married,2,not-an-email,-5596363211,Contacted\n"
+                "C004,2026-10-14,management,divorced,1506,dana@example.com,-3476490784,Qualified\n"
+                "C005,2026-10-15,management,married,231,eli@example.com,-1586734256,New\n"
             ),
             expected_review_issues={
                 "Email": ("email_format_anomaly",),
@@ -178,21 +178,21 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             source_url="https://data.cityofnewyork.us/resource/erm2-nwe9",
             dirty_csv=(
                 "Unique_Key,Created_Date,Closed_Date,Agency,Complaint_Type,Descriptor,Incident_Zip,Status,Resolution_Description\n"
-                "100001,10/01/2026 08:00,10/01/2026 12:30,DOT,Street Condition,Pothole,01234, Closed ,Crew inspected location\n"
-                "100002,2026-10-01 08:15:00,2026-10-01 13:00:00,DEP,Water System,Hydrant Running,02108,Closed,Issue was resolved\n"
-                "100003,Oct 1 2026 08:20,Oct 1 2026 14:05,NYPD,Noise - Residential,Loud Music/Party,10001,Open,Agency reviewing complaint\n"
-                "100004,10/01/2026 08:35,10/01/2026 15:10,DOT,Street Condition,Pothole,30303,Closed,Crew inspected location\n"
-                "100005,2026-10-01 08:50:00,2026-10-01 16:00:00,DSNY,Dirty Conditions,Trash,94105,Closed,Issue was resolved\n"
-                "100006,Oct 1 2026 09:00,Oct 1 2026 17:15,DEP,Water System,Leak,UNKNOWN,Open,Agency reviewing complaint\n"
+                "100001,10/13/2026 08:00,10/13/2026 12:30,DOT,Street Condition,Pothole,01234, Closed ,Crew inspected location\n"
+                "100002,2026-10-13 08:15:00,2026-10-13 13:00:00,DEP,Water System,Hydrant Running,02108,Closed,Issue was resolved\n"
+                "100003,Oct 13 2026 08:20,Oct 13 2026 14:05,NYPD,Noise - Residential,Loud Music/Party,10001,Open,Agency reviewing complaint\n"
+                "100004,10/14/2026 08:35,10/14/2026 15:10,DOT,Street Condition,Pothole,30303,Closed,Crew inspected location\n"
+                "100005,2026-10-14 08:50:00,2026-10-14 16:00:00,DSNY,Dirty Conditions,Trash,94105,Closed,Issue was resolved\n"
+                "100006,10/15/2026 09:00,10/15/2026 17:15,DEP,Water System,Leak,BADZIP,Open,Agency reviewing complaint\n"
             ),
             golden_csv=(
                 "Unique_Key,Created_Date,Closed_Date,Agency,Complaint_Type,Descriptor,Incident_Zip,Status,Resolution_Description\n"
-                "100001,2026-10-01 08:00:00,2026-10-01 12:30:00,DOT,Street Condition,Pothole,01234,Closed,Crew inspected location\n"
-                "100002,2026-10-01 08:15:00,2026-10-01 13:00:00,DEP,Water System,Hydrant Running,02108,Closed,Issue was resolved\n"
-                "100003,2026-10-01 08:20:00,2026-10-01 14:05:00,NYPD,Noise - Residential,Loud Music/Party,10001,Open,Agency reviewing complaint\n"
-                "100004,2026-10-01 08:35:00,2026-10-01 15:10:00,DOT,Street Condition,Pothole,30303,Closed,Crew inspected location\n"
-                "100005,2026-10-01 08:50:00,2026-10-01 16:00:00,DSNY,Dirty Conditions,Trash,94105,Closed,Issue was resolved\n"
-                "100006,2026-10-01 09:00:00,2026-10-01 17:15:00,DEP,Water System,Leak,UNKNOWN,Open,Agency reviewing complaint\n"
+                "100001,2026-10-13 08:00:00,2026-10-13 12:30:00,DOT,Street Condition,Pothole,01234,Closed,Crew inspected location\n"
+                "100002,2026-10-13 08:15:00,2026-10-13 13:00:00,DEP,Water System,Hydrant Running,02108,Closed,Issue was resolved\n"
+                "100003,2026-10-13 08:20:00,2026-10-13 14:05:00,NYPD,Noise - Residential,Loud Music/Party,10001,Open,Agency reviewing complaint\n"
+                "100004,2026-10-14 08:35:00,2026-10-14 15:10:00,DOT,Street Condition,Pothole,30303,Closed,Crew inspected location\n"
+                "100005,2026-10-14 08:50:00,2026-10-14 16:00:00,DSNY,Dirty Conditions,Trash,94105,Closed,Issue was resolved\n"
+                "100006,2026-10-15 09:00:00,2026-10-15 17:15:00,DEP,Water System,Leak,BADZIP,Open,Agency reviewing complaint\n"
             ),
             forbidden_action_columns=(
                 "Unique_Key",
