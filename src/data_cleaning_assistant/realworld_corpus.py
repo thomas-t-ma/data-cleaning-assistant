@@ -119,7 +119,7 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             dirty_csv=(
                 "Account_ID,Statement_Date,Amount,Balance,Memo,Reference\n"
                 "A001,10/13/2026,$1250.00,4300.50,Monthly deposit,REF-0001\n"
-                "A002,2026-10-13,1250.00,5550.50,Monthly deposit,REF-0002\n"
+                "A002,2026-10-13,1250,5550.50,Monthly deposit,REF-0002\n"
                 "A003,Oct 14 2026,(85.50),5465.00,Card purchase,REF-0003\n"
                 "A004,10/14/2026,$42.00,5423.00,Card purchse,REF-0004\n"
                 "A005,10/15/2026,500.00,5923.00,Transfer in,REF-0005\n"
@@ -127,11 +127,11 @@ def realworld_corpus_cases() -> list[RealWorldCorpusCase]:
             ),
             golden_csv=(
                 "Account_ID,Statement_Date,Amount,Balance,Memo,Reference\n"
-                "A001,2026-10-13,1250.00,4300.50,Monthly deposit,REF-0001\n"
+                "A001,2026-10-13,1250,4300.50,Monthly deposit,REF-0001\n"
                 "A002,2026-10-13,1250.00,5550.50,Monthly deposit,REF-0002\n"
-                "A003,2026-10-14,-85.50,5465.00,Card purchase,REF-0003\n"
-                "A004,2026-10-14,42.00,5423.00,Card purchse,REF-0004\n"
-                "A005,2026-10-15,500.00,5923.00,Transfer in,REF-0005\n"
+                "A003,2026-10-14,-85.5,5465.00,Card purchase,REF-0003\n"
+                "A004,2026-10-14,42,5423.00,Card purchse,REF-0004\n"
+                "A005,2026-10-15,500,5923.00,Transfer in,REF-0005\n"
                 "A006,2026-10-16,75.25,5998.25,Transfer in,REF-0006\n"
             ),
             forbidden_action_columns=("Account_ID", "Memo", "Reference"),
