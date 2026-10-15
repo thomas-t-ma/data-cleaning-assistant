@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.23.0
+
+- Added a larger deterministic quantitative stress corpus: five cross-domain datasets totaling **2,000 rows** across HR/workforce, sales/orders, survey/free text, finance, and logistics.
+- Added `data-cleaner validate-stress` with optional JSON output.
+- Added executable-action precision, recall, and F1 metrics. Duplicate proposals and table-level actions count against action precision rather than being hidden by target-key deduplication.
+- Added cell-edit precision, recall, and F1 based on dirty → actual → golden comparisons. Wrong replacements count against both precision and recall.
+- Locked the release stress baseline at **12/12 expected actions** and **1,817/1,817 expected cell edits**.
+- The first quantitative run found **100% cell precision/recall but only 75% action precision** because four whitespace-only category normalizations duplicated simpler whitespace-trim actions.
+- Suppressed a category-normalization proposal only when its entire mapping is whitespace-only and the same column already has a trim-whitespace action.
+- Case-only or otherwise non-whitespace category normalization remains reviewable and is protected by a direct regression test.
+- Final v0.23 stress baseline: **100% action precision, 100% action recall, 100% cell-edit precision, and 100% cell-edit recall** on the unambiguous generated corpus.
+
+
 ## 0.22.0
 
 - Added a deliberately narrow Excel preservation validation pass focused on ordinary `.xlsx` workflows rather than spreadsheet-specific feature expansion.
