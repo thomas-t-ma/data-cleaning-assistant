@@ -6,6 +6,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from data_cleaning_assistant.cli import app
+from data_cleaning_assistant.actions import ActionType
+from data_cleaning_assistant.planner import propose_actions
 from data_cleaning_assistant.quantitative_stress import quantitative_stress_cases
 from data_cleaning_assistant.quantitative_validation import (
     run_quantitative_stress_validation,
@@ -73,3 +75,40 @@ def test_validate_stress_cli_writes_machine_readable_report(
     assert payload["action_recall"] == 1.0
     assert payload["cell_precision"] == 1.0
     assert payload["cell_recall"] == 1.0
+
+
+def test_planner_collapses_pure_whitespace_category_redundancy(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "whitespace.csv"
+    source.write_text(
+        "id,status\n"
+        "A001,Active\n"
+        "A002, Active \n"
+        "A003,Active\n"
+        "A004, Active \n",
+        encoding="utf-8",
+    )
+
+    plan = propose_actions(source)
+    keys = {(action.type, action.column) for action in plan.actions}
+
+    assert (ActionType.TRIM_WHITESPACE, "status") in keys
+    assert (ActionType.NORMALIZE_CATEGORIES, "status") not in keys
+
+
+def test_planner_keeps_real_case_normalization_distinct(tmp_path: Path) -> None:
+    source = tmp_path / "case.csv"
+    source.write_text(
+        "id,status\n"
+        "A001,Active\n"
+        "A002,active\n"
+        "A003,Active\n"
+        "A004,active\n",
+        encoding="utf-8",
+    )
+
+    plan = propose_actions(source)
+    keys = {(action.type, action.column) for action in plan.actions}
+
+    assert (ActionType.NORMALIZE_CATEGORIES, "status") in keys
