@@ -100,14 +100,26 @@ def run_quantitative_stress_validation() -> QuantitativeStressReport:
             metrics = golden_report.metrics
 
             expected_keys = {item.key for item in case.expected_actions}
-            proposed_keys = {
-                (action.type.value, str(action.column))
+            proposed_keys = [
+                (action.type.value, action.column)
                 for action in plan.actions
-                if action.column is not None
-            }
-            action_tp = len(expected_keys & proposed_keys)
-            action_fp = len(proposed_keys - expected_keys)
-            action_fn = len(expected_keys - proposed_keys)
+            ]
+
+            matched_expected: set[tuple[str, str]] = set()
+            unexpected_records: list[tuple[str, str | None]] = []
+            for action_key in proposed_keys:
+                if (
+                    action_key[1] is not None
+                    and (action_key[0], action_key[1]) in expected_keys
+                    and (action_key[0], action_key[1]) not in matched_expected
+                ):
+                    matched_expected.add((action_key[0], action_key[1]))
+                else:
+                    unexpected_records.append(action_key)
+
+            action_tp = len(matched_expected)
+            action_fp = len(unexpected_records)
+            action_fn = len(expected_keys - matched_expected)
             action_precision = _safe_ratio(
                 action_tp,
                 action_tp + action_fp,
@@ -141,11 +153,11 @@ def run_quantitative_stress_validation() -> QuantitativeStressReport:
 
             missing = sorted(
                 f"{action_type}:{column}"
-                for action_type, column in expected_keys - proposed_keys
+                for action_type, column in expected_keys - matched_expected
             )
             unexpected = sorted(
-                f"{action_type}:{column}"
-                for action_type, column in proposed_keys - expected_keys
+                f"{action_type}:{column or '(table)'}"
+                for action_type, column in unexpected_records
             )
 
             passed = (
