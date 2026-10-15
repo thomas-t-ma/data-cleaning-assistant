@@ -43,7 +43,9 @@ def test_quantitative_stress_baseline_has_perfect_action_and_cell_metrics() -> N
     assert report.action_recall == 1.0
     assert report.action_f1 == 1.0
 
-    assert report.expected_cell_edits >= 1500
+    assert report.expected_cell_edits == 1817
+    assert report.actual_cell_edits == 1817
+    assert report.cell_true_positives == 1817
     assert report.cell_false_positives == 0
     assert report.cell_false_negatives == 0
     assert report.cell_precision == 1.0
