@@ -96,6 +96,36 @@ def _category_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
     )
 
 
+def _category_action_is_whitespace_only(action: CleaningAction) -> bool:
+    if action.type != ActionType.NORMALIZE_CATEGORIES:
+        return False
+    mapping = action.parameters.get("mapping")
+    if not isinstance(mapping, dict) or not mapping:
+        return False
+    return all(
+        str(source).strip() == str(target)
+        for source, target in mapping.items()
+    )
+
+
+def _suppress_redundant_whitespace_category_actions(
+    actions: list[CleaningAction],
+) -> list[CleaningAction]:
+    trim_targets = {
+        (action.table, action.column)
+        for action in actions
+        if action.type == ActionType.TRIM_WHITESPACE
+    }
+    return [
+        action
+        for action in actions
+        if not (
+            _category_action_is_whitespace_only(action)
+            and (action.table, action.column) in trim_targets
+        )
+    ]
+
+
 def _missing_action(issue) -> CleaningAction | None:
     if issue.column is None:
         return None
@@ -339,6 +369,11 @@ def propose_actions(
 
         if action is not None:
             actions.append(action)
+
+    # Do not ask the reviewer to approve two actions that produce the same
+    # whitespace-only cell edits. A category mapping remains distinct when it
+    # changes case or any non-whitespace character.
+    actions = _suppress_redundant_whitespace_category_actions(actions)
 
     if schema is not None:
         # An explicit study declaration wins over heuristic proposals for the
