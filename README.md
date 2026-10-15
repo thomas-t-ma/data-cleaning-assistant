@@ -2,9 +2,49 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.22.0**.
+Current version: **v0.23.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.23.0 — quantitative stress precision/recall
+
+The cleaner now has a larger deterministic stress benchmark rather than relying
+only on small pass/fail fixtures. Five generated datasets cover **2,000 rows**
+across HR/workforce, sales/orders, survey/free text, finance, and logistics.
+Several corruption types overlap within the same records.
+
+Run it locally:
+
+```bash
+data-cleaner validate-stress
+data-cleaner validate-stress --json-output stress_report.json
+```
+
+The scorecard measures two different layers:
+
+- **action precision / recall / F1** — whether the cleaner proposes exactly the
+  executable transformations that are warranted;
+- **cell-edit precision / recall / F1** — whether the serialized cleaned file
+  changes exactly the cells that should change to exactly the correct values.
+
+Wrong replacement values count against both cell precision and recall. Duplicate
+or table-level proposals count against action precision.
+
+The current locked baseline is:
+
+- **2,000 rows**
+- **12/12 expected actions**
+- **1,817/1,817 expected cell edits**
+- **100% action precision**
+- **100% action recall**
+- **100% cell-edit precision**
+- **100% cell-edit recall**
+
+The first run was instructive: cell precision and recall were already 100%, but
+action precision was only **75%** because four whitespace-only
+`normalize_categories` proposals duplicated simpler `trim_whitespace`
+actions. v0.23 suppresses only that strictly redundant case. Real case
+normalization remains separately reviewable.
 
 ## v0.22.0 — practical Excel preservation
 
