@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.24.0
+
+- Added a seeded randomized robustness layer on top of the v0.23 action/cell precision-recall scorer.
+- Default randomized baseline spans **5 independent seeds × 6 domains = 30 cases and 3,000 rows**.
+- Covered domains: HR/workforce, sales/orders, survey/free text, finance, logistics, and CRM/contact.
+- Corruption rates vary by seed for date/timestamp formatting, whitespace drift, missing tokens, currency/accounting formatting, case/category drift, and malformed contact values.
+- Rows are deterministically shuffled so detector behavior is not tied to one fixed row ordering.
+- Protected identifiers, SKU/ZIP/reference fields, phone/email values, and repeated free text remain mixed into the generated data as false-positive traps.
+- Added `data-cleaner validate-randomized` with optional machine-readable JSON output.
+- Generalized the v0.23 quantitative scorer so fixed and randomized corpora use exactly the same action and cell-level metrics.
+- Added deterministic-generation regressions proving identical seeds reproduce identical dirty/golden pairs while different seeds generate different trials.
+- Locked the default randomized release baseline at **30/30 cases**, **75/75 expected actions**, **100% action precision/recall**, and **100% cell-edit precision/recall**, with zero protected-column exposures.
+
+
 ## 0.23.0
 
 - Added a larger deterministic quantitative stress corpus: five cross-domain datasets totaling **2,000 rows** across HR/workforce, sales/orders, survey/free text, finance, and logistics.
