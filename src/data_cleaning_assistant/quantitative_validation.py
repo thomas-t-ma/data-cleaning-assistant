@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from .golden_validation import GoldenValidationMetrics, run_golden_validation
 from .planner import propose_actions
-from .quantitative_stress import quantitative_stress_cases
+from .quantitative_stress import StressCorpusCase, quantitative_stress_cases
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float:
@@ -78,14 +78,18 @@ class QuantitativeStressReport(BaseModel):
     cases: list[QuantitativeCaseResult] = Field(default_factory=list)
 
 
-def run_quantitative_stress_validation() -> QuantitativeStressReport:
-    """Measure executable-action and edited-cell precision/recall offline."""
+def run_quantitative_cases(
+    cases: list[StressCorpusCase],
+    *,
+    temp_prefix: str = "data-cleaner-quantitative-",
+) -> QuantitativeStressReport:
+    """Measure executable-action and edited-cell precision/recall for golden cases."""
     results: list[QuantitativeCaseResult] = []
 
-    with TemporaryDirectory(prefix="data-cleaner-quantitative-") as temp_dir:
+    with TemporaryDirectory(prefix=temp_prefix) as temp_dir:
         root = Path(temp_dir)
 
-        for case in quantitative_stress_cases():
+        for case in cases:
             source = root / f"{case.id}.dirty.csv"
             golden = root / f"{case.id}.golden.csv"
             source.write_text(case.dirty_csv, encoding="utf-8")
@@ -239,3 +243,8 @@ def run_quantitative_stress_validation() -> QuantitativeStressReport:
         cell_f1=_f1(cell_precision, cell_recall),
         cases=results,
     )
+
+
+def run_quantitative_stress_validation() -> QuantitativeStressReport:
+    """Run the fixed 2,000-row quantitative release baseline."""
+    return run_quantitative_cases(quantitative_stress_cases())
