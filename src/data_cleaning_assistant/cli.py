@@ -39,6 +39,7 @@ from .mapping_safety import (
 )
 from .planner import file_sha256, propose_actions
 from .quantitative_validation import run_quantitative_stress_validation
+from .randomized_validation import run_randomized_validation
 from .plan_amendments import (
     amend_action_decision,
     amend_mapping_target,
@@ -1057,6 +1058,108 @@ def validate_stress_command(
         return
 
     console.print("\n[bold red]QUANTITATIVE STRESS FAIL[/bold red]")
+    raise typer.Exit(code=2)
+
+
+@app.command("validate-randomized")
+def validate_randomized_command(
+    json_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--json-output",
+            help="Optional machine-readable randomized validation report",
+        ),
+    ] = None,
+) -> None:
+    """Run seeded randomized corruption trials across several data domains."""
+    report = run_randomized_validation()
+
+    summary = Table(title="Seeded randomized validation")
+    summary.add_column("Metric")
+    summary.add_column("Result", justify="right")
+    summary.add_row("Cases", f"{report.passed_cases}/{report.case_count}")
+    summary.add_row("Rows", f"{report.total_rows:,}")
+    summary.add_row(
+        "Action precision",
+        f"{report.action_true_positives}/{report.proposed_actions} "
+        f"({report.action_precision:.2%})",
+    )
+    summary.add_row(
+        "Action recall",
+        f"{report.action_true_positives}/{report.expected_actions} "
+        f"({report.action_recall:.2%})",
+    )
+    summary.add_row("Action F1", f"{report.action_f1:.4f}")
+    summary.add_row(
+        "Cell edit precision",
+        f"{report.cell_true_positives}/{report.actual_cell_edits} "
+        f"({report.cell_precision:.2%})",
+    )
+    summary.add_row(
+        "Cell edit recall",
+        f"{report.cell_true_positives}/{report.expected_cell_edits} "
+        f"({report.cell_recall:.2%})",
+    )
+    summary.add_row("Cell edit F1", f"{report.cell_f1:.4f}")
+    console.print(summary)
+
+    by_domain = Table(title="Randomized trials")
+    by_domain.add_column("Domain")
+    by_domain.add_column("Case")
+    by_domain.add_column("Action P/R", justify="right")
+    by_domain.add_column("Cell P/R", justify="right")
+    by_domain.add_column("Result")
+    for item in report.cases:
+        by_domain.add_row(
+            item.domain,
+            item.case_id,
+            f"{item.action_precision:.1%} / {item.action_recall:.1%}",
+            f"{item.cell_precision:.1%} / {item.cell_recall:.1%}",
+            "PASS" if item.passed else "FAIL",
+        )
+    console.print(by_domain)
+
+    failures = [item for item in report.cases if not item.passed]
+    if failures:
+        details = Table(title="Randomized failures")
+        details.add_column("Case")
+        details.add_column("Details")
+        for item in failures:
+            messages: list[str] = []
+            if item.missing_action_keys:
+                messages.append(
+                    "missing actions: " + ", ".join(item.missing_action_keys)
+                )
+            if item.unexpected_action_keys:
+                messages.append(
+                    "unexpected actions: "
+                    + ", ".join(item.unexpected_action_keys)
+                )
+            if item.protected_columns_exposed:
+                messages.append(
+                    "protected columns: "
+                    + ", ".join(item.protected_columns_exposed)
+                )
+            if item.cell_false_positives or item.cell_false_negatives:
+                messages.append(
+                    "cell errors "
+                    f"(FP={item.cell_false_positives}, "
+                    f"FN={item.cell_false_negatives})"
+                )
+            details.add_row(item.case_id, "; ".join(messages))
+        console.print(details)
+
+    if json_output is not None:
+        output = json_output.expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(report.model_dump_json(indent=2), encoding="utf-8")
+        console.print(f"[green]Randomized report:[/green] {output}")
+
+    if report.passed:
+        console.print("\n[bold green]RANDOMIZED VALIDATION PASS[/bold green]")
+        return
+
+    console.print("\n[bold red]RANDOMIZED VALIDATION FAIL[/bold red]")
     raise typer.Exit(code=2)
 
 

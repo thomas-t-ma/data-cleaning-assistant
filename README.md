@@ -2,9 +2,44 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.23.0**.
+Current version: **v0.24.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## v0.24.0 — seeded randomized robustness testing
+
+The fixed v0.23 stress corpus now has a randomized companion that varies
+corruption rates and row ordering while retaining deterministic golden outputs.
+
+The default release gate runs:
+
+- **5 independent seeds**
+- **6 domains per seed**
+- **30 generated cases**
+- **3,000 total rows**
+- **75 expected executable actions**
+
+Domains include HR/workforce, sales/orders, survey/free text, finance, logistics,
+and CRM/contact. Each seed varies the frequency and combination of supported
+corruptions, including date/timestamp formatting, whitespace drift, explicit
+missing tokens, currency/accounting formats, and case/category drift. Protected
+identifiers, postal/SKU/reference fields, malformed contact values, and repeated
+free text are retained as false-positive traps.
+
+Run it locally:
+
+```bash
+data-cleaner validate-randomized
+data-cleaner validate-randomized --json-output randomized_report.json
+```
+
+The randomized suite uses exactly the same scoring implementation as the fixed
+v0.23 benchmark. The current locked baseline is **30/30 cases**, **75/75 expected
+actions**, **100% action precision**, **100% action recall**, **100% cell-edit
+precision**, and **100% cell-edit recall**, with zero protected-column exposures.
+
+The generator is seeded and reproducible: the same seed set must generate
+identical dirty/golden pairs, while alternate seeds produce different trials.
 
 ## v0.23.0 — quantitative stress precision/recall
 
