@@ -326,7 +326,7 @@ def _locale_numeric_format(
 
 
 def _encoding_artifacts(table: str, column: str, series: pd.Series) -> list[Issue]:
-    markers = ("Ã", "Â", "â€", "â€™", "â€œ", "â€", "ï»¿", "�")
+    markers = ("Ã", "Â", "â€™", "â€œ", "â€", "â€“", "â€”", "â€¦", "ï»¿", "�")
     values = [
         str(value)
         for value in series.tolist()
