@@ -216,6 +216,154 @@ def _category_variants(table: str, column: str, series: pd.Series) -> list[Issue
     ]
 
 
+def _boolean_variants(table: str, column: str, series: pd.Series) -> list[Issue]:
+    values = [
+        value
+        for value in series.tolist()
+        if not is_missing_like(value) and not is_contextual_missing_label(value)
+    ]
+    if len(values) < 3:
+        return []
+
+    classes = [boolean_class(value) for value in values]
+    if any(value is None for value in classes):
+        return []
+    if len(set(classes)) < 2:
+        return []
+
+    raw_unique = {str(value).strip() for value in values}
+    canonical = {"Yes", "No"}
+    if raw_unique.issubset(canonical):
+        return []
+
+    mapping: dict[str, str] = {}
+    for value, boolean_value in zip(values, classes, strict=False):
+        source = str(value)
+        target = "Yes" if boolean_value else "No"
+        if source != target:
+            mapping[source] = target
+
+    if not mapping:
+        return []
+
+    mapped_values = set(mapping)
+    mask = [
+        not is_missing_like(value)
+        and str(value) in mapped_values
+        for value in series.tolist()
+    ]
+    return [
+        Issue(
+            id=_id(),
+            type="boolean_variant_inconsistency",
+            severity=Severity.MEDIUM,
+            table=table,
+            column=column,
+            title="Boolean field uses multiple coding conventions",
+            description=(
+                "All meaningful values map cleanly to true/false semantics, but the "
+                "column mixes conventions such as Yes/No, Y/N, TRUE/FALSE, or 1/0."
+            ),
+            confidence=0.99,
+            affected_count=sum(mask),
+            row_indices_sample=_sample_rows(mask),
+            evidence={"mapping": mapping},
+            suggested_action="Review normalization to canonical Yes/No labels.",
+            auto_fix_safe=False,
+        )
+    ]
+
+
+def _locale_numeric_format(
+    table: str,
+    column: str,
+    series: pd.Series,
+) -> list[Issue]:
+    values = [
+        str(value).strip()
+        for value in series.tolist()
+        if not is_missing_like(value) and not is_contextual_missing_label(value)
+    ]
+    if len(values) < 3:
+        return []
+
+    locale_like = [
+        value
+        for value in values
+        if re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+,\d+", value)
+        or re.fullmatch(r"[+-]?\d+,\d{2,}", value)
+    ]
+    if len(locale_like) < 3 or len(locale_like) / len(values) < 0.60:
+        return []
+
+    examples = sorted(set(locale_like))[:20]
+    matched = set(locale_like)
+    mask = [
+        not is_missing_like(value) and str(value).strip() in matched
+        for value in series.tolist()
+    ]
+    return [
+        Issue(
+            id=_id(),
+            type="locale_numeric_format",
+            severity=Severity.MEDIUM,
+            table=table,
+            column=column,
+            title="Locale-style numeric formatting detected",
+            description=(
+                "Values appear to use comma-decimal or dot-thousands conventions. "
+                "Automatic conversion is intentionally withheld because locale semantics "
+                "must be established before changing values."
+            ),
+            confidence=0.90,
+            affected_count=sum(mask),
+            row_indices_sample=_sample_rows(mask),
+            evidence={"examples": examples},
+            suggested_action="Confirm the locale convention before numeric conversion.",
+            auto_fix_safe=False,
+        )
+    ]
+
+
+def _encoding_artifacts(table: str, column: str, series: pd.Series) -> list[Issue]:
+    markers = ("Ã", "Â", "â€", "â€™", "â€œ", "â€", "ï»¿", "�")
+    values = [
+        str(value)
+        for value in series.tolist()
+        if not is_missing_like(value)
+    ]
+    hits = [value for value in values if any(marker in value for marker in markers)]
+    if not hits:
+        return []
+
+    examples = sorted(set(hits))[:20]
+    matched = set(hits)
+    mask = [
+        not is_missing_like(value) and str(value) in matched
+        for value in series.tolist()
+    ]
+    return [
+        Issue(
+            id=_id(),
+            type="text_encoding_anomaly",
+            severity=Severity.MEDIUM,
+            table=table,
+            column=column,
+            title="Possible text encoding corruption detected",
+            description=(
+                "Some strings contain common mojibake or replacement-character patterns. "
+                "They are flagged for review but are not automatically rewritten."
+            ),
+            confidence=0.90,
+            affected_count=sum(mask),
+            row_indices_sample=_sample_rows(mask),
+            evidence={"examples": examples},
+            suggested_action="Review source encoding before repairing text.",
+            auto_fix_safe=False,
+        )
+    ]
+
+
 def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
     values = [
         value
@@ -225,20 +373,23 @@ def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
     if len(values) < 3:
         return []
 
-    parsed_values = [parse_number(value) for value in values]
+    allowed_units = declared_numeric_units(column)
+    parsed_values = [
+        parse_number(value, allowed_units=allowed_units)
+        for value in values
+    ]
     numeric_count = sum(value is not None for value in parsed_values)
     ratio = numeric_count / len(values)
     formatted_values = [
         str(value)
         for value, parsed in zip(values, parsed_values, strict=False)
-        if parsed is not None and has_explicit_numeric_format(value)
+        if parsed is not None
+        and (
+            has_explicit_numeric_format(value)
+            or has_declared_unit_format(value, allowed_units)
+        )
     ]
 
-    # Do not propose numeric coercion merely because a column is entirely made
-    # of plain digit strings. That is common for IDs/codes. Fully parseable
-    # columns become reviewable only when they contain explicit numeric
-    # presentation artifacts such as currency symbols, accounting parentheses,
-    # or thousands separators.
     if ratio < 0.60:
         return []
     if ratio >= 1.0 and not formatted_values:
@@ -259,14 +410,22 @@ def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
         for value in series.tolist()
     ]
 
-    if bad_values:
-        description = f"{ratio:.1%} of non-null values can be parsed as numbers."
-    else:
-        description = (
+    description = (
+        f"{ratio:.1%} of non-null values can be parsed as numbers."
+        if bad_values
+        else (
             "All non-null values are numeric, but some use explicit numeric "
-            "presentation formatting such as currency symbols, accounting "
-            "parentheses, or thousands separators."
+            "presentation formatting or a unit declared by the column name."
         )
+    )
+
+    evidence = {
+        "numeric_ratio": ratio,
+        "non_numeric_examples": unique_bad,
+        "formatted_numeric_examples": unique_formatted,
+    }
+    if allowed_units:
+        evidence["allowed_units"] = list(allowed_units)
 
     return [
         Issue(
@@ -280,11 +439,7 @@ def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
             confidence=min(0.99, max(0.80, ratio)),
             affected_count=sum(full_mask),
             row_indices_sample=_sample_rows(full_mask),
-            evidence={
-                "numeric_ratio": ratio,
-                "non_numeric_examples": unique_bad,
-                "formatted_numeric_examples": unique_formatted,
-            },
+            evidence=evidence,
             suggested_action=(
                 "Review before converting parseable values to numeric form; "
                 "unparseable values remain unchanged."
@@ -292,6 +447,7 @@ def _mixed_numeric(table: str, column: str, series: pd.Series) -> list[Issue]:
             auto_fix_safe=False,
         )
     ]
+
 
 
 def _date_consistency(table: str, column: str, series: pd.Series) -> list[Issue]:
