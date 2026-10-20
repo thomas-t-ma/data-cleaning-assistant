@@ -65,6 +65,18 @@ EMAIL_NAME_PATTERN = re.compile(
     r"(?:^|_)(?:email|e_mail)(?:_|$)|email",
     re.IGNORECASE,
 )
+BOOLEAN_TRUE_TOKENS = {"yes", "y", "true", "t", "1", "on", "enabled"}
+BOOLEAN_FALSE_TOKENS = {"no", "n", "false", "f", "0", "off", "disabled"}
+DECLARED_NUMERIC_UNITS = {
+    "kg": ("kg", "kilogram", "kilograms"),
+    "mg": ("mg", "milligram", "milligrams"),
+    "lb": ("lb", "lbs", "pound", "pounds"),
+    "cm": ("cm", "centimeter", "centimeters"),
+    "mm": ("mm", "millimeter", "millimeters"),
+    "km": ("km", "kilometer", "kilometers"),
+    "ml": ("ml", "milliliter", "milliliters"),
+    "percent": ("%", "percent", "pct"),
+}
 
 
 def is_null(value: Any) -> bool:
@@ -163,6 +175,48 @@ def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
     return name_hint and unique_ratio >= 0.60
 
 
+def boolean_class(value: Any) -> bool | None:
+    if is_null(value):
+        return None
+    token = normalize_text(value)
+    if token in BOOLEAN_TRUE_TOKENS:
+        return True
+    if token in BOOLEAN_FALSE_TOKENS:
+        return False
+    return None
+
+
+def declared_numeric_units(name: str) -> tuple[str, ...]:
+    normalized = normalize_column_name(name)
+    tokens = normalized.split("_")
+    if not tokens:
+        return ()
+    last = tokens[-1]
+    if last in {"pct", "percentage"}:
+        last = "percent"
+    return DECLARED_NUMERIC_UNITS.get(last, ())
+
+
+def has_declared_unit_format(
+    value: Any,
+    allowed_units: tuple[str, ...],
+) -> bool:
+    if is_null(value) or not isinstance(value, str) or not allowed_units:
+        return False
+    text = value.strip()
+    for unit in sorted(allowed_units, key=len, reverse=True):
+        if unit == "%":
+            if re.fullmatch(r"[+-]?\d[\d,]*(?:\.\d+)?\s*%", text):
+                return True
+        elif re.fullmatch(
+            rf"[+-]?\d[\d,]*(?:\.\d+)?\s*{re.escape(unit)}",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return True
+    return False
+
+
 def has_explicit_numeric_format(value: Any) -> bool:
     """Return True for unambiguous numeric presentation artifacts.
 
@@ -196,7 +250,11 @@ def has_explicit_numeric_format(value: Any) -> bool:
     ) is not None
 
 
-def parse_number(value: Any) -> float | None:
+def parse_number(
+    value: Any,
+    *,
+    allowed_units: tuple[str, ...] = (),
+) -> float | None:
     if is_null(value) or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -207,18 +265,44 @@ def parse_number(value: Any) -> float | None:
     if not text or normalize_text(text) in STRUCTURAL_MISSING_TOKENS:
         return None
 
+    if allowed_units:
+        matched_unit = False
+        for unit in sorted(allowed_units, key=len, reverse=True):
+            if unit == "%" and text.endswith("%"):
+                text = text[:-1].rstrip()
+                matched_unit = True
+                break
+            match = re.search(
+                rf"\s*{re.escape(unit)}\s*$",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match is not None:
+                text = text[:match.start()].rstrip()
+                matched_unit = True
+                break
+
+        # A plain number in a unit-declared column is also valid. If there is
+        # trailing nonnumeric text, however, never strip it unless it matches
+        # one of the explicitly declared units above.
+        if not matched_unit and re.search(r"[A-Za-z%]\s*$", text):
+            return None
+
     accounting_negative = text.startswith("(") and text.endswith(")")
     if accounting_negative:
         text = text[1:-1].strip()
 
-    # Support common currency prefixes without teaching the parser to strip
-    # arbitrary letters or codes.
     sign = ""
     if text[:1] in {"+", "-"}:
         sign, text = text[0], text[1:].lstrip()
     if text[:1] in CURRENCY_SYMBOLS:
         text = text[1:].lstrip()
-    elif not sign and len(text) >= 2 and text[0] in CURRENCY_SYMBOLS and text[1] in {"+", "-"}:
+    elif (
+        not sign
+        and len(text) >= 2
+        and text[0] in CURRENCY_SYMBOLS
+        and text[1] in {"+", "-"}
+    ):
         sign, text = text[1], text[2:].lstrip()
 
     text = text.replace(",", "")

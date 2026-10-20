@@ -209,7 +209,34 @@ def _category_candidates(
     counts = _counts(frame[issue.column])
     output: list[AICandidate] = []
 
-    if issue.type == "category_inconsistency":
+    if issue.type == "boolean_variant_inconsistency":
+        raw_mapping = issue.evidence.get("mapping", {})
+        mapping = {
+            str(source): str(target)
+            for source, target in raw_mapping.items()
+            if str(source) != str(target)
+        }
+        if mapping:
+            output.append(
+                _make_candidate(
+                    action_type=ActionType.NORMALIZE_CATEGORIES,
+                    table=issue.table,
+                    column=issue.column,
+                    parameters={"mapping": mapping},
+                    issue=issue,
+                    evidence={
+                        "mapping": mapping,
+                        "basis": "boolean_semantics",
+                    },
+                    question=(
+                        "Should these common true/false coding variants be normalized "
+                        "to canonical Yes/No labels?"
+                    ),
+                    title="AI-reviewed boolean normalization",
+                )
+            )
+
+    elif issue.type == "category_inconsistency":
         for raw_group in issue.evidence.get("variant_groups", []):
             variants = [str(value) for value in raw_group]
             if len(variants) < 2:
@@ -338,7 +365,11 @@ def build_ai_candidates(
             else None
         )
 
-        if issue.type in {"category_inconsistency", "fuzzy_category_match"}:
+        if issue.type in {
+            "boolean_variant_inconsistency",
+            "category_inconsistency",
+            "fuzzy_category_match",
+        }:
             # The study dictionary, when provided, is the only authority for
             # category normalization in a schema-managed column.
             if column_spec is None or not column_spec.has_category_dictionary():
@@ -427,7 +458,14 @@ def build_ai_candidates(
                     action_type=ActionType.COERCE_NUMERIC,
                     table=issue.table,
                     column=issue.column,
-                    parameters={"unparseable": "keep"},
+                    parameters={
+                        "unparseable": "keep",
+                        **(
+                            {"allowed_units": issue.evidence["allowed_units"]}
+                            if issue.evidence.get("allowed_units")
+                            else {}
+                        ),
+                    },
                     issue=issue,
                     evidence=issue.evidence,
                     question=(

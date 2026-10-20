@@ -96,6 +96,39 @@ def _category_action(issue, frame: pd.DataFrame) -> CleaningAction | None:
     )
 
 
+def _boolean_action(issue) -> CleaningAction | None:
+    if issue.column is None:
+        return None
+    raw_mapping = issue.evidence.get("mapping", {})
+    mapping = {
+        str(source): str(target)
+        for source, target in raw_mapping.items()
+        if str(source) != str(target)
+    }
+    if not mapping:
+        return None
+    parameters = {"mapping": mapping}
+    return CleaningAction(
+        id=_stable_action_id(
+            ActionType.NORMALIZE_CATEGORIES,
+            issue.table,
+            issue.column,
+            parameters,
+        ),
+        type=ActionType.NORMALIZE_CATEGORIES,
+        table=issue.table,
+        column=issue.column,
+        title="Normalize boolean coding variants",
+        description=(
+            "Map common true/false coding conventions to canonical Yes/No labels. "
+            "Review the exact mapping before approval."
+        ),
+        parameters=parameters,
+        confidence=issue.confidence,
+        issue_ids=[issue.id],
+    )
+
+
 def _category_action_is_whitespace_only(action: CleaningAction) -> bool:
     if action.type != ActionType.NORMALIZE_CATEGORIES:
         return False
@@ -199,7 +232,10 @@ def _date_action(issue) -> CleaningAction | None:
 def _numeric_action(issue) -> CleaningAction | None:
     if issue.column is None or looks_like_identifier_name(issue.column):
         return None
-    parameters = {"unparseable": "keep"}
+    parameters: dict[str, Any] = {"unparseable": "keep"}
+    allowed_units = issue.evidence.get("allowed_units")
+    if isinstance(allowed_units, list) and allowed_units:
+        parameters["allowed_units"] = [str(unit) for unit in allowed_units]
     return CleaningAction(
         id=_stable_action_id(
             ActionType.COERCE_NUMERIC,
@@ -346,6 +382,8 @@ def propose_actions(
 
         if issue.type == "category_inconsistency":
             action = _category_action(issue, frame)
+        elif issue.type == "boolean_variant_inconsistency":
+            action = _boolean_action(issue)
         elif issue.type == "hidden_missing_values":
             if structural_only_column(issue, frame):
                 notes.append(

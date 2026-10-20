@@ -2,9 +2,67 @@
 
 A local-first, general-purpose data quality and cleaning assistant for CSV, Excel, and Parquet datasets.
 
-Current version: **v0.24.0**.
+Current version: **v0.25.0**.
 
 The core rule is **detection is not transformation**. Profiling is read-only. Deterministic rules and optional local AI can propose changes, but only deterministic Python previews and executes them after explicit human approval.
+
+## Try the app on Windows
+
+The most reliable way to try the current development build is directly from the
+public repository.
+
+Requirements: **Python 3.11 or 3.12**, Git, and Microsoft Edge WebView2 Runtime
+(WebView2 is already present on most current Windows systems).
+
+```powershell
+git clone https://github.com/thomas-t-ma/data-cleaning-assistant.git
+cd data-cleaning-assistant
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[desktop]"
+data-cleaner-desktop
+```
+
+The desktop app opens as a local native window. Choose a CSV, XLSX, XLSM, or
+Parquet file, review the proposed changes, approve or reject them, apply the
+cleaning plan, and download/save the verified cleaned copy. The source file is
+not overwritten.
+
+If PowerShell blocks virtual-environment activation, you can avoid activation:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[desktop]"
+.\.venv\Scripts\data-cleaner-desktop.exe
+```
+
+A packaged Windows build can also be generated without installing Python into
+the final app: open the repository's **Actions** tab, choose
+**windows-desktop**, use **Run workflow** on `main`, and download the
+`DataCleaningAssistant-Windows-x64` artifact after the workflow finishes. It
+contains a portable ZIP and a per-user Setup executable.
+
+Browser mode remains available from the same environment:
+
+```powershell
+data-cleaner web
+```
+
+## v0.25.0 — semantic format handling
+
+v0.25 adds several common formatting classes while keeping ambiguous repairs
+review-only.
+
+Reviewable transformations now include mixed boolean coding conventions such as
+`Yes / Y / TRUE / 1`, and unit-bearing numeric values when the field name
+explicitly declares the unit (for example `Weight_kg`, `Dose_mg`, or
+`Completion_Percent`). Unit suffixes are never stripped from arbitrary text
+columns.
+
+Locale-formatted numeric values such as `1.234,56` and mojibake patterns such
+as `JosÃ©` are detected for review, but the cleaner deliberately does not
+rewrite them automatically because the correct interpretation depends on locale
+or source encoding context.
 
 ## v0.24.0 — seeded randomized robustness testing
 
@@ -251,7 +309,7 @@ implementation stays web-based so it remains portable and fast to improve.
 
 The profiler detects hidden missing-value tokens, exact duplicate rows, constant columns, category inconsistencies, surrounding whitespace, mixed numeric values, malformed dates, likely identifiers, unnamed columns, conservative statistical outliers, candidate keys, repeated entities, dataset grain, and cross-table relationships.
 
-Reviewable transformations include category normalization, missing-token normalization, date standardization, numeric coercion for non-identifiers, whitespace trimming, and reversible exact-duplicate removal.
+Reviewable transformations include category/boolean normalization, missing-token normalization, date standardization, numeric coercion for non-identifiers (including explicitly declared units/percentages), whitespace trimming, and reversible exact-duplicate removal. Locale-number and text-encoding anomalies are currently review-only findings.
 
 ## v0.4 local AI planner
 
