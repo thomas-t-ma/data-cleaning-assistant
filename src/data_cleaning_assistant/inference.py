@@ -250,7 +250,11 @@ def has_explicit_numeric_format(value: Any) -> bool:
     ) is not None
 
 
-def parse_number(value: Any) -> float | None:
+def parse_number(
+    value: Any,
+    *,
+    allowed_units: tuple[str, ...] = (),
+) -> float | None:
     if is_null(value) or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
@@ -261,18 +265,44 @@ def parse_number(value: Any) -> float | None:
     if not text or normalize_text(text) in STRUCTURAL_MISSING_TOKENS:
         return None
 
+    if allowed_units:
+        matched_unit = False
+        for unit in sorted(allowed_units, key=len, reverse=True):
+            if unit == "%" and text.endswith("%"):
+                text = text[:-1].rstrip()
+                matched_unit = True
+                break
+            match = re.search(
+                rf"\s*{re.escape(unit)}\s*$",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match is not None:
+                text = text[:match.start()].rstrip()
+                matched_unit = True
+                break
+
+        # A plain number in a unit-declared column is also valid. If there is
+        # trailing nonnumeric text, however, never strip it unless it matches
+        # one of the explicitly declared units above.
+        if not matched_unit and re.search(r"[A-Za-z%]\s*$", text):
+            return None
+
     accounting_negative = text.startswith("(") and text.endswith(")")
     if accounting_negative:
         text = text[1:-1].strip()
 
-    # Support common currency prefixes without teaching the parser to strip
-    # arbitrary letters or codes.
     sign = ""
     if text[:1] in {"+", "-"}:
         sign, text = text[0], text[1:].lstrip()
     if text[:1] in CURRENCY_SYMBOLS:
         text = text[1:].lstrip()
-    elif not sign and len(text) >= 2 and text[0] in CURRENCY_SYMBOLS and text[1] in {"+", "-"}:
+    elif (
+        not sign
+        and len(text) >= 2
+        and text[0] in CURRENCY_SYMBOLS
+        and text[1] in {"+", "-"}
+    ):
         sign, text = text[1], text[2:].lstrip()
 
     text = text.replace(",", "")
