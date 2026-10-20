@@ -65,6 +65,18 @@ EMAIL_NAME_PATTERN = re.compile(
     r"(?:^|_)(?:email|e_mail)(?:_|$)|email",
     re.IGNORECASE,
 )
+BOOLEAN_TRUE_TOKENS = {"yes", "y", "true", "t", "1", "on", "enabled"}
+BOOLEAN_FALSE_TOKENS = {"no", "n", "false", "f", "0", "off", "disabled"}
+DECLARED_NUMERIC_UNITS = {
+    "kg": ("kg", "kilogram", "kilograms"),
+    "mg": ("mg", "milligram", "milligrams"),
+    "lb": ("lb", "lbs", "pound", "pounds"),
+    "cm": ("cm", "centimeter", "centimeters"),
+    "mm": ("mm", "millimeter", "millimeters"),
+    "km": ("km", "kilometer", "kilometers"),
+    "ml": ("ml", "milliliter", "milliliters"),
+    "percent": ("%", "percent", "pct"),
+}
 
 
 def is_null(value: Any) -> bool:
@@ -161,6 +173,48 @@ def looks_like_free_text_response(name: str, series: pd.Series) -> bool:
     if unique_ratio >= 0.75 and long_response_ratio >= 0.20:
         return True
     return name_hint and unique_ratio >= 0.60
+
+
+def boolean_class(value: Any) -> bool | None:
+    if is_null(value):
+        return None
+    token = normalize_text(value)
+    if token in BOOLEAN_TRUE_TOKENS:
+        return True
+    if token in BOOLEAN_FALSE_TOKENS:
+        return False
+    return None
+
+
+def declared_numeric_units(name: str) -> tuple[str, ...]:
+    normalized = normalize_column_name(name)
+    tokens = normalized.split("_")
+    if not tokens:
+        return ()
+    last = tokens[-1]
+    if last in {"pct", "percentage"}:
+        last = "percent"
+    return DECLARED_NUMERIC_UNITS.get(last, ())
+
+
+def has_declared_unit_format(
+    value: Any,
+    allowed_units: tuple[str, ...],
+) -> bool:
+    if is_null(value) or not isinstance(value, str) or not allowed_units:
+        return False
+    text = value.strip()
+    for unit in sorted(allowed_units, key=len, reverse=True):
+        if unit == "%":
+            if re.fullmatch(r"[+-]?\d[\d,]*(?:\.\d+)?\s*%", text):
+                return True
+        elif re.fullmatch(
+            rf"[+-]?\d[\d,]*(?:\.\d+)?\s*{re.escape(unit)}",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return True
+    return False
 
 
 def has_explicit_numeric_format(value: Any) -> bool:
