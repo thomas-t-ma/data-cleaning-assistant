@@ -833,8 +833,13 @@ def detect_basic_issues(table: str, frame: pd.DataFrame) -> list[Issue]:
         series = frame[raw_column]
         issues.extend(_hidden_missing(table, column, series))
         issues.extend(_constant_column(table, column, series))
-        issues.extend(_category_variants(table, column, series))
+        boolean_issues = _boolean_variants(table, column, series)
+        issues.extend(boolean_issues)
+        if not boolean_issues:
+            issues.extend(_category_variants(table, column, series))
         issues.extend(_surrounding_whitespace(table, column, series))
+        issues.extend(_locale_numeric_format(table, column, series))
+        issues.extend(_encoding_artifacts(table, column, series))
         issues.extend(_mixed_numeric(table, column, series))
         issues.extend(_date_consistency(table, column, series))
         issues.extend(_phone_format(table, column, series))
