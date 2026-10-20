@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.25.0
+
+- Added deterministic reviewable normalization for mixed boolean coding conventions such as Yes/Y/TRUE/1 and No/N/FALSE/0.
+- Added numeric coercion for unit-bearing values only when the column name explicitly declares a supported unit such as kg, mg, lb, cm, mm, km, ml, percent, pct, or percentage.
+- Percentage strings such as `95%` are normalized to numeric percentage-point values only in percent-declared columns.
+- Unit parsing remains fail-closed for undeclared or conflicting suffixes.
+- Added review-only detection for comma-decimal / dot-thousands locale numeric formats; no automatic locale conversion is performed.
+- Added review-only detection for common mojibake/replacement-character text encoding artifacts; no automatic text repair is performed.
+- Kept optional AI candidate parameters aligned with deterministic unit constraints and boolean mappings.
+- Added golden and negative regressions covering boolean normalization, unit/percentage coercion, conflicting-unit refusal, locale-number restraint, and encoding-repair restraint.
+- Added a concise Windows trial guide to the README.
+
+
 ## 0.24.0
 
 - Added a seeded randomized robustness layer on top of the v0.23 action/cell precision-recall scorer.
