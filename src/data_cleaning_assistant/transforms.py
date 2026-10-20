@@ -134,7 +134,9 @@ def _new_value(action: CleaningAction, value: Any) -> tuple[bool, Any]:
     if action.type == ActionType.COERCE_NUMERIC:
         if is_missing_like(value):
             return False, value
-        parsed = parse_number(value)
+        raw_units = action.parameters.get("allowed_units", [])
+        allowed_units = tuple(str(unit) for unit in raw_units)
+        parsed = parse_number(value, allowed_units=allowed_units)
         if parsed is None:
             return False, value
         number = _canonical_number(parsed)
